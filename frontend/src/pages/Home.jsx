@@ -65,8 +65,20 @@ const UI_PARAMS = [
     depMessage: "Renk seçimi yapabilmek için lütfen Gradient seçmeyin" },
 ];
 
-const MSP_CONFIG = [
+const MSP_CONFIG_BASE = [
   { id: 15, icon: <MdOutlineRestartAlt />,     label: "Cihaz Reset", color: "red" },
+];
+
+const MSP_CONFIG_ADMIN = [
+  { id: 16, icon: <TbGauge />,                 label: "AC Ölçer",    color: "red" },
+  { id: 19, icon: <HiOutlineCommandLine />,    label: "Test Modu",   color: "red" },
+  { id: 18, icon: <HiOutlineCpuChip />,        label: "Model",       isInfo: true },
+];
+
+const OTA = [
+  { id: 31, icon: <HiOutlineArrowUpTray />,    label: "OTA Update" },
+  { id: 32, icon: <HiOutlineKey />,            label: "OTA Key" },
+  { id: 33, icon: <HiOutlineTag />,            label: "OTA Versiyon" },
 ];
 
 const ESP_CTRL = [
@@ -103,7 +115,18 @@ function csColor(raw) {
 }
 
 /* ── Main ── */
-export default function Home({ onNavigate }) {
+export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
+  // authFetch — token değişince bu fonksiyon da güncellenir
+  const authFetch = useCallback((url, options = {}) => {
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        "Authorization": `Bearer ${token}`,
+      },
+    });
+  }, [token]);
+
   const [espStatus, setEspStatus] = useState("unknown");
   const [isConnected, setIsConnected] = useState(false);
   const [mac, setMac] = useState("");
@@ -117,7 +140,7 @@ export default function Home({ onNavigate }) {
     if (!isConnected) { setEspStatus("unknown"); return; }
     const f = async () => {
       try {
-        const r = await fetch("/api/get-status");
+        const r = await authFetch("/api/get-status");
         const d = await r.json();
         setEspStatus(d.espState);
         if (d.timedOut) { setIsConnected(false); setMessage("10dk inaktivite — bağlantı kesildi."); }
@@ -125,20 +148,20 @@ export default function Home({ onNavigate }) {
     };
     f(); const iv = setInterval(f, 3000);
     return () => clearInterval(iv);
-  }, [isConnected]);
+  }, [isConnected, authFetch]);
 
   useEffect(() => {
     if (!isConnected) return;
-    const f = () => fetch("/api/keepalive", { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => {});
-    f(); const iv = setInterval(f, 5 * 60 * 1000); // 5 dakikada bir
+    const f = () => authFetch("/api/keepalive", { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => {});
+    f(); const iv = setInterval(f, 5 * 60 * 1000);
     return () => clearInterval(iv);
-  }, [isConnected]);
+  }, [isConnected, authFetch]);
 
   useEffect(() => {
     if (!isConnected) { setReadValues({}); setSetOkMap({}); return; }
     const f = async () => {
       try {
-        const r = await fetch("/api/responses");
+        const r = await authFetch("/api/responses");
         const j = await r.json();
         const ok = {}, rv = {};
         
@@ -174,12 +197,12 @@ export default function Home({ onNavigate }) {
     };
     f(); const iv = setInterval(f, 2000);
     return () => clearInterval(iv);
-  }, [isConnected]);
+  }, [isConnected, authFetch]);
 
   const sendCommand = useCallback(async (type, variable, value = "") => {
     if (!isActive) { setMessage("ESP aktif değil"); return false; }
     try {
-      const r = await fetch("/api/send-command", {
+      const r = await authFetch("/api/send-command", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, variable, value }),
       });
@@ -195,12 +218,12 @@ export default function Home({ onNavigate }) {
       setTimeout(() => setMessage(""), 3000);
       return true;
     } catch { setMessage("Sunucuya ulaşılamadı"); return false; }
-  }, [isActive]);
+  }, [isActive, authFetch]);
 
   const handleSubmit = async (e) => {
     e.preventDefault(); setMessage(""); setLoading(true);
     try {
-      const r = await fetch("/api/update-target", {
+      const r = await authFetch("/api/update-target", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ newTarget: mac }),
       });
@@ -214,7 +237,7 @@ export default function Home({ onNavigate }) {
   const handleDisconnect = async () => {
     try {
       const data = { newTarget: mac };
-      await fetch("/api/disconnect", {
+      await authFetch("/api/disconnect", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
@@ -258,7 +281,7 @@ export default function Home({ onNavigate }) {
       let success = false;
       for (let retry = 0; retry < 2; retry++) {
         try {
-          const resp = await fetch("/api/responses");
+          const resp = await authFetch("/api/responses");
           const j = await resp.json();
           const msgs = j.message_response || [];
           const found = msgs.find(
@@ -283,7 +306,7 @@ export default function Home({ onNavigate }) {
     setBatchReadingId(null);
 
     if (failCount > 0) {
-      setMessage(`${params.length - failCount} değer okundu, ${failCount} değer okunamadı ⚠️`);
+      setMessage(`${params.length - failCount} değer okundu, ${failCount} değer okunamadı `);
     } else {
       setMessage("Tüm değerler okundu ✓");
     }
@@ -343,7 +366,7 @@ export default function Home({ onNavigate }) {
       let success = false;
       for (let retry = 0; retry < 2; retry++) {
         try {
-          const resp = await fetch("/api/responses");
+          const resp = await authFetch("/api/responses");
           const j = await resp.json();
           const msgs = j.message_response || [];
           const found = msgs.find(
@@ -369,7 +392,7 @@ export default function Home({ onNavigate }) {
     setBulkDrafts({});
 
     if (failCount > 0) {
-      setMessage(`${toSend.length - failCount} değer kaydedildi, ${failCount} değer kaydedilemedi ⚠️`);
+      setMessage(`${toSend.length - failCount} değer kaydedildi, ${failCount} değer kaydedilemedi `);
     } else {
       setMessage(`${toSend.length} değer başarıyla kaydedildi ✓`);
     }
@@ -378,7 +401,7 @@ export default function Home({ onNavigate }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#070e1a] text-slate-100">
-      <Navigation activePage="dashboard" onNavigate={onNavigate} />
+      <Navigation activePage={isAdmin ? "panel" : "dashboard"} onNavigate={onNavigate} onLogout={onLogout} />
 
       <main className="flex-1 py-5 px-4">
         <div className="max-w-[1200px] mx-auto">
@@ -554,7 +577,7 @@ export default function Home({ onNavigate }) {
             {/* MSP */}
             <Panel icon={<HiOutlineCog6Tooth />} title="MSP Konfigürasyon">
               <div className="grid grid-cols-2 gap-2 py-1">
-                {MSP_CONFIG.map((p) =>
+                {[...MSP_CONFIG_BASE, ...(isAdmin ? MSP_CONFIG_ADMIN : [])].map((p) =>
                   p.isInfo ? (
                     <div key={p.id} className="flex items-center gap-2 px-3 py-[6px] rounded-lg bg-slate-800/30 border border-slate-700/30">
                       <span className="text-[13px] text-slate-500">{p.icon}</span>
@@ -603,6 +626,77 @@ export default function Home({ onNavigate }) {
               ))}
             </div>
           </div>
+
+          {/* OTA — sadece admin modda */}
+          {isAdmin && (
+            <div className="mt-4">
+              <Panel icon={<HiOutlineArrowUpTray />} title="OTA Konfigürasyon">
+                {OTA.map((p, i) => (
+                  <EditableRow key={p.id} icon={p.icon} label={p.label} id={p.id}
+                    value={V(p.id)} setOk={setOkMap[p.id]} disabled={!isActive}
+                    failed={failedReads[p.id]}
+                    setFailed={failedSets[p.id]}
+                    bulkEditing={bulkEditingId === "ota"}
+                    bulkDraft={bulkDrafts[p.id] ?? ""}
+                    onBulkDraftChange={updateBulkDraft}
+                    onSet={(id, val) => sendCommand("set", id, val)}
+                    onRead={(id) => { setFailedReads((prev) => ({ ...prev, [id]: false })); sendCommand("read", id); }}
+                    last={i === OTA.length - 1} />
+                ))}
+
+                <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-700/25">
+                  {(batchReadingId === "ota" && batchProgress) ? (
+                    <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">{batchProgress}</span>
+                  ) : (bulkSaving && bulkProgress) ? (
+                    <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">{bulkProgress}</span>
+                  ) : <span />}
+                  <div className="flex items-center gap-2">
+                    {bulkEditingId === "ota" ? (
+                      <>
+                        <button onClick={cancelBulkEdit}
+                          className="text-[10px] font-semibold px-2.5 py-[4px] rounded-md
+                                     bg-slate-800/50 text-slate-500 border border-slate-600/30
+                                     hover:text-slate-300 transition cursor-pointer">
+                          İptal
+                        </button>
+                        <button onClick={() => batchSet(OTA, "ota")}
+                          disabled={!isActive || bulkSaving}
+                          className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                            ${(!isActive || bulkSaving)
+                              ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                              : "bg-emerald-600/80 text-white border-emerald-500/50 hover:bg-emerald-600 cursor-pointer"
+                            }`}>
+                          <HiOutlinePencilSquare className={`text-[12px] ${bulkSaving ? "animate-spin" : ""}`} />
+                          {bulkSaving ? "Kaydediliyor…" : "Tümünü Kaydet"}
+                        </button>
+                      </>
+                    ) : (
+                      <button onClick={() => startBulkEdit(OTA, "ota")}
+                        disabled={!isActive || !!bulkEditingId || bulkSaving}
+                        className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                          ${(!isActive || !!bulkEditingId || bulkSaving)
+                            ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                            : "bg-amber-600/20 text-amber-400 border-amber-500/30 hover:bg-amber-600/30 cursor-pointer"
+                          }`}>
+                        <HiOutlinePencilSquare className="text-[12px]" />
+                        Toplu Edit
+                      </button>
+                    )}
+                    <button onClick={() => batchRead(OTA, "ota")}
+                      disabled={!isActive || !!batchReadingId || !!bulkEditingId}
+                      className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                        ${(!isActive || !!batchReadingId || !!bulkEditingId)
+                          ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                          : "bg-sky-600/20 text-sky-400 border-sky-500/30 hover:bg-sky-600/30 cursor-pointer"
+                        }`}>
+                      <HiOutlineArrowPath className={`text-[12px] ${batchReadingId === "ota" ? "animate-spin" : ""}`} />
+                      {batchReadingId === "ota" ? "Okunuyor…" : "Tümünü Oku"}
+                    </button>
+                  </div>
+                </div>
+              </Panel>
+            </div>
+          )}
 
         </div>
       </main>

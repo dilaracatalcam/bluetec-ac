@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { HiOutlineMenu, HiOutlineX } from "react-icons/hi";
+import { HiOutlineArrowRightOnRectangle } from "react-icons/hi2";
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard" },
-  { key: "admin", label: "Admin Panel" },
+  { key: "panel", label: "Panel" },
 ];
 
-export default function Navigation({ activePage = "dashboard", onNavigate }) {
+export default function Navigation({ activePage = "dashboard", onNavigate, onLogout }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const handleClick = (key) => {
@@ -29,22 +30,35 @@ export default function Navigation({ activePage = "dashboard", onNavigate }) {
         </div>
 
         {/* Desktop menu */}
-        <ul className="hidden md:flex items-center gap-1">
+        <div className="hidden md:flex items-center gap-1">
           {NAV_ITEMS.map((item) => (
-            <li key={item.key}>
-              <button
-                onClick={() => handleClick(item.key)}
-                className={`text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors cursor-pointer
-                  ${activePage === item.key
-                    ? "text-sky-400 bg-sky-500/10"
-                    : "text-slate-500 hover:text-slate-200 hover:bg-slate-800/50"
-                  }`}
-              >
-                {item.label}
-              </button>
-            </li>
+            <button
+              key={item.key}
+              onClick={() => handleClick(item.key)}
+              className={`text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors cursor-pointer
+                ${activePage === item.key
+                  ? "text-sky-400 bg-sky-500/10"
+                  : "text-slate-500 hover:text-slate-200 hover:bg-slate-800/50"
+                }`}
+            >
+              {item.label}
+            </button>
           ))}
-        </ul>
+
+          {/* Çıkış butonu */}
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500
+                         px-3 py-1.5 rounded-md hover:text-red-400 hover:bg-red-500/10
+                         transition-colors cursor-pointer ml-2"
+              title="Çıkış Yap"
+            >
+              <HiOutlineArrowRightOnRectangle className="text-[14px]" />
+              Çıkış
+            </button>
+          )}
+        </div>
 
         {/* Mobile toggle */}
         <button
@@ -71,6 +85,15 @@ export default function Navigation({ activePage = "dashboard", onNavigate }) {
               {item.label}
             </button>
           ))}
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="block w-full text-left text-[12px] font-medium py-2 text-red-400
+                         hover:text-red-300 transition-colors"
+            >
+              Çıkış Yap
+            </button>
+          )}
         </div>
       )}
     </header>

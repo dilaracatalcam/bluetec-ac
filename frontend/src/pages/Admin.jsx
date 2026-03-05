@@ -30,7 +30,17 @@ function mapValue(id, raw) {
   return String(raw);
 }
 
-export default function Admin({ onNavigate }) {
+export default function Admin({ token, onNavigate, onLogout }) {
+  const authFetch = (url, options = {}) => {
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        "Authorization": `Bearer ${token}`,
+      },
+    });
+  };
+
   const [espStatus, setEspStatus] = useState("unknown");
   const [isConnected, setIsConnected] = useState(false);
   const [mac, setMac] = useState("");
@@ -45,7 +55,7 @@ export default function Admin({ onNavigate }) {
     if (!isConnected) { setEspStatus("unknown"); return; }
     const f = async () => {
       try {
-        const r = await fetch("/api/get-status");
+        const r = await authFetch("/api/get-status");
         const d = await r.json();
         setEspStatus(d.espState);
         if (d.timedOut) { setIsConnected(false); setMessage("10dk inaktivite — bağlantı kesildi."); }
@@ -57,7 +67,7 @@ export default function Admin({ onNavigate }) {
 
   useEffect(() => {
     if (!isConnected) return;
-    const f = () => fetch("/api/keepalive", { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => {});
+    const f = () => authFetch("/api/keepalive", { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => {});
     f(); const iv = setInterval(f, 5 * 60 * 1000);
     return () => clearInterval(iv);
   }, [isConnected]);
@@ -66,7 +76,7 @@ export default function Admin({ onNavigate }) {
     if (!isConnected) { setReadValues({}); setSetOkMap({}); return; }
     const f = async () => {
       try {
-        const r = await fetch("/api/responses");
+        const r = await authFetch("/api/responses");
         const j = await r.json();
         const ok = {}, rv = {};
         const msgs = j.message_response || [];
@@ -89,7 +99,7 @@ export default function Admin({ onNavigate }) {
   const sendCommand = useCallback(async (type, variable, value = "") => {
     if (!isActive) { setMessage("ESP aktif değil"); return false; }
     try {
-      const r = await fetch("/api/send-command", {
+      const r = await authFetch("/api/send-command", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, variable, value }),
       });
@@ -107,7 +117,7 @@ export default function Admin({ onNavigate }) {
   const handleSubmit = async (e) => {
     e.preventDefault(); setMessage(""); setLoading(true);
     try {
-      const r = await fetch("/api/update-target", {
+      const r = await authFetch("/api/update-target", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ newTarget: mac }),
       });
@@ -120,7 +130,7 @@ export default function Admin({ onNavigate }) {
 
   const handleDisconnect = async () => {
     try {
-      await fetch("/api/disconnect", {
+      await authFetch("/api/disconnect", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ newTarget: mac }),
       });
@@ -150,7 +160,7 @@ export default function Admin({ onNavigate }) {
       let success = false;
       for (let retry = 0; retry < 2; retry++) {
         try {
-          const resp = await fetch("/api/responses");
+          const resp = await authFetch("/api/responses");
           const j = await resp.json();
           const msgs = j.message_response || [];
           const found = msgs.find((m) => Number(m.cmd) === 2 && Number(m.msg) === p.id);
@@ -196,7 +206,7 @@ export default function Admin({ onNavigate }) {
       let success = false;
       for (let retry = 0; retry < 2; retry++) {
         try {
-          const resp = await fetch("/api/responses");
+          const resp = await authFetch("/api/responses");
           const j = await resp.json();
           const found = (j.message_response || []).find((m) => Number(m.msg) === p.id && m.data === "SET OK");
           if (found) { success = true; break; }
@@ -223,7 +233,7 @@ export default function Admin({ onNavigate }) {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#070e1a] text-slate-100">
-      <Navigation activePage="admin" onNavigate={onNavigate} />
+      <Navigation activePage="admin" onNavigate={onNavigate} onLogout={onLogout} />
 
       <main className="flex-1 py-5 px-4">
         <div className="max-w-[1200px] mx-auto">

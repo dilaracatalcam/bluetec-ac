@@ -7,6 +7,9 @@ const express = require('express');
 const fs = require('fs');
 const cors = require('cors');
 const { exec } = require('child_process');
+const crypto = require('crypto');
+// crypto = Node.js'in yerleşik şifreleme kütüphanesi.
+// Biz bunu rastgele token üretmek için kullanacağız.
 
 const app = express();
 app.use(cors());
@@ -15,6 +18,120 @@ app.use(express.json());
 const TARGET_PATH = '/home/bluetech/target.json';
 const RESPONSES_PATH = process.env.RESPONSES_PATH || '/home/bluetech/responses.json';
 const serverStartTime = Date.now();
+
+// =============================================
+//  YETKİLENDİRME SİSTEMİ
+// =============================================
+// Kullanıcı bilgileri — her sayfa için ayrı kullanıcı
+// Gerçek projede bunlar .env dosyasında veya veritabanında tutulur.
+// Şimdilik basit tutuyoruz.
+const USERS = {
+    dashboard: {
+        username: process.env.DASH_USER || "operator",
+        password: process.env.DASH_PASS || "bluetech123",
+        role: "dashboard",
+    },
+    admin: {
+        username: process.env.ADMIN_USER || "admin",
+        password: process.env.ADMIN_PASS || "admin456",
+        role: "admin",
+    },
+};
+
+// Token deposu — bellekte tutulan aktif oturumlar
+// { "abc123def456": { role: "dashboard", createdAt: 1709000000000 } }
+const activeSessions = {};
+
+// Token süresi: 24 saat (ms)
+const TOKEN_EXPIRY = 24 * 60 * 60 * 1000;
+
+// ── LOGIN endpoint'i ──
+// Frontend kullanıcı adı + şifre gönderir.
+// Backend doğrularsa rastgele bir token üretir ve geri gönderir.
+app.post('/api/login', (req, res) => {
+    const { username, password, page } = req.body;
+    // page = "dashboard" veya "admin"
+
+    // 1. Hangi sayfaya giriş yapmak istiyor?
+    const user = USERS[page];
+    if (!user) {
+        return res.status(400).json({ error: 'Geçersiz sayfa' });
+    }
+
+    // 2. Kullanıcı adı ve şifre doğru mu?
+    if (username !== user.username || password !== user.password) {
+        return res.status(401).json({ error: 'Kullanıcı adı veya şifre hatalı' });
+    }
+    // 401 = Unauthorized (yetkisiz)
+
+    // 3. Rastgele token üret
+    // crypto.randomBytes(32) → 32 byte rastgele veri üretir
+    // .toString('hex') → bunu "a1b2c3d4..." şeklinde metin yapar
+    const token = crypto.randomBytes(32).toString('hex');
+
+    // 4. Token'ı oturum deposuna kaydet
+    activeSessions[token] = {
+        role: user.role,
+        createdAt: Date.now(),
+    };
+
+    console.log(`[AUTH] ${user.role} girişi başarılı, token: ${token.slice(0, 8)}...`);
+
+    // 5. Token'ı frontend'e gönder
+    res.json({ token, role: user.role });
+});
+
+// ── Auth Middleware (Yetki kontrol fonksiyonu) ──
+// Middleware = her istekten ÖNCE çalışan fonksiyon.
+// "Kapıda duran güvenlik görevlisi" gibi düşün.
+// Her istek geldiğinde önce bu fonksiyon çalışır,
+// token geçerliyse isteği geçirir, değilse reddeder.
+function requireAuth(allowedRoles) {
+    // allowedRoles = ["dashboard", "admin"] gibi bir dizi
+    return (req, res, next) => {
+        // req.headers.authorization = "Bearer abc123def456"
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ error: 'Token gerekli' });
+        }
+
+        // "Bearer abc123def456" → "abc123def456"
+        const token = authHeader.split(' ')[1];
+
+        // Token depomuzda var mı?
+        const session = activeSessions[token];
+        if (!session) {
+            return res.status(401).json({ error: 'Geçersiz token' });
+        }
+
+        // Token süresi dolmuş mu?
+        if (Date.now() - session.createdAt > TOKEN_EXPIRY) {
+            delete activeSessions[token]; // Süresi dolmuş token'ı sil
+            return res.status(401).json({ error: 'Oturum süresi doldu' });
+        }
+
+        // Bu role izin var mı?
+        // admin her yere girebilir, dashboard sadece dashboard'a
+        if (!allowedRoles.includes(session.role) && session.role !== 'admin') {
+            return res.status(403).json({ error: 'Bu sayfaya yetkiniz yok' });
+            // 403 = Forbidden (yasaklı)
+        }
+
+        // Her şey tamam — isteği geçir
+        req.userRole = session.role; // Sonraki fonksiyonlar role'ü bilebilsin
+        next(); // "Geç, sorun yok" demek
+    };
+}
+
+// ── Logout endpoint'i ──
+app.post('/api/logout', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        delete activeSessions[token]; // Token'ı sil
+    }
+    res.json({ message: 'Çıkış yapıldı' });
+});
 
 // =============================================
 //  KULLANICI AKTİVİTE TAKİBİ (10dk Timeout)
@@ -153,7 +270,7 @@ async function deactivateThenActivate(data) {
 // =============================================
 //  UPDATE-TARGET
 // =============================================
-app.post('/api/update-target', async (req, res) => {
+app.post('/api/update-target', requireAuth(["dashboard", "admin"]), async (req, res) => {
     const { newTarget } = req.body;
     if (!newTarget || !MAC_REGEX.test(newTarget)) {
         return res.status(400).json({ error: 'Geçersiz veya eksik MAC adresi' });
@@ -181,7 +298,7 @@ app.post('/api/update-target', async (req, res) => {
 //  Deactivate → Bekle → Activate döngüsü ile
 //  ESP'nin gerçekten bağlı olup olmadığını doğrular.
 // =============================================
-app.post('/api/keepalive', async (req, res) => {
+app.post('/api/keepalive', requireAuth(["dashboard", "admin"]), async (req, res) => {
     try {
         const data = await readJson(TARGET_PATH);
 
@@ -201,7 +318,7 @@ app.post('/api/keepalive', async (req, res) => {
 // =============================================
 //  DISCONNECT — Bağlantıyı kopar
 // =============================================
-app.post('/api/disconnect', async (req, res) => {
+app.post('/api/disconnect', requireAuth(["dashboard", "admin"]), async (req, res) => {
     try {
         const data = await readJson(TARGET_PATH);
         data.control = "deactivate";
@@ -229,7 +346,7 @@ app.post('/api/disconnect', async (req, res) => {
 // =============================================
 //  SEND-COMMAND
 // =============================================
-app.post('/api/send-command', async (req, res) => {
+app.post('/api/send-command', requireAuth(["dashboard", "admin"]), async (req, res) => {
     const { type, variable, value } = req.body;
     const varCode = typeof variable === 'number' ? variable : VAR_MAP[variable];
 
@@ -291,7 +408,7 @@ app.post('/api/send-command', async (req, res) => {
 // =============================================
 //  GET-STATUS (DÜZELTİLMİŞ AKTİFLİK MANTIĞI)
 // =============================================
-app.get("/api/get-status", async (_, res) => {
+app.get("/api/get-status", requireAuth(["dashboard", "admin"]), async (_, res) => {
     try {
         const pythonRunning = await isPythonRunning();
 
@@ -401,7 +518,7 @@ app.get("/api/get-status", async (_, res) => {
     }
 });
 
-app.get('/api/responses', async (req, res) => {
+app.get('/api/responses', requireAuth(["dashboard", "admin"]), async (req, res) => {
     try {
         const data = await readJson(RESPONSES_PATH);
         res.json(data);
