@@ -67,9 +67,6 @@ const UI_PARAMS = [
 
 const MSP_CONFIG = [
   { id: 15, icon: <MdOutlineRestartAlt />,     label: "Cihaz Reset", color: "red" },
-  { id: 16, icon: <TbGauge />,                 label: "AC Ölçer",    color: "red" },
-  { id: 19, icon: <HiOutlineCommandLine />,    label: "Test Modu",   color: "red" },
-  { id: 18, icon: <HiOutlineCpuChip />,        label: "Model",       isInfo: true },
 ];
 
 const ESP_CTRL = [
@@ -89,12 +86,6 @@ const TELEMETRY = [
   { id: 26, icon: <BsUsbSymbol />,             label: "UART" },
 ];
 
-const OTA = [
-  { id: 31, icon: <HiOutlineArrowUpTray />,    label: "OTA Update" },
-  { id: 32, icon: <HiOutlineKey />,            label: "OTA Key" },
-  { id: 33, icon: <HiOutlineTag />,            label: "OTA Versiyon" },
-];
-
 /* ── Helpers ── */
 function mapValue(id, raw) {
   if (raw === undefined || raw === null) return "——";
@@ -112,7 +103,7 @@ function csColor(raw) {
 }
 
 /* ── Main ── */
-export default function Home() {
+export default function Home({ onNavigate }) {
   const [espStatus, setEspStatus] = useState("unknown");
   const [isConnected, setIsConnected] = useState(false);
   const [mac, setMac] = useState("");
@@ -218,6 +209,23 @@ export default function Home() {
       else { setMessage(""); setIsConnected(true); }
     } catch { setMessage("Sunucuya ulaşılamadı"); setIsConnected(false); }
     finally { setLoading(false); }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      const data = { newTarget: mac };
+      await fetch("/api/disconnect", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+    } catch {}
+    setIsConnected(false);
+    setEspStatus("unknown");
+    setReadValues({});
+    setSetOkMap({});
+    setFailedReads({});
+    setMessage("Bağlantı koparıldı.");
+    setTimeout(() => setMessage(""), 3000);
   };
 
   const badge = (() => {
@@ -370,7 +378,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#070e1a] text-slate-100">
-      <Navigation />
+      <Navigation activePage="dashboard" onNavigate={onNavigate} />
 
       <main className="flex-1 py-5 px-4">
         <div className="max-w-[1200px] mx-auto">
@@ -386,18 +394,27 @@ export default function Home() {
                 <span className="text-[11px] text-slate-600 font-mono">{mac}</span>
               )}
             </div>
-            <form onSubmit={handleSubmit} className="flex gap-2">
-              <input value={mac} onChange={(e) => setMac(e.target.value)}
-                placeholder="AA:BB:CC:DD:EE:FF" required
-                className="bg-[#0c1829] border border-slate-700/50 text-slate-200
-                           px-3 py-1.5 rounded-lg text-[12px] font-mono outline-none
-                           focus:border-sky-500/50 transition w-48" />
-              <button disabled={loading}
-                className={`px-4 py-1.5 rounded-lg text-[12px] font-bold transition cursor-pointer
-                  ${loading ? "bg-slate-700 text-slate-500" : "bg-emerald-600 hover:bg-emerald-500 text-white"}`}>
-                {loading ? "…" : "Bağlan"}
-              </button>
-            </form>
+            <div className="flex gap-2 items-center">
+              <form onSubmit={handleSubmit} className="flex gap-2">
+                <input value={mac} onChange={(e) => setMac(e.target.value)}
+                  placeholder="AA:BB:CC:DD:EE:FF" required
+                  className="bg-[#0c1829] border border-slate-700/50 text-slate-200
+                             px-3 py-1.5 rounded-lg text-[12px] font-mono outline-none
+                             focus:border-sky-500/50 transition w-48" />
+                <button disabled={loading}
+                  className={`px-4 py-1.5 rounded-lg text-[12px] font-bold transition cursor-pointer
+                    ${loading ? "bg-slate-700 text-slate-500" : "bg-emerald-600 hover:bg-emerald-500 text-white"}`}>
+                  {loading ? "…" : "Bağlan"}
+                </button>
+              </form>
+              {isConnected && (
+                <button onClick={handleDisconnect}
+                  className="px-3 py-1.5 rounded-lg text-[12px] font-bold transition cursor-pointer
+                             bg-red-600/80 hover:bg-red-500 text-white">
+                  Kopar
+                </button>
+              )}
+            </div>
           </div>
 
           {message && (
@@ -585,63 +602,6 @@ export default function Home() {
                   valueColor={p.id === 25 ? csColor(readValues[25]) : undefined} />
               ))}
             </div>
-          </div>
-
-          {/* OTA — editable */}
-          <div className="mt-4">
-            <Panel icon={<HiOutlineArrowUpTray />} title="OTA Konfigürasyon">
-              {OTA.map((p, i) => (
-                <EditableRow key={p.id} icon={p.icon} label={p.label} id={p.id}
-                  value={V(p.id)} setOk={setOkMap[p.id]} disabled={!isActive}
-                  failed={failedReads[p.id]}
-                  setFailed={failedSets[p.id]}
-                  bulkEditing={bulkEditingId === "ota"}
-                  bulkDraft={bulkDrafts[p.id] ?? ""}
-                  onBulkDraftChange={updateBulkDraft}
-                  onSet={(id, val) => sendCommand("set", id, val)}
-                  onRead={(id) => { setFailedReads((prev) => ({ ...prev, [id]: false })); sendCommand("read", id); }}
-                  last={i === OTA.length - 1} />
-              ))}
-
-              <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-700/25">
-                {bulkSaving && bulkProgress ? (
-                  <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">{bulkProgress}</span>
-                ) : <span />}
-                <div className="flex items-center gap-2">
-                  {bulkEditingId === "ota" ? (
-                    <>
-                      <button onClick={cancelBulkEdit}
-                        className="text-[10px] font-semibold px-2.5 py-[4px] rounded-md
-                                   bg-slate-800/50 text-slate-500 border border-slate-600/30
-                                   hover:text-slate-300 transition cursor-pointer">
-                        İptal
-                      </button>
-                      <button onClick={() => batchSet(OTA, "ota")}
-                        disabled={!isActive || bulkSaving}
-                        className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
-                          ${(!isActive || bulkSaving)
-                            ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
-                            : "bg-emerald-600/80 text-white border-emerald-500/50 hover:bg-emerald-600 cursor-pointer"
-                          }`}>
-                        <HiOutlinePencilSquare className={`text-[12px] ${bulkSaving ? "animate-spin" : ""}`} />
-                        {bulkSaving ? "Kaydediliyor…" : "Tümünü Kaydet"}
-                      </button>
-                    </>
-                  ) : (
-                    <button onClick={() => startBulkEdit(OTA, "ota")}
-                      disabled={!isActive || !!bulkEditingId || bulkSaving}
-                      className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
-                        ${(!isActive || !!bulkEditingId || bulkSaving)
-                          ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
-                          : "bg-amber-600/20 text-amber-400 border-amber-500/30 hover:bg-amber-600/30 cursor-pointer"
-                        }`}>
-                      <HiOutlinePencilSquare className="text-[12px]" />
-                      Toplu Edit
-                    </button>
-                  )}
-                </div>
-              </div>
-            </Panel>
           </div>
 
         </div>

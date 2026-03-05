@@ -1,14 +1,24 @@
 import { useState } from "react";
 import { HiOutlineMenu, HiOutlineX } from "react-icons/hi";
 
-export default function Navigation() {
+const NAV_ITEMS = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "admin", label: "Admin Panel" },
+];
+
+export default function Navigation({ activePage = "dashboard", onNavigate }) {
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleClick = (key) => {
+    onNavigate?.(key);
+    setMenuOpen(false);
+  };
 
   return (
     <header className="w-full">
       <nav className="flex items-center justify-between px-6 py-3 bg-[#0a1628] border-b border-slate-700/30">
         {/* Logo */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleClick("dashboard")}>
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center">
             <span className="text-white text-[11px] font-black">B</span>
           </div>
@@ -20,15 +30,18 @@ export default function Navigation() {
 
         {/* Desktop menu */}
         <ul className="hidden md:flex items-center gap-1">
-          {["Dashboard", "Cihazlar", "Ayarlar"].map((item) => (
-            <li key={item}>
-              <a
-                href="#"
-                className="text-[12px] text-slate-500 font-medium px-3 py-1.5 rounded-md
-                           hover:text-slate-200 hover:bg-slate-800/50 transition-colors"
+          {NAV_ITEMS.map((item) => (
+            <li key={item.key}>
+              <button
+                onClick={() => handleClick(item.key)}
+                className={`text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors cursor-pointer
+                  ${activePage === item.key
+                    ? "text-sky-400 bg-sky-500/10"
+                    : "text-slate-500 hover:text-slate-200 hover:bg-slate-800/50"
+                  }`}
               >
-                {item}
-              </a>
+                {item.label}
+              </button>
             </li>
           ))}
         </ul>
@@ -45,15 +58,18 @@ export default function Navigation() {
       {/* Mobile menu */}
       {menuOpen && (
         <div className="md:hidden bg-[#0a1628] border-b border-slate-700/30 px-6 py-2">
-          {["Dashboard", "Cihazlar", "Ayarlar"].map((item) => (
-            <a
-              key={item}
-              href="#"
-              className="block text-[12px] text-slate-500 font-medium py-2
-                         hover:text-slate-200 transition-colors"
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.key}
+              onClick={() => handleClick(item.key)}
+              className={`block w-full text-left text-[12px] font-medium py-2 transition-colors
+                ${activePage === item.key
+                  ? "text-sky-400"
+                  : "text-slate-500 hover:text-slate-200"
+                }`}
             >
-              {item}
-            </a>
+              {item.label}
+            </button>
           ))}
         </div>
       )}

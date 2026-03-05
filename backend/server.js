@@ -199,6 +199,34 @@ app.post('/api/keepalive', async (req, res) => {
 });
 
 // =============================================
+//  DISCONNECT — Bağlantıyı kopar
+// =============================================
+app.post('/api/disconnect', async (req, res) => {
+    try {
+        const data = await readJson(TARGET_PATH);
+        data.control = "deactivate";
+        await writeJson(TARGET_PATH, data);
+
+        // responses.json sıfırla
+        try {
+            const resp = await readJson(RESPONSES_PATH);
+            resp.status_response = { topic: "", data: "" };
+            await writeJson(RESPONSES_PATH, resp);
+        } catch {}
+
+        // Inactivity timer iptal
+        if (inactivityTimer) clearTimeout(inactivityTimer);
+        inactivityTimer = null;
+
+        console.log('[DISCONNECT] Bağlantı koparıldı');
+        res.json({ message: 'Bağlantı koparıldı' });
+    } catch (e) {
+        console.error('disconnect hata:', e);
+        res.status(500).json({ error: 'Bağlantı koparılamadı' });
+    }
+});
+
+// =============================================
 //  SEND-COMMAND
 // =============================================
 app.post('/api/send-command', async (req, res) => {

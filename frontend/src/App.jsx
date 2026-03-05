@@ -1,19 +1,13 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import Home from './pages/Home.jsx'
-import UpdateTarget from './components/UpdateTarget.jsx'
+import { useState } from "react";
+import Home from "./pages/Home.jsx";
+import Admin from "./pages/Admin.jsx";
 
+export default function App() {
+  const [page, setPage] = useState("dashboard");
 
-function App() {
+  if (page === "admin") {
+    return <Admin onNavigate={setPage} />;
+  }
 
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Home/>} />
-      </Routes>
-    </BrowserRouter>
-   
-
-  )
+  return <Home onNavigate={setPage} />;
 }
-
-export default App
