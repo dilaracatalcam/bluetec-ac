@@ -115,6 +115,42 @@ app.get('/', (_, res) => {
 });
 
 // =============================================
+//  YARDIMCI: Deactivate → Bekle → Activate döngüsü
+//  Eski kalıntı "ESP aktif" durumunu temizler,
+//  sonra gerçek aktiflik kontrolü yapar.
+//  denek.py her 1 saniyede target.json okur,
+//  bu yüzden deactivate sonrası 2s bekliyoruz.
+// =============================================
+const DEACTIVATE_WAIT_MS = 2000;
+
+async function deactivateThenActivate(data) {
+    // 1) Deactivate yaz
+    data.control = "deactivate";
+    await writeJson(TARGET_PATH, data);
+    console.log('[CYCLE] deactivate yazıldı');
+
+    // 2) responses.json'daki status'u sıfırla
+    //    ESP kapalıysa "ESP aktif" kalıntısı temizlenir
+    try {
+        const resp = await readJson(RESPONSES_PATH);
+        resp.status_response = { topic: "", data: "" };
+        await writeJson(RESPONSES_PATH, resp);
+    } catch {}
+
+    // 3) Bekle — denek.py bunu okusun, ESP'ye göndersin
+    await new Promise(r => setTimeout(r, DEACTIVATE_WAIT_MS));
+
+    // 4) Activate yaz
+    data.control = "activate";
+    await writeJson(TARGET_PATH, data);
+    console.log('[CYCLE] activate yazıldı');
+
+    // 5) ESP'nin cevap vermesi için bekle
+    //    ESP açıksa ~1-2s içinde "ESP aktif" yazar
+    await new Promise(r => setTimeout(r, DEACTIVATE_WAIT_MS));
+}
+
+// =============================================
 //  UPDATE-TARGET
 // =============================================
 app.post('/api/update-target', async (req, res) => {
@@ -126,8 +162,9 @@ app.post('/api/update-target', async (req, res) => {
     try {
         const data = await readJson(TARGET_PATH);
         data.target = newTarget;
-        data.control = "activate";
-        await writeJson(TARGET_PATH, data);
+
+        // Deactivate → Bekle → Activate döngüsü
+        await deactivateThenActivate(data);
 
         resetInactivityTimer();
 
@@ -140,17 +177,20 @@ app.post('/api/update-target', async (req, res) => {
 });
 
 // =============================================
-//  KEEPALIVE
+//  KEEPALIVE — Periyodik aktiflik kontrolü
+//  Deactivate → Bekle → Activate döngüsü ile
+//  ESP'nin gerçekten bağlı olup olmadığını doğrular.
 // =============================================
 app.post('/api/keepalive', async (req, res) => {
     try {
         const data = await readJson(TARGET_PATH);
-        data.control = "activate";
-        await writeJson(TARGET_PATH, data);
+
+        // Deactivate → Bekle → Activate döngüsü
+        await deactivateThenActivate(data);
 
         resetInactivityTimer();
 
-        console.log('[KEEPALIVE] activate gönderildi');
+        console.log('[KEEPALIVE] deactivate→activate döngüsü tamamlandı');
         res.json({ message: 'keepalive gönderildi' });
     } catch (e) {
         console.error('keepalive hata:', e);
@@ -200,6 +240,17 @@ app.post('/api/send-command', async (req, res) => {
         await writeJson(TARGET_PATH, data);
 
         resetInactivityTimer();
+
+        // denek.py'nin mesajı okuması için kısa bekle, sonra sıfırla.
+        // Bu sayede aynı komut tekrar gönderildiğinde
+        // denek.py "msg != last_message" koşulunu geçer.
+        setTimeout(async () => {
+            try {
+                const d = await readJson(TARGET_PATH);
+                d.send_message = "";
+                await writeJson(TARGET_PATH, d);
+            } catch {}
+        }, 1500);
 
         console.log(`Komut gönderildi: ${frame}`);
         res.json({ message: 'Komut gönderildi', frame });
@@ -270,33 +321,28 @@ app.get("/api/get-status", async (_, res) => {
         const data = await readJson(RESPONSES_PATH);
 
         // =============================================
-        // AKTİFLİK MANTIĞI (3 katmanlı kontrol):
+        // AKTİFLİK MANTIĞI:
         //
-        // 1) responses.json server başladıktan sonra güncellenmeli
-        // 2) Dosya yaşı ESP_TIMEOUT'tan küçük VEYA
-        //    status_response içinde "aktif" geçiyor olmalı
-        // 3) Timeout ile deactivate edilmemiş olmalı
+        // Keepalive her 20s'de deactivate→activate döngüsü yapar.
+        // Bu sayede responses.json'daki eski "ESP aktif" temizlenir.
+        // Eğer hâlâ "ESP aktif" yazıyorsa → ESP gerçekten bağlı.
         //
-        // Neden böyle?
-        // ESP sürekli mesaj göndermez. Komut yoksa responses.json
-        // güncellenmez. Ama status_response hâlâ "ESP aktif" diyorsa
-        // cihaz bağlı demektir.
+        // Ek kontrol: responses.json son 30s içinde güncellenmişse
+        // status henüz dönmemiş olabilir → "bekleniyor" durumu.
         // =============================================
 
         let espState = "nonactive";
 
         const statusText = data.status_response?.data || "";
-        const hasActiveStatus = statusText.toLowerCase().includes("aktif");
+        const hasActiveStatus = statusText.toLowerCase().includes("esp aktif");
+        const hasPasifStatus = statusText.toLowerCase().includes("esp pasif");
 
-        if (lastWrite > serverStartTime) {
-            if (ageSeconds <= ESP_TIMEOUT) {
-                // Dosya taze → kesinlikle aktif
-                espState = "active";
-            } else if (hasActiveStatus && ageSeconds <= ESP_TIMEOUT * 5) {
-                // Dosya biraz eski AMA status hâlâ "ESP aktif" diyor
-                // 5 dakikaya kadar aktif say (5 * 60 = 300 saniye)
-                espState = "active";
-            }
+        if (hasActiveStatus) {
+            // responses.json "ESP aktif" diyor → gerçek aktiflik
+            espState = "active";
+        } else if (!hasPasifStatus && ageSeconds <= 10) {
+            // Henüz ne aktif ne pasif, dosya çok taze → döngü devam ediyor
+            espState = "unknown";
         }
 
         // Kalan süreyi hesapla
@@ -327,7 +373,7 @@ app.get("/api/get-status", async (_, res) => {
     }
 });
 
-app.get('/responses', async (req, res) => {
+app.get('/api/responses', async (req, res) => {
     try {
         const data = await readJson(RESPONSES_PATH);
         res.json(data);

@@ -6,22 +6,26 @@ import ActionButton from "../components/ActionButton.jsx";
 import EditableRow from "../components/EditableRow.jsx";
 import { useState, useEffect, useCallback } from "react";
 
-// react-icons
 import {
   HiOutlineGlobeAlt, HiOutlineLink, HiOutlineQrCode,
   HiOutlineBolt, HiOutlineWifi, HiOutlineLockClosed,
-  HiOutlineSignal, HiOutlinePhone, HiOutlineBuildingStorefront,
-  HiOutlinePaintBrush, HiOutlinePhoto, HiOutlineTag,
+  HiOutlinePhone, HiOutlinePhoto, HiOutlineTag,
   HiOutlineCog6Tooth, HiOutlineArrowPath, HiOutlineStop,
   HiOutlineCpuChip, HiOutlineClock, HiOutlineExclamationTriangle,
   HiOutlineArrowUpTray, HiOutlineKey, HiOutlineIdentification,
-  HiOutlineAdjustmentsHorizontal, HiOutlineCommandLine
+  HiOutlineAdjustmentsHorizontal, HiOutlineCommandLine,
+  HiOutlinePencilSquare
 } from "react-icons/hi2";
 import { TbPlugConnected, TbBrandApple, TbBrandGooglePlay, TbGauge, TbColorSwatch, TbTargetArrow, TbActivity, TbAlertCircle } from "react-icons/tb";
 import { BsLightningCharge, BsBattery, BsUsbSymbol, BsShieldLock } from "react-icons/bs";
 import { MdOutlineRestartAlt, MdSignalCellularAlt } from "react-icons/md";
 
-/* ── Parametre Tanımları ── */
+/* ── Parametre Tanımları ──
+   readOnly: sadece read butonu (InfoRow)
+   editable: edit modunda read + save (EditableRow)
+*/
+
+// Read-only parametreler (OCPP & WiFi — sadece okunur)
 const OCPP_WIFI = [
   { id: 0,  icon: <HiOutlineIdentification />, label: "ESP ID" },
   { id: 1,  icon: <HiOutlineGlobeAlt />,       label: "OCPP URL" },
@@ -32,16 +36,33 @@ const OCPP_WIFI = [
   { id: 6,  icon: <HiOutlineLockClosed />,     label: "WiFi Şifre" },
 ];
 
+// Editable parametreler (UI ayarları — set + read)
 const UI_PARAMS = [
-  { id: 7,  icon: <TbPlugConnected />,         label: "Bağlantı Türü" },
-  { id: 9,  icon: <HiOutlinePhone />,          label: "Tel" },
+  { id: 7,  icon: <TbPlugConnected />,         label: "Bağlantı Türü",
+    type: "dropdown", options: [
+      { value: "0", label: "CommSupported" },
+      { value: "1", label: "GSM" },
+      { value: "2", label: "WiFi" },
+      { value: "3", label: "ETH" },
+    ]},
+  { id: 9,  icon: <HiOutlinePhone />,          label: "Şirket Tel", type: "phone" },
   { id: 10, icon: <HiOutlineGlobeAlt />,       label: "Site" },
   { id: 11, icon: <TbBrandApple />,            label: "Appstore" },
   { id: 12, icon: <TbBrandGooglePlay />,       label: "Play Store" },
-  { id: 13, icon: <HiOutlinePhoto />,          label: "Logo / Yazı" },
-  { id: 14, icon: <HiOutlineTag />,            label: "Şirket Adı" },
-  { id: 35, icon: <TbColorSwatch />,           label: "Gradient/Renk" },
-  { id: 36, icon: <TbTargetArrow />,           label: "Renk Seçimi" },
+  { id: 13, icon: <HiOutlinePhoto />,          label: "Logo / Yazı",
+    type: "dropdown", options: [
+      { value: "1", label: "Logo" },
+      { value: "0", label: "Yazı" },
+    ]},
+  { id: 14, icon: <HiOutlineTag />,            label: "Şirket Adı", dependsOn: 13, dependsValue: "0" },
+  { id: 35, icon: <TbColorSwatch />,           label: "Gradient/Renk",
+    type: "dropdown", options: [
+      { value: "1", label: "Gradient" },
+      { value: "0", label: "Renk" },
+    ]},
+  { id: 36, icon: <TbTargetArrow />,           label: "Renk Seçimi",
+    type: "color", dependsOn: 35, dependsValue: "0",
+    depMessage: "Renk seçimi yapabilmek için lütfen Gradient seçmeyin" },
 ];
 
 const MSP_CONFIG = [
@@ -78,7 +99,9 @@ const OTA = [
 function mapValue(id, raw) {
   if (raw === undefined || raw === null) return "——";
   const v = String(raw);
+  if (id === 7) return ({ "0": "CommSupported", "1": "GSM", "2": "WiFi", "3": "ETH" })[v] || v;
   if (id === 13) return v === "0" ? "Yazı" : v === "1" ? "Logo" : v;
+  if (id === 35) return v === "0" ? "Renk" : v === "1" ? "Gradient" : v;
   if (id === 27) return v === "0" ? "Hata Yok" : `Hata: ${v}`;
   if (id === 25) return ({ "0": "Beklemede", "1": "Şarj Oluyor", "2": "Tamamlandı" })[v] || v;
   return v;
@@ -116,7 +139,7 @@ export default function Home() {
   useEffect(() => {
     if (!isConnected) return;
     const f = () => fetch("/api/keepalive", { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => {});
-    f(); const iv = setInterval(f, 20000);
+    f(); const iv = setInterval(f, 5 * 60 * 1000); // 5 dakikada bir
     return () => clearInterval(iv);
   }, [isConnected]);
 
@@ -124,16 +147,39 @@ export default function Home() {
     if (!isConnected) { setReadValues({}); setSetOkMap({}); return; }
     const f = async () => {
       try {
-        const r = await fetch("/responses");
+        const r = await fetch("/api/responses");
         const j = await r.json();
         const ok = {}, rv = {};
-        (j.message_response || []).forEach((r) => {
-          if (r?.data === "SET OK") ok[r.msg] = true;
-          if (r?.cmd === 2) rv[r.msg] = r.data;
+        
+        const msgs = j.message_response || [];
+        msgs.forEach((entry) => {
+          if (!entry) return;
+          const cmd = Number(entry.cmd);
+          const msg = Number(entry.msg);
+          const data = entry.data;
+          
+          // SET OK kontrolü (cmd=1, data="SET OK")
+          if (data === "SET OK") {
+            ok[msg] = true;
+          }
+          // READ cevabı (cmd=2)
+          if (cmd === 2 && data !== undefined && data !== null) {
+            rv[msg] = data;
+          }
         });
-        setSetOkMap(ok);
-        setReadValues((p) => ({ ...p, ...rv }));
-      } catch {}
+
+        if (Object.keys(rv).length > 0) {
+          console.log("[POLL] READ:", rv);
+        }
+        if (Object.keys(ok).length > 0) {
+          console.log("[POLL] SET OK:", ok);
+        }
+
+        setSetOkMap((prev) => ({ ...prev, ...ok }));
+        setReadValues((prev) => ({ ...prev, ...rv }));
+      } catch (e) {
+        console.error("[POLL] Hata:", e);
+      }
     };
     f(); const iv = setInterval(f, 2000);
     return () => clearInterval(iv);
@@ -148,7 +194,14 @@ export default function Home() {
       });
       const d = await r.json();
       if (!r.ok) { setMessage(d.message || "Hata"); return false; }
-      setMessage(`✓ ${d.frame}`);
+
+      // SET yapıldıysa → gönderilen değeri hemen UI'da göster
+      if (type === "set" && value !== undefined && value !== null) {
+        setReadValues((prev) => ({ ...prev, [variable]: String(value) }));
+      }
+
+      setMessage(type === "set" ? "Değer gönderildi…" : "Okunuyor…");
+      setTimeout(() => setMessage(""), 3000);
       return true;
     } catch { setMessage("Sunucuya ulaşılamadı"); return false; }
   }, [isActive]);
@@ -175,6 +228,145 @@ export default function Home() {
   })();
 
   const V = (id) => mapValue(id, readValues[id]);
+
+  /* ── Toplu Read — sırayla oku, doğrula, başarısızsa işaretle ── */
+  const [batchReadingId, setBatchReadingId] = useState(null);
+  const [batchProgress, setBatchProgress] = useState("");
+  const [failedReads, setFailedReads] = useState({});
+
+  const batchRead = async (params, panelId) => {
+    if (!isActive || batchReadingId) return;
+    setBatchReadingId(panelId);
+    const failed = {};
+
+    for (let i = 0; i < params.length; i++) {
+      const p = params[i];
+      setBatchProgress(`${p.label} okunuyor… (${i + 1}/${params.length})`);
+
+      await sendCommand("read", p.id);
+      await new Promise((r) => setTimeout(r, 2500));
+
+      // Değer geldi mi kontrol et
+      let success = false;
+      for (let retry = 0; retry < 2; retry++) {
+        try {
+          const resp = await fetch("/api/responses");
+          const j = await resp.json();
+          const msgs = j.message_response || [];
+          const found = msgs.find(
+            (m) => Number(m.cmd) === 2 && Number(m.msg) === p.id
+          );
+          if (found && found.data !== undefined && found.data !== null) {
+            setReadValues((prev) => ({ ...prev, [p.id]: found.data }));
+            success = true;
+            break;
+          }
+        } catch {}
+        if (retry === 0) await new Promise((r) => setTimeout(r, 2000));
+      }
+
+      failed[p.id] = !success;
+    }
+
+    setFailedReads((prev) => ({ ...prev, ...failed }));
+
+    const failCount = Object.values(failed).filter(Boolean).length;
+    setBatchProgress("");
+    setBatchReadingId(null);
+
+    if (failCount > 0) {
+      setMessage(`${params.length - failCount} değer okundu, ${failCount} değer okunamadı ⚠️`);
+    } else {
+      setMessage("Tüm değerler okundu ✓");
+    }
+    setTimeout(() => setMessage(""), 4000);
+  };
+
+  /* ── Toplu Set — tüm inputları aç, sırayla kaydet ── */
+  const [bulkEditingId, setBulkEditingId] = useState(null); // "ocpp" | "ui" | null
+  const [bulkDrafts, setBulkDrafts] = useState({});         // { paramId: "value" }
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState("");
+  const [failedSets, setFailedSets] = useState({});
+
+  const startBulkEdit = (params, panelId) => {
+    if (!isActive || bulkSaving) return;
+    // Mevcut değerlerle doldur
+    const drafts = {};
+    params.forEach((p) => {
+      const v = readValues[p.id];
+      drafts[p.id] = (v !== undefined && v !== null && v !== "——") ? String(v) : "";
+    });
+    setBulkDrafts(drafts);
+    setBulkEditingId(panelId);
+    setFailedSets({});
+  };
+
+  const cancelBulkEdit = () => {
+    setBulkEditingId(null);
+    setBulkDrafts({});
+  };
+
+  const updateBulkDraft = (id, value) => {
+    setBulkDrafts((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const batchSet = async (params, panelId) => {
+    if (!isActive || bulkSaving) return;
+    setBulkSaving(true);
+    const failed = {};
+
+    // Sadece değeri değişen parametreleri gönder
+    const toSend = params.filter((p) => {
+      const draft = bulkDrafts[p.id] ?? "";
+      return draft !== "" ; // boş bırakılanları atla
+    });
+
+    for (let i = 0; i < toSend.length; i++) {
+      const p = toSend[i];
+      const val = bulkDrafts[p.id];
+      setBulkProgress(`${p.label} kaydediliyor… (${i + 1}/${toSend.length})`);
+
+      // SET komutu gönder
+      const ok = await sendCommand("set", p.id, val);
+      await new Promise((r) => setTimeout(r, 2500));
+
+      // SET OK geldi mi kontrol et
+      let success = false;
+      for (let retry = 0; retry < 2; retry++) {
+        try {
+          const resp = await fetch("/api/responses");
+          const j = await resp.json();
+          const msgs = j.message_response || [];
+          const found = msgs.find(
+            (m) => Number(m.msg) === p.id && m.data === "SET OK"
+          );
+          if (found) {
+            success = true;
+            break;
+          }
+        } catch {}
+        if (retry === 0) await new Promise((r) => setTimeout(r, 2000));
+      }
+
+      failed[p.id] = !success;
+    }
+
+    setFailedSets((prev) => ({ ...prev, ...failed }));
+
+    const failCount = Object.values(failed).filter(Boolean).length;
+    setBulkProgress("");
+    setBulkSaving(false);
+    setBulkEditingId(null);
+    setBulkDrafts({});
+
+    if (failCount > 0) {
+      setMessage(`${toSend.length - failCount} değer kaydedildi, ${failCount} değer kaydedilemedi ⚠️`);
+    } else {
+      setMessage(`${toSend.length} değer başarıyla kaydedildi ✓`);
+    }
+    setTimeout(() => setMessage(""), 4000);
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-[#070e1a] text-slate-100">
@@ -217,23 +409,132 @@ export default function Home() {
           {/* Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
+            {/* OCPP & WiFi — read-only, her satırda oku butonu */}
             <Panel icon={<HiOutlineGlobeAlt />} title="OCPP & WiFi Ayarları">
               {OCPP_WIFI.map((p, i) => (
                 <InfoRow key={p.id} icon={p.icon} label={p.label}
                   value={V(p.id)} valueColor={p.id === 5 ? "green" : undefined}
+                  disabled={!isActive}
+                  failed={failedReads[p.id]}
+                  onRead={() => { setFailedReads((prev) => ({ ...prev, [p.id]: false })); sendCommand("read", p.id); }}
                   last={i === OCPP_WIFI.length - 1} />
               ))}
+
+              {/* Toplu Read butonu */}
+              <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-700/25">
+                {batchReadingId === "ocpp" && batchProgress ? (
+                  <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">
+                    {batchProgress}
+                  </span>
+                ) : <span />}
+                <button
+                  onClick={() => batchRead(OCPP_WIFI, "ocpp")}
+                  disabled={!isActive || !!batchReadingId}
+                  className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                    ${(!isActive || !!batchReadingId)
+                      ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                      : "bg-sky-600/20 text-sky-400 border-sky-500/30 hover:bg-sky-600/30 cursor-pointer"
+                    }`}
+                >
+                  <HiOutlineArrowPath className={`text-[12px] ${batchReadingId === "ocpp" ? "animate-spin" : ""}`} />
+                  {batchReadingId === "ocpp" ? "Okunuyor…" : "Tümünü Oku"}
+                </button>
+              </div>
             </Panel>
 
+            {/* UI — editable, edit modunda oku + kaydet */}
             <Panel icon={<TbPlugConnected />} title="Bağlantı & UI Ayarları">
-              {UI_PARAMS.map((p, i) => (
-                <EditableRow key={p.id} icon={p.icon} label={p.label} id={p.id}
-                  value={V(p.id)} setOk={setOkMap[p.id]} disabled={!isActive}
-                  onSet={(id, val) => sendCommand("set", id, val)}
-                  last={i === UI_PARAMS.length - 1} />
-              ))}
+              {UI_PARAMS.map((p, i) => {
+                // Bağımlılık: id 14 (Şirket Adı) sadece id 13 = "0" (Yazı) ise aktif
+                const depDisabled = p.dependsOn !== undefined
+                  ? String(readValues[p.dependsOn] ?? "") !== p.dependsValue
+                  : false;
+
+                return (
+                  <EditableRow key={p.id} icon={p.icon} label={p.label} id={p.id}
+                    value={V(p.id)} setOk={setOkMap[p.id]}
+                    disabled={!isActive || depDisabled}
+                    depDisabled={depDisabled}
+                    depMessage={p.depMessage}
+                    failed={failedReads[p.id]}
+                    setFailed={failedSets[p.id]}
+                    inputType={p.type}
+                    options={p.options}
+                    bulkEditing={bulkEditingId === "ui" && !depDisabled}
+                    bulkDraft={bulkDrafts[p.id] ?? ""}
+                    onBulkDraftChange={updateBulkDraft}
+                    onSet={(id, val) => sendCommand("set", id, val)}
+                    onRead={(id) => { setFailedReads((prev) => ({ ...prev, [id]: false })); sendCommand("read", id); }}
+                    last={i === UI_PARAMS.length - 1} />
+                );
+              })}
+
+              {/* Toplu Set / Read butonları */}
+              <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-700/25">
+                {/* Progress */}
+                {(batchReadingId === "ui" && batchProgress) ? (
+                  <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">{batchProgress}</span>
+                ) : (bulkSaving && bulkProgress) ? (
+                  <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">{bulkProgress}</span>
+                ) : <span />}
+
+                <div className="flex items-center gap-2">
+                  {/* Toplu Set butonu */}
+                  {bulkEditingId === "ui" ? (
+                    <>
+                      <button
+                        onClick={cancelBulkEdit}
+                        className="text-[10px] font-semibold px-2.5 py-[4px] rounded-md
+                                   bg-slate-800/50 text-slate-500 border border-slate-600/30
+                                   hover:text-slate-300 transition cursor-pointer">
+                        İptal
+                      </button>
+                      <button
+                        onClick={() => batchSet(UI_PARAMS, "ui")}
+                        disabled={!isActive || bulkSaving}
+                        className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                          ${(!isActive || bulkSaving)
+                            ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                            : "bg-emerald-600/80 text-white border-emerald-500/50 hover:bg-emerald-600 cursor-pointer"
+                          }`}
+                      >
+                        <HiOutlinePencilSquare className={`text-[12px] ${bulkSaving ? "animate-spin" : ""}`} />
+                        {bulkSaving ? "Kaydediliyor…" : "Tümünü Kaydet"}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => startBulkEdit(UI_PARAMS, "ui")}
+                      disabled={!isActive || !!bulkEditingId || !!batchReadingId || bulkSaving}
+                      className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                        ${(!isActive || !!bulkEditingId || !!batchReadingId || bulkSaving)
+                          ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                          : "bg-amber-600/20 text-amber-400 border-amber-500/30 hover:bg-amber-600/30 cursor-pointer"
+                        }`}
+                    >
+                      <HiOutlinePencilSquare className="text-[12px]" />
+                      Toplu Edit
+                    </button>
+                  )}
+
+                  {/* Toplu Read butonu */}
+                  <button
+                    onClick={() => batchRead(UI_PARAMS, "ui")}
+                    disabled={!isActive || !!batchReadingId || !!bulkEditingId || bulkSaving}
+                    className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                      ${(!isActive || !!batchReadingId || !!bulkEditingId || bulkSaving)
+                        ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                        : "bg-sky-600/20 text-sky-400 border-sky-500/30 hover:bg-sky-600/30 cursor-pointer"
+                      }`}
+                  >
+                    <HiOutlineArrowPath className={`text-[12px] ${batchReadingId === "ui" ? "animate-spin" : ""}`} />
+                    {batchReadingId === "ui" ? "Okunuyor…" : "Tümünü Oku"}
+                  </button>
+                </div>
+              </div>
             </Panel>
 
+            {/* MSP */}
             <Panel icon={<HiOutlineCog6Tooth />} title="MSP Konfigürasyon">
               <div className="grid grid-cols-2 gap-2 py-1">
                 {MSP_CONFIG.map((p) =>
@@ -251,6 +552,7 @@ export default function Home() {
               </div>
             </Panel>
 
+            {/* ESP Kontrol */}
             <Panel icon={<HiOutlineCpuChip />} title="ESP Kontrol">
               <div className="grid grid-cols-2 gap-2 py-1">
                 {ESP_CTRL.map((p) => (
@@ -285,15 +587,60 @@ export default function Home() {
             </div>
           </div>
 
-          {/* OTA */}
+          {/* OTA — editable */}
           <div className="mt-4">
             <Panel icon={<HiOutlineArrowUpTray />} title="OTA Konfigürasyon">
               {OTA.map((p, i) => (
                 <EditableRow key={p.id} icon={p.icon} label={p.label} id={p.id}
                   value={V(p.id)} setOk={setOkMap[p.id]} disabled={!isActive}
+                  failed={failedReads[p.id]}
+                  setFailed={failedSets[p.id]}
+                  bulkEditing={bulkEditingId === "ota"}
+                  bulkDraft={bulkDrafts[p.id] ?? ""}
+                  onBulkDraftChange={updateBulkDraft}
                   onSet={(id, val) => sendCommand("set", id, val)}
+                  onRead={(id) => { setFailedReads((prev) => ({ ...prev, [id]: false })); sendCommand("read", id); }}
                   last={i === OTA.length - 1} />
               ))}
+
+              <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-700/25">
+                {bulkSaving && bulkProgress ? (
+                  <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">{bulkProgress}</span>
+                ) : <span />}
+                <div className="flex items-center gap-2">
+                  {bulkEditingId === "ota" ? (
+                    <>
+                      <button onClick={cancelBulkEdit}
+                        className="text-[10px] font-semibold px-2.5 py-[4px] rounded-md
+                                   bg-slate-800/50 text-slate-500 border border-slate-600/30
+                                   hover:text-slate-300 transition cursor-pointer">
+                        İptal
+                      </button>
+                      <button onClick={() => batchSet(OTA, "ota")}
+                        disabled={!isActive || bulkSaving}
+                        className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                          ${(!isActive || bulkSaving)
+                            ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                            : "bg-emerald-600/80 text-white border-emerald-500/50 hover:bg-emerald-600 cursor-pointer"
+                          }`}>
+                        <HiOutlinePencilSquare className={`text-[12px] ${bulkSaving ? "animate-spin" : ""}`} />
+                        {bulkSaving ? "Kaydediliyor…" : "Tümünü Kaydet"}
+                      </button>
+                    </>
+                  ) : (
+                    <button onClick={() => startBulkEdit(OTA, "ota")}
+                      disabled={!isActive || !!bulkEditingId || bulkSaving}
+                      className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                        ${(!isActive || !!bulkEditingId || bulkSaving)
+                          ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                          : "bg-amber-600/20 text-amber-400 border-amber-500/30 hover:bg-amber-600/30 cursor-pointer"
+                        }`}>
+                      <HiOutlinePencilSquare className="text-[12px]" />
+                      Toplu Edit
+                    </button>
+                  )}
+                </div>
+              </div>
             </Panel>
           </div>
 
