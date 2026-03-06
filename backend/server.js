@@ -224,7 +224,9 @@ const VAR_MAP = {
     charge_state: 25, uart: 26, error: 27,
     log_verbose: 28, log_debug: 29, log_info: 30,
     ota_active: 31, ota_key: 32, ota_version: 33, gsm_signal: 34,
-    gradient_or_color: 35, select_color: 36
+    gradient_or_color: 35, select_color: 36,
+    cp_vendor: 39, cp_model: 40, cp_serial: 41,
+    meter_serial: 42, meter_type: 43, box_serial: 44
 };
 
 app.get('/', (_, res) => {
@@ -363,7 +365,8 @@ app.post('/api/send-command', requireAuth(["dashboard", "admin"]), async (req, r
         22, 23, 24, 25, 26, 27,            // Runtime / Telemetry
         28, 29, 30,                         // LOG tipleri
         31, 32, 33, 34,                     // OTA + GSM Signal
-        35, 36                              // Gradient/Color
+        35, 36,                             // Gradient/Color
+        39, 40, 41, 42, 43, 44             // OCPP Credentials
     ];
 
     if (!VALID_IDS.includes(varCode)) {

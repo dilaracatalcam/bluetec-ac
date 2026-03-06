@@ -1,9 +1,9 @@
 import Navigation from "../components/Navigation.jsx";
 import Panel from "../components/Panel.jsx";
-import InfoRow from "../components/InfoRow.jsx";
 import MetricCard from "../components/MetricCard.jsx";
 import ActionButton from "../components/ActionButton.jsx";
 import EditableRow from "../components/EditableRow.jsx";
+import InfoRow from "../components/InfoRow.jsx";
 import { useState, useEffect, useCallback } from "react";
 
 import {
@@ -12,9 +12,11 @@ import {
   HiOutlinePhone, HiOutlinePhoto, HiOutlineTag,
   HiOutlineCog6Tooth, HiOutlineArrowPath, HiOutlineStop,
   HiOutlineCpuChip, HiOutlineClock, HiOutlineExclamationTriangle,
-  HiOutlineArrowUpTray, HiOutlineKey, HiOutlineIdentification,
+  HiOutlineArrowUpTray, HiOutlineKey,
   HiOutlineAdjustmentsHorizontal, HiOutlineCommandLine,
-  HiOutlinePencilSquare
+  HiOutlinePencilSquare, HiOutlineIdentification,
+  HiOutlineWrenchScrewdriver, HiOutlineServerStack,
+  HiOutlineFingerPrint, HiOutlineCircleStack
 } from "react-icons/hi2";
 import { TbPlugConnected, TbBrandApple, TbBrandGooglePlay, TbGauge, TbColorSwatch, TbTargetArrow, TbActivity, TbAlertCircle } from "react-icons/tb";
 import { BsLightningCharge, BsBattery, BsUsbSymbol, BsShieldLock } from "react-icons/bs";
@@ -25,9 +27,8 @@ import { MdOutlineRestartAlt, MdSignalCellularAlt } from "react-icons/md";
    editable: edit modunda read + save (EditableRow)
 */
 
-// Read-only parametreler (OCPP & WiFi — sadece okunur)
+// OCPP & WiFi parametreleri (set + read)
 const OCPP_WIFI = [
-  { id: 0,  icon: <HiOutlineIdentification />, label: "ESP ID" },
   { id: 1,  icon: <HiOutlineGlobeAlt />,       label: "OCPP URL" },
   { id: 2,  icon: <HiOutlineLink />,           label: "OCPP ID" },
   { id: 3,  icon: <HiOutlineQrCode />,         label: "QR Kod" },
@@ -66,13 +67,21 @@ const UI_PARAMS = [
 ];
 
 const MSP_CONFIG_BASE = [
-  { id: 15, icon: <MdOutlineRestartAlt />,     label: "Cihaz Reset", color: "red" },
+  { id: 15, icon: <MdOutlineRestartAlt />,     label: "Cihaz Reset", isToggle: true, color: "red" },
 ];
 
 const MSP_CONFIG_ADMIN = [
   { id: 16, icon: <TbGauge />,                 label: "AC Ölçer",    color: "red" },
-  { id: 19, icon: <HiOutlineCommandLine />,    label: "Test Modu",   color: "red" },
-  { id: 18, icon: <HiOutlineCpuChip />,        label: "Model",       isInfo: true },
+  { id: 19, icon: <HiOutlineCommandLine />,    label: "Mod",
+    isDropdown: true, options: [
+      { value: "0", label: "Ürün Modu" },
+      { value: "1", label: "Test Modu" },
+    ]},
+  { id: 18, icon: <HiOutlineCpuChip />,        label: "Model",
+    isDropdown: true, options: [
+      { value: "0", label: "Kablosuz" },
+      { value: "1", label: "Kablolu" },
+    ]},
 ];
 
 const OTA = [
@@ -98,6 +107,16 @@ const TELEMETRY = [
   { id: 26, icon: <BsUsbSymbol />,             label: "UART" },
 ];
 
+// OCPP Credentials (set + read panelde, sadece read dashboardda)
+const OCPP_CREDS = [
+  { id: 39, icon: <HiOutlineIdentification />,     label: "CP Vendor" },
+  { id: 40, icon: <HiOutlineServerStack />,         label: "CP Model" },
+  { id: 41, icon: <HiOutlineFingerPrint />,         label: "CP Seri No" },
+  { id: 42, icon: <HiOutlineCircleStack />,         label: "Meter Seri No" },
+  { id: 43, icon: <HiOutlineWrenchScrewdriver />,   label: "Meter Tipi" },
+  { id: 44, icon: <HiOutlineTag />,                 label: "Box Seri No" },
+];
+
 /* ── Helpers ── */
 function mapValue(id, raw) {
   if (raw === undefined || raw === null) return "——";
@@ -107,6 +126,9 @@ function mapValue(id, raw) {
   if (id === 35) return v === "0" ? "Renk" : v === "1" ? "Gradient" : v;
   if (id === 27) return v === "0" ? "Hata Yok" : `Hata: ${v}`;
   if (id === 25) return ({ "0": "Beklemede", "1": "Şarj Oluyor", "2": "Tamamlandı" })[v] || v;
+  if (id === 19) return v === "0" ? "Ürün Modu" : v === "1" ? "Test Modu" : v;
+  if (id === 18) return v === "0" ? "Kablosuz" : v === "1" ? "Kablolu" : v;
+  if (id === 15) return v === "0" ? "Kapalı" : v === "1" ? "Aktif" : v;
   return v;
 }
 function csColor(raw) {
@@ -306,7 +328,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     setBatchReadingId(null);
 
     if (failCount > 0) {
-      setMessage(`${params.length - failCount} değer okundu, ${failCount} değer okunamadı `);
+      setMessage(`${params.length - failCount} değer okundu, ${failCount} değer okunamadı ⚠️`);
     } else {
       setMessage("Tüm değerler okundu ✓");
     }
@@ -353,16 +375,15 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       return draft !== "" ; // boş bırakılanları atla
     });
 
+    // --- İlk deneme ---
     for (let i = 0; i < toSend.length; i++) {
       const p = toSend[i];
       const val = bulkDrafts[p.id];
       setBulkProgress(`${p.label} kaydediliyor… (${i + 1}/${toSend.length})`);
 
-      // SET komutu gönder
-      const ok = await sendCommand("set", p.id, val);
+      await sendCommand("set", p.id, val);
       await new Promise((r) => setTimeout(r, 2500));
 
-      // SET OK geldi mi kontrol et
       let success = false;
       for (let retry = 0; retry < 2; retry++) {
         try {
@@ -374,6 +395,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
           );
           if (found) {
             success = true;
+            setSetOkMap((prev) => ({ ...prev, [p.id]: true }));
             break;
           }
         } catch {}
@@ -383,20 +405,77 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       failed[p.id] = !success;
     }
 
+    // --- Başarısız olanları tekrar dene ---
+    const failedItems = toSend.filter((p) => failed[p.id]);
+
+    if (failedItems.length > 0) {
+      const failedNames = failedItems.map((p) => p.label).join(", ");
+      setBulkProgress(`${failedNames} kaydedilemedi, tekrar deneniyor…`);
+      setFailedSets((prev) => {
+        const updated = { ...prev };
+        failedItems.forEach((p) => { updated[p.id] = true; });
+        return updated;
+      });
+
+      await new Promise((r) => setTimeout(r, 1500));
+
+      for (let i = 0; i < failedItems.length; i++) {
+        const p = failedItems[i];
+        const val = bulkDrafts[p.id];
+        setBulkProgress(`${p.label} tekrar kaydediliyor… (${i + 1}/${failedItems.length})`);
+
+        await sendCommand("set", p.id, val);
+        await new Promise((r) => setTimeout(r, 3000));
+
+        let success = false;
+        for (let retry = 0; retry < 3; retry++) {
+          try {
+            const resp = await authFetch("/api/responses");
+            const j = await resp.json();
+            const msgs = j.message_response || [];
+            const found = msgs.find(
+              (m) => Number(m.msg) === p.id && m.data === "SET OK"
+            );
+            if (found) {
+              success = true;
+              setSetOkMap((prev) => ({ ...prev, [p.id]: true }));
+              break;
+            }
+          } catch {}
+          if (retry < 2) await new Promise((r) => setTimeout(r, 2000));
+        }
+
+        failed[p.id] = !success;
+      }
+    }
+
     setFailedSets((prev) => ({ ...prev, ...failed }));
 
-    const failCount = Object.values(failed).filter(Boolean).length;
+    // Başarılı olan değerleri readValues'a yaz — kapanınca yeni değerler görünsün
+    const successValues = {};
+    toSend.forEach((p) => {
+      if (!failed[p.id]) {
+        successValues[p.id] = bulkDrafts[p.id];
+      }
+    });
+    setReadValues((prev) => ({ ...prev, ...successValues }));
+
+    const finalFailCount = Object.values(failed).filter(Boolean).length;
+    const retried = failedItems.length > 0;
     setBulkProgress("");
     setBulkSaving(false);
     setBulkEditingId(null);
     setBulkDrafts({});
 
-    if (failCount > 0) {
-      setMessage(`${toSend.length - failCount} değer kaydedildi, ${failCount} değer kaydedilemedi `);
+    if (finalFailCount > 0) {
+      const stillFailedNames = toSend.filter((p) => failed[p.id]).map((p) => p.label).join(", ");
+      setMessage(`${toSend.length - finalFailCount} değer kaydedildi, ${stillFailedNames} kaydedilemedi ⚠️`);
+    } else if (retried) {
+      setMessage(`${toSend.length} değer kaydedildi (${failedItems.length} tanesi tekrar denemede başarılı) ✓`);
     } else {
       setMessage(`${toSend.length} değer başarıyla kaydedildi ✓`);
     }
-    setTimeout(() => setMessage(""), 4000);
+    setTimeout(() => setMessage(""), 5000);
   };
 
   return (
@@ -449,46 +528,89 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
           {/* Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-            {/* OCPP & WiFi — read-only, her satırda oku butonu */}
+            {/* OCPP & WiFi Ayarları (Panel component) */}
             <Panel icon={<HiOutlineGlobeAlt />} title="OCPP & WiFi Ayarları">
               {OCPP_WIFI.map((p, i) => (
-                <InfoRow key={p.id} icon={p.icon} label={p.label}
-                  value={V(p.id)} valueColor={p.id === 5 ? "green" : undefined}
-                  disabled={!isActive}
+                <EditableRow key={p.id} icon={p.icon} label={p.label} id={p.id}
+                  value={V(p.id)} setOk={setOkMap[p.id]} disabled={!isActive}
                   failed={failedReads[p.id]}
-                  onRead={() => { setFailedReads((prev) => ({ ...prev, [p.id]: false })); sendCommand("read", p.id); }}
+                  setFailed={failedSets[p.id]}
+                  bulkEditing={bulkEditingId === "ocpp"}
+                  bulkDraft={bulkDrafts[p.id] ?? ""}
+                  onBulkDraftChange={updateBulkDraft}
+                  onSet={(id, val) => sendCommand("set", id, val)}
+                  onRead={(id) => { setFailedReads((prev) => ({ ...prev, [id]: false })); sendCommand("read", id); }}
                   last={i === OCPP_WIFI.length - 1} />
               ))}
 
-              {/* Toplu Read butonu */}
+              {/* Toplu Set / Read butonları */}
               <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-700/25">
-                {batchReadingId === "ocpp" && batchProgress ? (
-                  <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">
-                    {batchProgress}
-                  </span>
+                {(batchReadingId === "ocpp" && batchProgress) ? (
+                  <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">{batchProgress}</span>
+                ) : (bulkSaving && bulkProgress) ? (
+                  <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">{bulkProgress}</span>
                 ) : <span />}
-                <button
-                  onClick={() => batchRead(OCPP_WIFI, "ocpp")}
-                  disabled={!isActive || !!batchReadingId}
-                  className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
-                    ${(!isActive || !!batchReadingId)
-                      ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
-                      : "bg-sky-600/20 text-sky-400 border-sky-500/30 hover:bg-sky-600/30 cursor-pointer"
-                    }`}
-                >
-                  <HiOutlineArrowPath className={`text-[12px] ${batchReadingId === "ocpp" ? "animate-spin" : ""}`} />
-                  {batchReadingId === "ocpp" ? "Okunuyor…" : "Tümünü Oku"}
-                </button>
+
+                <div className="flex items-center gap-2">
+                  {bulkEditingId === "ocpp" ? (
+                    <>
+                      <button onClick={cancelBulkEdit}
+                        className="text-[10px] font-semibold px-2.5 py-[4px] rounded-md
+                                   bg-slate-800/50 text-slate-500 border border-slate-600/30
+                                   hover:text-slate-300 transition cursor-pointer">
+                        İptal
+                      </button>
+                      <button onClick={() => batchSet(OCPP_WIFI, "ocpp")}
+                        disabled={!isActive || bulkSaving}
+                        className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                          ${(!isActive || bulkSaving)
+                            ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                            : "bg-emerald-600/80 text-white border-emerald-500/50 hover:bg-emerald-600 cursor-pointer"
+                          }`}>
+                        <HiOutlinePencilSquare className={`text-[12px] ${bulkSaving ? "animate-spin" : ""}`} />
+                        {bulkSaving ? "Kaydediliyor…" : "Tümünü Kaydet"}
+                      </button>
+                    </>
+                  ) : (
+                    <button onClick={() => startBulkEdit(OCPP_WIFI, "ocpp")}
+                      disabled={!isActive || !!bulkEditingId || !!batchReadingId || bulkSaving}
+                      className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                        ${(!isActive || !!bulkEditingId || !!batchReadingId || bulkSaving)
+                          ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                          : "bg-amber-600/20 text-amber-400 border-amber-500/30 hover:bg-amber-600/30 cursor-pointer"
+                        }`}>
+                      <HiOutlinePencilSquare className="text-[12px]" />
+                      Toplu Edit
+                    </button>
+                  )}
+
+                  <button onClick={() => batchRead(OCPP_WIFI, "ocpp")}
+                    disabled={!isActive || !!batchReadingId || !!bulkEditingId || bulkSaving}
+                    className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                      ${(!isActive || !!batchReadingId || !!bulkEditingId || bulkSaving)
+                        ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                        : "bg-sky-600/20 text-sky-400 border-sky-500/30 hover:bg-sky-600/30 cursor-pointer"
+                      }`}>
+                    <HiOutlineArrowPath className={`text-[12px] ${batchReadingId === "ocpp" ? "animate-spin" : ""}`} />
+                    {batchReadingId === "ocpp" ? "Okunuyor…" : "Tümünü Oku"}
+                  </button>
+                </div>
               </div>
             </Panel>
 
             {/* UI — editable, edit modunda oku + kaydet */}
             <Panel icon={<TbPlugConnected />} title="Bağlantı & UI Ayarları">
               {UI_PARAMS.map((p, i) => {
-                // Bağımlılık: id 14 (Şirket Adı) sadece id 13 = "0" (Yazı) ise aktif
-                const depDisabled = p.dependsOn !== undefined
-                  ? String(readValues[p.dependsOn] ?? "") !== p.dependsValue
-                  : false;
+                // Bağımlılık kontrolü:
+                // Toplu edit modundayken → bulkDrafts'taki değere bak
+                // Normal modda → readValues'taki değere bak
+                let depDisabled = false;
+                if (p.dependsOn !== undefined) {
+                  const parentVal = bulkEditingId === "ui"
+                    ? (bulkDrafts[p.dependsOn] ?? String(readValues[p.dependsOn] ?? ""))
+                    : String(readValues[p.dependsOn] ?? "");
+                  depDisabled = parentVal !== p.dependsValue;
+                }
 
                 return (
                   <EditableRow key={p.id} icon={p.icon} label={p.label} id={p.id}
@@ -577,18 +699,68 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
             {/* MSP */}
             <Panel icon={<HiOutlineCog6Tooth />} title="MSP Konfigürasyon">
               <div className="grid grid-cols-2 gap-2 py-1">
-                {[...MSP_CONFIG_BASE, ...(isAdmin ? MSP_CONFIG_ADMIN : [])].map((p) =>
-                  p.isInfo ? (
-                    <div key={p.id} className="flex items-center gap-2 px-3 py-[6px] rounded-lg bg-slate-800/30 border border-slate-700/30">
-                      <span className="text-[13px] text-slate-500">{p.icon}</span>
-                      <span className="text-[11px] text-slate-500">{p.label}:</span>
-                      <span className="text-[11px] text-slate-200 font-semibold">{V(p.id)}</span>
-                    </div>
-                  ) : (
+                {[...MSP_CONFIG_BASE, ...(isAdmin ? MSP_CONFIG_ADMIN : [])].map((p) => {
+                  const curVal = String(readValues[p.id] ?? "0");
+
+                  /* ── Toggle buton (Cihaz Reset) ── */
+                  if (p.isToggle) {
+                    const isOn = curVal === "1";
+                    return (
+                      <button key={p.id}
+                        disabled={!isActive}
+                        onClick={() => {
+                          const next = isOn ? "0" : "1";
+                          sendCommand("set", p.id, next);
+                          setReadValues((prev) => ({ ...prev, [p.id]: next }));
+                        }}
+                        className={`flex items-center gap-2 w-full px-3 py-[7px] rounded-lg border transition-all duration-150
+                          ${!isActive ? "opacity-50 cursor-not-allowed bg-slate-800/30 border-slate-700/30" :
+                            "hover:bg-slate-800/60 cursor-pointer bg-slate-800/30 border-slate-700/30"}`}
+                      >
+                        <span className="text-[13px] text-slate-400 shrink-0">{p.icon}</span>
+                        <span className="text-[11px] text-slate-400 font-medium flex-1 text-left">{p.label}</span>
+                        {/* Toggle switch */}
+                        <div className={`relative w-8 h-[18px] rounded-full transition-colors duration-200 ${isOn ? "bg-red-500/60" : "bg-slate-600/40"}`}>
+                          <div className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow transition-all duration-200
+                            ${isOn ? "left-[16px]" : "left-[2px]"}`} />
+                        </div>
+                      </button>
+                    );
+                  }
+
+                  /* ── Dropdown (Mode, Model) ── */
+                  if (p.isDropdown) {
+                    return (
+                      <div key={p.id}
+                        className="flex items-center gap-2 w-full px-3 py-[5px] rounded-lg bg-slate-800/30 border border-slate-700/30">
+                        <span className="text-[13px] text-slate-400 shrink-0">{p.icon}</span>
+                        <span className="text-[11px] text-slate-400 font-medium flex-1 text-left">{p.label}</span>
+                        <select
+                          value={curVal}
+                          disabled={!isActive}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            sendCommand("set", p.id, val);
+                            setReadValues((prev) => ({ ...prev, [p.id]: val }));
+                          }}
+                          className={`text-[10px] font-bold px-2 py-[3px] rounded-md border outline-none transition
+                            bg-slate-900/80 border-slate-600/40 text-slate-200
+                            ${!isActive ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:border-slate-500/60"}`}
+                        >
+                          {p.options.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  }
+
+                  /* ── Normal ActionButton ── */
+                  return (
                     <ActionButton key={p.id} icon={p.icon} label={p.label}
                       badge={V(p.id)} color={p.color} disabled={!isActive} />
-                  )
-                )}
+                  );
+                })}
               </div>
             </Panel>
 
@@ -614,17 +786,166 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
 
           {/* Telemetry */}
           <div className="mt-4">
-            <div className="flex items-center gap-2 mb-2 px-1">
-              <TbActivity className="text-[13px] text-sky-400/60" />
-              <h3 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase">Canlı Telemetri</h3>
+            <div className="flex items-center justify-between mb-2 px-1">
+              <div className="flex items-center gap-2">
+                <TbActivity className="text-[13px] text-sky-400/60" />
+                <h3 className="text-[11px] font-bold text-slate-400 tracking-widest uppercase">Canlı Telemetri</h3>
+                {batchReadingId === "tele" && batchProgress && (
+                  <span className="text-[10px] text-sky-400/80 font-medium animate-pulse ml-2">{batchProgress}</span>
+                )}
+              </div>
+              <button
+                onClick={() => batchRead(TELEMETRY, "tele")}
+                disabled={!isActive || !!batchReadingId || !!bulkEditingId || bulkSaving}
+                className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                  ${(!isActive || !!batchReadingId || !!bulkEditingId || bulkSaving)
+                    ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                    : "bg-sky-600/20 text-sky-400 border-sky-500/30 hover:bg-sky-600/30 cursor-pointer"
+                  }`}
+              >
+                <HiOutlineArrowPath className={`text-[12px] ${batchReadingId === "tele" ? "animate-spin" : ""}`} />
+                {batchReadingId === "tele" ? "Okunuyor…" : "Tümünü Oku"}
+              </button>
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {TELEMETRY.map((p) => (
-                <MetricCard key={p.id} icon={p.icon} label={p.label}
-                  value={V(p.id)} unit={p.unit || ""}
-                  valueColor={p.id === 25 ? csColor(readValues[25]) : undefined} />
+                <div key={p.id} className="bg-[#0c1829] border border-slate-700/40 rounded-xl px-4 py-3 flex flex-col">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    {p.icon && <span className="text-[13px] text-slate-500">{p.icon}</span>}
+                    <span className="text-[11px] text-slate-500 font-medium">{p.label}</span>
+                    {failedReads[p.id] && (
+                      <span className="text-[9px] text-red-400/80 ml-auto">okunamadı</span>
+                    )}
+                  </div>
+                  <div className="flex items-baseline gap-1 mb-2">
+                    <span className={`text-lg font-bold tracking-tight ${
+                      p.id === 25 ? (
+                        csColor(readValues[25]) === "green" ? "text-emerald-400" :
+                        csColor(readValues[25]) === "yellow" ? "text-amber-400" :
+                        csColor(readValues[25]) === "blue" ? "text-sky-400" : "text-slate-100"
+                      ) : "text-slate-100"
+                    }`}>
+                      {V(p.id) || "——"}
+                    </span>
+                    {p.unit && <span className="text-[11px] font-semibold text-slate-500">{p.unit}</span>}
+                  </div>
+                  <button
+                    onClick={() => { setFailedReads((prev) => ({ ...prev, [p.id]: false })); sendCommand("read", p.id); }}
+                    disabled={!isActive || !!batchReadingId}
+                    className={`mt-auto flex items-center justify-center gap-1 w-full py-[4px] rounded-md border text-[10px] font-semibold transition
+                      ${(!isActive || !!batchReadingId)
+                        ? "bg-slate-800/20 text-slate-600 border-slate-700/20 cursor-not-allowed"
+                        : "bg-sky-600/10 text-sky-400/70 border-sky-500/20 hover:bg-sky-600/20 hover:text-sky-400 cursor-pointer"
+                      }`}
+                  >
+                    <HiOutlineArrowPath className="text-[10px]" />
+                    Oku
+                  </button>
+                </div>
               ))}
             </div>
+          </div>
+
+          {/* OCPP Credentials — panelde edit+read, dashboardda sadece read */}
+          <div className="mt-4">
+            <Panel icon={<HiOutlineIdentification />} title="OCPP Credentials">
+              {isAdmin ? (
+                /* Panel modu — edit + read */
+                <>
+                  {OCPP_CREDS.map((p, i) => (
+                    <EditableRow key={p.id} icon={p.icon} label={p.label} id={p.id}
+                      value={V(p.id)} setOk={setOkMap[p.id]} disabled={!isActive}
+                      failed={failedReads[p.id]}
+                      setFailed={failedSets[p.id]}
+                      bulkEditing={bulkEditingId === "creds"}
+                      bulkDraft={bulkDrafts[p.id] ?? ""}
+                      onBulkDraftChange={updateBulkDraft}
+                      onSet={(id, val) => sendCommand("set", id, val)}
+                      onRead={(id) => { setFailedReads((prev) => ({ ...prev, [id]: false })); sendCommand("read", id); }}
+                      last={i === OCPP_CREDS.length - 1} />
+                  ))}
+
+                  <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-700/25">
+                    {(batchReadingId === "creds" && batchProgress) ? (
+                      <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">{batchProgress}</span>
+                    ) : (bulkSaving && bulkProgress) ? (
+                      <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">{bulkProgress}</span>
+                    ) : <span />}
+
+                    <div className="flex items-center gap-2">
+                      {bulkEditingId === "creds" ? (
+                        <>
+                          <button onClick={cancelBulkEdit}
+                            className="text-[10px] font-semibold px-2.5 py-[4px] rounded-md
+                                       bg-slate-800/50 text-slate-500 border border-slate-600/30
+                                       hover:text-slate-300 transition cursor-pointer">
+                            İptal
+                          </button>
+                          <button onClick={() => batchSet(OCPP_CREDS, "creds")}
+                            disabled={!isActive || bulkSaving}
+                            className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                              ${(!isActive || bulkSaving)
+                                ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                                : "bg-emerald-600/80 text-white border-emerald-500/50 hover:bg-emerald-600 cursor-pointer"
+                              }`}>
+                            <HiOutlinePencilSquare className={`text-[12px] ${bulkSaving ? "animate-spin" : ""}`} />
+                            {bulkSaving ? "Kaydediliyor…" : "Tümünü Kaydet"}
+                          </button>
+                        </>
+                      ) : (
+                        <button onClick={() => startBulkEdit(OCPP_CREDS, "creds")}
+                          disabled={!isActive || !!bulkEditingId || !!batchReadingId || bulkSaving}
+                          className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                            ${(!isActive || !!bulkEditingId || !!batchReadingId || bulkSaving)
+                              ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                              : "bg-amber-600/20 text-amber-400 border-amber-500/30 hover:bg-amber-600/30 cursor-pointer"
+                            }`}>
+                          <HiOutlinePencilSquare className="text-[12px]" />
+                          Toplu Edit
+                        </button>
+                      )}
+                      <button onClick={() => batchRead(OCPP_CREDS, "creds")}
+                        disabled={!isActive || !!batchReadingId || !!bulkEditingId || bulkSaving}
+                        className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                          ${(!isActive || !!batchReadingId || !!bulkEditingId || bulkSaving)
+                            ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                            : "bg-sky-600/20 text-sky-400 border-sky-500/30 hover:bg-sky-600/30 cursor-pointer"
+                          }`}>
+                        <HiOutlineArrowPath className={`text-[12px] ${batchReadingId === "creds" ? "animate-spin" : ""}`} />
+                        {batchReadingId === "creds" ? "Okunuyor…" : "Tümünü Oku"}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* Dashboard modu — sadece read */
+                <>
+                  {OCPP_CREDS.map((p, i) => (
+                    <InfoRow key={p.id} icon={p.icon} label={p.label}
+                      value={V(p.id)} disabled={!isActive}
+                      failed={failedReads[p.id]}
+                      onRead={() => { setFailedReads((prev) => ({ ...prev, [p.id]: false })); sendCommand("read", p.id); }}
+                      last={i === OCPP_CREDS.length - 1} />
+                  ))}
+
+                  <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-700/25">
+                    {(batchReadingId === "creds" && batchProgress) ? (
+                      <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">{batchProgress}</span>
+                    ) : <span />}
+                    <button onClick={() => batchRead(OCPP_CREDS, "creds")}
+                      disabled={!isActive || !!batchReadingId}
+                      className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                        ${(!isActive || !!batchReadingId)
+                          ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                          : "bg-sky-600/20 text-sky-400 border-sky-500/30 hover:bg-sky-600/30 cursor-pointer"
+                        }`}>
+                      <HiOutlineArrowPath className={`text-[12px] ${batchReadingId === "creds" ? "animate-spin" : ""}`} />
+                      {batchReadingId === "creds" ? "Okunuyor…" : "Tümünü Oku"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </Panel>
           </div>
 
           {/* OTA — sadece admin modda */}
