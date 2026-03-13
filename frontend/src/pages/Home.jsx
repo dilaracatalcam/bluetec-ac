@@ -67,12 +67,16 @@ const UI_PARAMS = [
 ];
 
 const MSP_CONFIG_BASE = [
-  { id: 15, icon: <MdOutlineRestartAlt />,     label: "Cihaz Reset", isToggle: true, color: "red" },
+  { id: 15, icon: <MdOutlineRestartAlt />,     label: "Cihaz Reset",
+    isOneShot: true, color: "red", sendValue: "1", successMsg: "Cihaz resetlendi ✓",
+    btnLabel: "Reset" },
 ];
 
 const MSP_CONFIG_ADMIN = [
-  { id: 16, icon: <TbGauge />,                 label: "AC Ölçer",    color: "red" },
-  { id: 19, icon: <HiOutlineCommandLine />,    label: "Mod",
+  { id: 16, icon: <TbGauge />,                 label: "AC Ölçer",
+    isToggle: true, color: "blue",
+    toggleLabels: { off: "MSP Hesaplama", on: "AC Meter" }},
+  { id: 17, icon: <HiOutlineAdjustmentsHorizontal />, label: "Konfig Modu",
     isDropdown: true, options: [
       { value: "0", label: "Ürün Modu" },
       { value: "1", label: "Test Modu" },
@@ -81,6 +85,12 @@ const MSP_CONFIG_ADMIN = [
     isDropdown: true, options: [
       { value: "0", label: "Kablosuz" },
       { value: "1", label: "Kablolu" },
+    ]},
+  { id: 19, icon: <HiOutlineCommandLine />,    label: "ESP Modu",
+    isDropdown: true, options: [
+      { value: "0", label: "RFID Charge" },
+      { value: "1", label: "Plug & Charge" },
+      { value: "2", label: "OCPP" },
     ]},
 ];
 
@@ -91,10 +101,18 @@ const OTA = [
 ];
 
 const ESP_CTRL = [
-  { id: 17, icon: <HiOutlineAdjustmentsHorizontal />, label: "OCPP Modu",  color: "blue" },
-  { id: 8,  icon: <BsShieldLock />,            label: "Kilitleme",   color: "red" },
-  { id: 20, icon: <HiOutlineArrowPath />,      label: "ESP Reset",   color: "red" },
-  { id: 21, icon: <HiOutlineStop />,           label: "Şarj Durdur", color: "red" },
+  { id: 38, icon: <HiOutlineGlobeAlt />,      label: "OCPP Aktif",  isToggle: true, color: "blue",
+    toggleLabels: { off: "Deaktif", on: "Aktif" }},
+  { id: 8,  icon: <BsShieldLock />,            label: "Kilit Aç",
+    isOneShot: true, color: "red", sendValue: "1", successMsg: "Kilit açıldı ✓",
+    btnLabel: "Aç" },
+  { id: 20, icon: <HiOutlineArrowPath />,      label: "ESP Reset",
+    isOneShot: true, color: "red", sendValue: "1", successMsg: "ESP resetlendi ✓",
+    btnLabel: "Reset" },
+  { id: 21, icon: <HiOutlineStop />,           label: "Şarj Durdur",
+    isOneShot: true, color: "red", sendValue: "1", successMsg: "Şarj durduruldu ✓",
+    btnLabel: "Durdur" },
+  { id: 37, icon: <HiOutlineWifi />,             label: "Bağlantı Tipi", isInfo: true, isReadable: true },
 ];
 
 const TELEMETRY = [
@@ -126,9 +144,13 @@ function mapValue(id, raw) {
   if (id === 35) return v === "0" ? "Renk" : v === "1" ? "Gradient" : v;
   if (id === 27) return v === "0" ? "Hata Yok" : `Hata: ${v}`;
   if (id === 25) return ({ "0": "Beklemede", "1": "Şarj Oluyor", "2": "Tamamlandı" })[v] || v;
-  if (id === 19) return v === "0" ? "Ürün Modu" : v === "1" ? "Test Modu" : v;
-  if (id === 18) return v === "0" ? "Kablosuz" : v === "1" ? "Kablolu" : v;
   if (id === 15) return v === "0" ? "Kapalı" : v === "1" ? "Aktif" : v;
+  if (id === 16) return v === "0" ? "MSP Hesaplama" : v === "1" ? "AC Meter" : v;
+  if (id === 17) return v === "0" ? "Ürün Modu" : v === "1" ? "Test Modu" : v;
+  if (id === 18) return v === "0" ? "Kablosuz" : v === "1" ? "Kablolu" : v;
+  if (id === 19) return ({ "0": "RFID Charge", "1": "Plug & Charge", "2": "OCPP" })[v] || v;
+  if (id === 37) return ({ "NONE": "Bağlı Değil", "GSM": "GSM", "WiFi": "WiFi", "ETH": "Ethernet" })[v] || v;
+  if (id === 38) return v === "0" ? "Deaktif" : v === "1" ? "Aktif" : v;
   return v;
 }
 function csColor(raw) {
@@ -156,6 +178,10 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   const [loading, setLoading] = useState(false);
   const [readValues, setReadValues] = useState({});
   const [setOkMap, setSetOkMap] = useState({});
+  const [oneShotOk, setOneShotOk] = useState({});   // { paramId: "mesaj" }
+  const [oneShotLoading, setOneShotLoading] = useState({}); // { paramId: true }
+  const [readLoading, setReadLoading] = useState({});     // { paramId: true }
+  const [readFeedback, setReadFeedback] = useState({});   // { paramId: "mesaj" }
   const isActive = isConnected && espStatus === "active";
 
   useEffect(() => {
@@ -242,6 +268,95 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     } catch { setMessage("Sunucuya ulaşılamadı"); return false; }
   }, [isActive, authFetch]);
 
+  /* ── One-Shot komut gönder → SET OK bekle → başarı mesajı göster ── */
+  const fireOneShot = useCallback(async (id, value, successMsg) => {
+    if (!isActive) return;
+    setOneShotOk((prev) => ({ ...prev, [id]: null }));
+    setOneShotLoading((prev) => ({ ...prev, [id]: true }));
+
+    const ok = await sendCommand("set", id, value);
+    if (!ok) { setOneShotLoading((prev) => ({ ...prev, [id]: false })); return; }
+
+    // SET OK bekle (3 deneme × 2s)
+    let success = false;
+    for (let retry = 0; retry < 3; retry++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const resp = await authFetch("/api/responses");
+        const j = await resp.json();
+        const msgs = j.message_response || [];
+        const found = msgs.find((m) => Number(m.msg) === id && m.data === "SET OK");
+        if (found) { success = true; break; }
+      } catch {}
+    }
+
+    setOneShotLoading((prev) => ({ ...prev, [id]: false }));
+    if (success) {
+      setOneShotOk((prev) => ({ ...prev, [id]: successMsg }));
+      setTimeout(() => setOneShotOk((prev) => ({ ...prev, [id]: null })), 4000);
+    } else {
+      setOneShotOk((prev) => ({ ...prev, [id]: "Yanıt alınamadı ✕" }));
+      setTimeout(() => setOneShotOk((prev) => ({ ...prev, [id]: null })), 4000);
+    }
+  }, [isActive, sendCommand, authFetch]);
+
+  /* ── Read komut gönder → yanıt bekle → feedback göster ── */
+  const fireRead = useCallback(async (id) => {
+    if (!isActive) {
+      setReadFeedback((prev) => ({ ...prev, [id]: "ESP aktif değil ✕" }));
+      setTimeout(() => setReadFeedback((prev) => ({ ...prev, [id]: null })), 4000);
+      return;
+    }
+    setReadFeedback((prev) => ({ ...prev, [id]: null }));
+    setReadLoading((prev) => ({ ...prev, [id]: true }));
+
+    // Komutu doğrudan gönder (sendCommand'ın mesaj yazmasını atlayalım)
+    let sent = false;
+    try {
+      const r = await authFetch("/api/send-command", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "read", variable: id, value: "" }),
+      });
+      if (r.ok) sent = true;
+      else {
+        const d = await r.json();
+        console.error(`[fireRead] id=${id} server hata:`, d.message);
+      }
+    } catch (e) {
+      console.error(`[fireRead] id=${id} fetch hata:`, e);
+    }
+
+    if (!sent) {
+      setReadLoading((prev) => ({ ...prev, [id]: false }));
+      setReadFeedback((prev) => ({ ...prev, [id]: "Gönderilemedi ✕" }));
+      setTimeout(() => setReadFeedback((prev) => ({ ...prev, [id]: null })), 4000);
+      return;
+    }
+
+    // READ yanıtı bekle (4 deneme × 2.5s = 10s)
+    let success = false;
+    for (let retry = 0; retry < 4; retry++) {
+      await new Promise((r) => setTimeout(r, 2500));
+      try {
+        const resp = await authFetch("/api/responses");
+        const j = await resp.json();
+        const msgs = j.message_response || [];
+        const found = msgs.find((m) => Number(m.cmd) === 2 && Number(m.msg) === id);
+        if (found && found.data !== undefined && found.data !== null) {
+          setReadValues((prev) => ({ ...prev, [id]: found.data }));
+          success = true;
+          break;
+        }
+      } catch {}
+    }
+
+    setReadLoading((prev) => ({ ...prev, [id]: false }));
+    if (!success) {
+      setReadFeedback((prev) => ({ ...prev, [id]: "Yanıt alınamadı ✕" }));
+      setTimeout(() => setReadFeedback((prev) => ({ ...prev, [id]: null })), 4000);
+    }
+  }, [isActive, authFetch]);
+
   const handleSubmit = async (e) => {
     e.preventDefault(); setMessage(""); setLoading(true);
     try {
@@ -269,6 +384,10 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     setReadValues({});
     setSetOkMap({});
     setFailedReads({});
+    setOneShotOk({});
+    setOneShotLoading({});
+    setReadLoading({});
+    setReadFeedback({});
     setMessage("Bağlantı koparıldı.");
     setTimeout(() => setMessage(""), 3000);
   };
@@ -702,9 +821,42 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                 {[...MSP_CONFIG_BASE, ...(isAdmin ? MSP_CONFIG_ADMIN : [])].map((p) => {
                   const curVal = String(readValues[p.id] ?? "0");
 
-                  /* ── Toggle buton (Cihaz Reset) ── */
+                  /* ── One-shot buton (Cihaz Reset) ── */
+                  if (p.isOneShot) {
+                    const isLoading = oneShotLoading[p.id];
+                    const okMsg = oneShotOk[p.id];
+                    const isFail = okMsg && okMsg.includes("✕");
+                    return (
+                      <div key={p.id} className="flex flex-col gap-1 w-full px-3 py-[7px] rounded-lg bg-slate-800/30 border border-slate-700/30">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[13px] text-slate-400 shrink-0">{p.icon}</span>
+                          <span className="text-[11px] text-slate-400 font-medium flex-1 text-left">{p.label}</span>
+                          <button
+                            disabled={!isActive || isLoading}
+                            onClick={() => fireOneShot(p.id, p.sendValue || "1", p.successMsg)}
+                            className={`text-[10px] font-bold px-3 py-[3px] rounded-md border transition
+                              ${(!isActive || isLoading)
+                                ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                                : "bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30 cursor-pointer"
+                              }`}
+                          >
+                            {isLoading ? "Bekleniyor…" : (p.btnLabel || "Gönder")}
+                          </button>
+                        </div>
+                        {okMsg && (
+                          <span className={`text-[10px] font-medium pl-5 ${isFail ? "text-red-400/80" : "text-emerald-400/80"}`}>
+                            {okMsg}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  /* ── Toggle buton (AC Ölçer) ── */
                   if (p.isToggle) {
                     const isOn = curVal === "1";
+                    const lblOff = p.toggleLabels?.off || "Kapalı";
+                    const lblOn  = p.toggleLabels?.on  || "Aktif";
                     return (
                       <button key={p.id}
                         disabled={!isActive}
@@ -719,8 +871,11 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                       >
                         <span className="text-[13px] text-slate-400 shrink-0">{p.icon}</span>
                         <span className="text-[11px] text-slate-400 font-medium flex-1 text-left">{p.label}</span>
-                        {/* Toggle switch */}
-                        <div className={`relative w-8 h-[18px] rounded-full transition-colors duration-200 ${isOn ? "bg-red-500/60" : "bg-slate-600/40"}`}>
+                        <span className={`text-[9px] font-bold mr-1 ${isOn ? "text-emerald-400" : "text-slate-500"}`}>
+                          {isOn ? lblOn : lblOff}
+                        </span>
+                        <div className={`relative w-8 h-[18px] rounded-full transition-colors duration-200
+                          ${isOn ? (p.color === "blue" ? "bg-sky-500/60" : "bg-red-500/60") : "bg-slate-600/40"}`}>
                           <div className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow transition-all duration-200
                             ${isOn ? "left-[16px]" : "left-[2px]"}`} />
                         </div>
@@ -767,19 +922,166 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
             {/* ESP Kontrol */}
             <Panel icon={<HiOutlineCpuChip />} title="ESP Kontrol">
               <div className="grid grid-cols-2 gap-2 py-1">
-                {ESP_CTRL.map((p) => (
-                  <ActionButton key={p.id} icon={p.icon} label={p.label}
-                    badge={V(p.id)} color={p.color} disabled={!isActive} />
-                ))}
+                {ESP_CTRL.map((p) => {
+                  const curVal = String(readValues[p.id] ?? "0");
+
+                  /* ── Info satırı + oku butonu (Aktif Ağ) ── */
+                  if (p.isInfo) {
+                    const isRdLoading = readLoading[p.id];
+                    const rdFb = readFeedback[p.id];
+                    const rdFail = rdFb && rdFb.includes("✕");
+                    return (
+                      <div key={p.id} className="flex flex-col gap-1 px-3 py-[6px] rounded-lg bg-slate-800/30 border border-slate-700/30">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[13px] text-slate-500">{p.icon}</span>
+                          <span className="text-[11px] text-slate-500">{p.label}:</span>
+                          <span className="text-[11px] text-slate-200 font-semibold flex-1">{V(p.id)}</span>
+                          {p.isReadable && (
+                            <button
+                              onClick={() => fireRead(p.id)}
+                              disabled={!isActive || isRdLoading}
+                              className={`p-[3px] rounded-md border transition shrink-0
+                                ${(!isActive || isRdLoading)
+                                  ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                                  : "bg-sky-600/20 text-sky-400 border-sky-500/30 hover:bg-sky-600/30 cursor-pointer"
+                                }`}
+                            >
+                              <HiOutlineArrowPath className={`text-[11px] ${isRdLoading ? "animate-spin" : ""}`} />
+                            </button>
+                          )}
+                        </div>
+                        {rdFb && (
+                          <span className={`text-[10px] font-medium pl-5 ${rdFail ? "text-red-400/80" : "text-emerald-400/80"}`}>
+                            {rdFb}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  /* ── Dropdown (ESP Modu) ── */
+                  if (p.isDropdown) {
+                    return (
+                      <div key={p.id}
+                        className="flex items-center gap-2 w-full px-3 py-[5px] rounded-lg bg-slate-800/30 border border-slate-700/30">
+                        <span className="text-[13px] text-slate-400 shrink-0">{p.icon}</span>
+                        <span className="text-[11px] text-slate-400 font-medium flex-1 text-left">{p.label}</span>
+                        <select
+                          value={curVal}
+                          disabled={!isActive}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            sendCommand("set", p.id, val);
+                            setReadValues((prev) => ({ ...prev, [p.id]: val }));
+                          }}
+                          className={`text-[10px] font-bold px-2 py-[3px] rounded-md border outline-none transition
+                            bg-slate-900/80 border-slate-600/40 text-slate-200
+                            ${!isActive ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:border-slate-500/60"}`}
+                        >
+                          {p.options.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  }
+
+                  /* ── Toggle (OCPP Aktif) ── */
+                  if (p.isToggle) {
+                    const isOn = curVal === "1";
+                    const lblOff = p.toggleLabels?.off || "Kapalı";
+                    const lblOn  = p.toggleLabels?.on  || "Aktif";
+                    return (
+                      <button key={p.id}
+                        disabled={!isActive}
+                        onClick={() => {
+                          const next = isOn ? "0" : "1";
+                          sendCommand("set", p.id, next);
+                          setReadValues((prev) => ({ ...prev, [p.id]: next }));
+                        }}
+                        className={`flex items-center gap-2 w-full px-3 py-[7px] rounded-lg border transition-all duration-150
+                          ${!isActive ? "opacity-50 cursor-not-allowed bg-slate-800/30 border-slate-700/30" :
+                            "hover:bg-slate-800/60 cursor-pointer bg-slate-800/30 border-slate-700/30"}`}
+                      >
+                        <span className="text-[13px] text-slate-400 shrink-0">{p.icon}</span>
+                        <span className="text-[11px] text-slate-400 font-medium flex-1 text-left">{p.label}</span>
+                        <span className={`text-[9px] font-bold mr-1 ${isOn ? "text-emerald-400" : "text-slate-500"}`}>
+                          {isOn ? lblOn : lblOff}
+                        </span>
+                        <div className={`relative w-8 h-[18px] rounded-full transition-colors duration-200
+                          ${isOn ? (p.color === "blue" ? "bg-sky-500/60" : "bg-emerald-500/60") : "bg-slate-600/40"}`}>
+                          <div className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow transition-all duration-200
+                            ${isOn ? "left-[16px]" : "left-[2px]"}`} />
+                        </div>
+                      </button>
+                    );
+                  }
+
+                  /* ── One-shot buton (Kilit Aç, ESP Reset, Şarj Durdur) ── */
+                  if (p.isOneShot) {
+                    const isLoading = oneShotLoading[p.id];
+                    const okMsg = oneShotOk[p.id];
+                    const isFail = okMsg && okMsg.includes("✕");
+                    return (
+                      <div key={p.id} className="flex flex-col gap-1 w-full px-3 py-[7px] rounded-lg bg-slate-800/30 border border-slate-700/30">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[13px] text-slate-400 shrink-0">{p.icon}</span>
+                          <span className="text-[11px] text-slate-400 font-medium flex-1 text-left">{p.label}</span>
+                          <button
+                            disabled={!isActive || isLoading}
+                            onClick={() => fireOneShot(p.id, p.sendValue || "1", p.successMsg)}
+                            className={`text-[10px] font-bold px-3 py-[3px] rounded-md border transition
+                              ${(!isActive || isLoading)
+                                ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                                : "bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30 cursor-pointer"
+                              }`}
+                          >
+                            {isLoading ? "Bekleniyor…" : (p.btnLabel || "Gönder")}
+                          </button>
+                        </div>
+                        {okMsg && (
+                          <span className={`text-[10px] font-medium pl-5 ${isFail ? "text-red-400/80" : "text-emerald-400/80"}`}>
+                            {okMsg}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  /* ── Fallback ── */
+                  return (
+                    <ActionButton key={p.id} icon={p.icon} label={p.label}
+                      badge={V(p.id)} color={p.color} disabled={!isActive} />
+                  );
+                })}
               </div>
-              <div className="flex items-center gap-2 mt-2 px-3 py-[6px] rounded-lg bg-slate-800/20 border border-slate-700/20">
-                <TbActivity className="text-[13px] text-slate-500" />
-                <span className="text-[11px] text-slate-500">Durum:</span>
-                <span className={`text-[11px] font-bold ${
-                  csColor(readValues[25]) === "green" ? "text-emerald-400" :
-                  csColor(readValues[25]) === "yellow" ? "text-amber-400" :
-                  csColor(readValues[25]) === "blue" ? "text-sky-400" : "text-slate-400"
-                }`}>{V(25)}</span>
+              {/* Şarj Durumu satırı + oku butonu */}
+              <div className="flex flex-col gap-1 mt-2 px-3 py-[6px] rounded-lg bg-slate-800/20 border border-slate-700/20">
+                <div className="flex items-center gap-2">
+                  <TbActivity className="text-[13px] text-slate-500" />
+                  <span className="text-[11px] text-slate-500">Şarj Durumu:</span>
+                  <span className={`text-[11px] font-bold flex-1 ${
+                    csColor(readValues[25]) === "green" ? "text-emerald-400" :
+                    csColor(readValues[25]) === "yellow" ? "text-amber-400" :
+                    csColor(readValues[25]) === "blue" ? "text-sky-400" : "text-slate-400"
+                  }`}>{V(25)}</span>
+                  <button
+                    onClick={() => fireRead(25)}
+                    disabled={!isActive || readLoading[25]}
+                    className={`p-[3px] rounded-md border transition shrink-0
+                      ${(!isActive || readLoading[25])
+                        ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                        : "bg-sky-600/20 text-sky-400 border-sky-500/30 hover:bg-sky-600/30 cursor-pointer"
+                      }`}
+                  >
+                    <HiOutlineArrowPath className={`text-[11px] ${readLoading[25] ? "animate-spin" : ""}`} />
+                  </button>
+                </div>
+                {readFeedback[25] && (
+                  <span className={`text-[10px] font-medium pl-5 ${readFeedback[25].includes("✕") ? "text-red-400/80" : "text-emerald-400/80"}`}>
+                    {readFeedback[25]}
+                  </span>
+                )}
               </div>
             </Panel>
           </div>
@@ -946,7 +1248,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                 </>
               )}
             </Panel>
-          </div>
+          </div>}
 
           {/* OTA — sadece admin modda */}
           {isAdmin && (

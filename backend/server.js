@@ -225,6 +225,7 @@ const VAR_MAP = {
     log_verbose: 28, log_debug: 29, log_info: 30,
     ota_active: 31, ota_key: 32, ota_version: 33, gsm_signal: 34,
     gradient_or_color: 35, select_color: 36,
+    commsupport_net: 37, ocpp_active: 38,
     cp_vendor: 39, cp_model: 40, cp_serial: 41,
     meter_serial: 42, meter_type: 43, box_serial: 44
 };
@@ -350,7 +351,11 @@ app.post('/api/disconnect', requireAuth(["dashboard", "admin"]), async (req, res
 // =============================================
 app.post('/api/send-command', requireAuth(["dashboard", "admin"]), async (req, res) => {
     const { type, variable, value } = req.body;
-    const varCode = typeof variable === 'number' ? variable : VAR_MAP[variable];
+    let varCode = typeof variable === 'number' ? variable : VAR_MAP[variable];
+    // Sayısal string gelirse de çevir ("37" → 37)
+    if (varCode === undefined && !isNaN(Number(variable))) {
+        varCode = Number(variable);
+    }
 
     if (!type || (type !== 'set' && type !== 'read')) {
         return res.status(400).json({ message: 'Geçersiz komut tipi.' });
@@ -366,6 +371,7 @@ app.post('/api/send-command', requireAuth(["dashboard", "admin"]), async (req, r
         28, 29, 30,                         // LOG tipleri
         31, 32, 33, 34,                     // OTA + GSM Signal
         35, 36,                             // Gradient/Color
+        37, 38,                             // CommSupport Net + OCPP Active
         39, 40, 41, 42, 43, 44             // OCPP Credentials
     ];
 
