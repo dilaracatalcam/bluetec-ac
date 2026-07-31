@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { HiOutlineArrowPath, HiOutlineExclamationCircle } from "react-icons/hi2";
+import { HiOutlineArrowPath, HiOutlineExclamationCircle, HiOutlinePencilSquare } from "react-icons/hi2";
 
 /* ── Hex çevrim yardımcıları ──
    ESP "0x4DB748" formatında bekliyor.
@@ -20,12 +20,13 @@ export default function EditableRow({
   setOk = false, disabled = false,
   depDisabled = false, depMessage,
   failed = false, setFailed = false,
-  inputType, options,
+  inputType, options, allowCustom = false, readOnly = false,
   onSet, onRead, last = false,
   bulkEditing = false, bulkDraft = "", onBulkDraftChange,
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [customMode, setCustomMode] = useState(false); // allowCustom dropdown'da "Yeni Ekle" tıklandı mı
   const colorRef = useRef(null);
 
   const startEdit = () => {
@@ -47,6 +48,7 @@ export default function EditableRow({
     onSet?.(id, draft);
     setEditing(false);
     setDraft("");
+    setCustomMode(false);
   };
 
   const read = () => {
@@ -58,6 +60,7 @@ export default function EditableRow({
   const cancel = () => {
     setEditing(false);
     setDraft("");
+    setCustomMode(false);
   };
 
   /* ── Input Render ── */
@@ -68,6 +71,50 @@ export default function EditableRow({
     };
 
     if (inputType === "dropdown" && options) {
+      // allowCustom destekli dropdown — listede olmayan değer girilebilir
+      if (allowCustom) {
+        // Değer listede mi? VEYA kullanıcı "Yeni Ekle"ye basıp custom mode'a girdi mi?
+        const valInList = val && options.some((o) => o.value === val);
+        const showCustomInput = customMode || (val && !valInList);
+        const selectVal = showCustomInput ? "__custom__" : (val || "");
+        return (
+          <div className="flex flex-col gap-1 w-full max-w-[180px]">
+            <select
+              className="w-full bg-slate-800/80 border border-slate-600/50 text-slate-100
+                         px-2 py-1 rounded-md text-[12px] outline-none
+                         focus:border-sky-500/60 transition cursor-pointer"
+              value={selectVal}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "__custom__") {
+                  setCustomMode(true);
+                  fire("");
+                } else {
+                  setCustomMode(false);
+                  fire(v);
+                }
+              }}
+            >
+              <option value="" className="bg-slate-900">Seçiniz…</option>
+              {options.map((o) => (
+                <option key={o.value} value={o.value} className="bg-slate-900">{o.label}</option>
+              ))}
+              <option value="__custom__" className="bg-slate-900">+ Yeni Ekle</option>
+            </select>
+            {showCustomInput && (
+              <input
+                className="w-full bg-slate-800/80 border border-slate-600/50 text-slate-100
+                           px-2 py-1 rounded-md text-[11px] outline-none
+                           focus:border-sky-500/60 transition font-mono"
+                value={val}
+                onChange={(e) => fire(e.target.value)}
+                placeholder="Yeni logo adı girin…"
+                autoFocus={!isBulk}
+              />
+            )}
+          </div>
+        );
+      }
       return (
         <select
           className="w-full max-w-[180px] bg-slate-800/80 border border-slate-600/50 text-slate-100
@@ -162,7 +209,7 @@ export default function EditableRow({
   ) : null;
 
   return (
-    <div className={`flex items-center justify-between gap-2 py-[7px] ${!last ? "border-b border-slate-700/25" : ""}`}>
+    <div className={`flex items-center justify-between gap-2 py-[7px] min-h-[40px] ${!last ? "border-b border-slate-700/25" : ""}`}>
       <div className="flex items-center gap-2 shrink-0">
         {icon && <span className="text-[13px] text-slate-500">{icon}</span>}
         <span className={`text-[12px] font-medium ${depDisabled ? "text-slate-600" : "text-slate-500"}`}>{label}</span>
@@ -191,21 +238,36 @@ export default function EditableRow({
         ) : !editing ? (
           <>
             {colorPreview}
-            <span className="text-[12px] text-slate-200 font-semibold break-all">
+            <span className="text-[12px] text-[var(--text-primary)] font-semibold break-all">
               {value || "—"}
             </span>
             {setOk && <span className="text-emerald-400 text-[10px] font-bold">✓</span>}
             <button
-              onClick={startEdit}
+              onClick={() => onRead?.(id)}
               disabled={disabled}
-              className={`text-[10px] font-semibold px-2.5 py-[3px] rounded-md border transition shrink-0
+              title="Güncel değeri oku"
+              className={`p-[4px] rounded-md border transition shrink-0
                 ${disabled
                   ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
-                  : "bg-slate-800/50 text-slate-400 border-slate-600/40 hover:text-white hover:border-slate-500 cursor-pointer"
+                  : "bg-sky-600/20 text-sky-400 border-sky-500/30 hover:bg-sky-600/30 cursor-pointer"
                 }`}
             >
-              Edit
+              <HiOutlineArrowPath className="text-[12px]" />
             </button>
+            {!readOnly && (
+              <button
+                onClick={startEdit}
+                disabled={disabled}
+                className={`flex items-center gap-1 text-[10px] font-semibold px-2.5 py-[3px] rounded-md border transition shrink-0
+                  ${disabled
+                    ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                    : "bg-amber-600/20 text-amber-400 border-amber-500/30 hover:bg-amber-600/30 cursor-pointer"
+                  }`}
+              >
+                <HiOutlinePencilSquare className="text-[11px]" />
+                Edit
+              </button>
+            )}
           </>
         ) : (
           <>

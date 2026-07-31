@@ -1,0 +1,392 @@
+{
+  "ACRAPOL": {
+    "label": "Acrapol",
+    "params": [
+      {
+        "id": 1,
+        "label": "OCPP URL",
+        "value": "ws://ocpp.acropolsarj.com/ocpp16"
+      },
+      {
+        "id": 2,
+        "label": "OCPP ID",
+        "value": ""
+      },
+      {
+        "id": 3,
+        "label": "QR Kod",
+        "value": "ACRA0722301"
+      },
+      {
+        "id": 9,
+        "label": "Şirket Tel",
+        "value": "+90 850 309 9950"
+      },
+      {
+        "id": 10,
+        "label": "Site",
+        "value": "www.acropolsarj.com"
+      },
+      {
+        "id": 11,
+        "label": "Appstore",
+        "value": "https://apps.apple.com/us/app/acropol-sarj/id6478527945"
+      },
+      {
+        "id": 12,
+        "label": "Play Store",
+        "value": "https://play.google.com/store/apps/details?id=com.acropol&hl=tr"
+      },
+      {
+        "id": 13,
+        "label": "Logo/Yazi",
+        "value": "1"
+      },
+      {
+        "id": 44,
+        "label": "Box Seri No",
+        "value": ""
+      }
+    ]
+  },
+  "SEPAS": {
+    "label": "Sepas",
+    "params": [
+      {
+        "id": 1,
+        "label": "OCPP URL",
+        "value": "ws://app.sepascharge.com:8888/ocpp"
+      },
+      {
+        "id": 2,
+        "label": "OCPP ID",
+        "value": ""
+      },
+      {
+        "id": 3,
+        "label": "QR Kod",
+        "value": ""
+      },
+      {
+        "id": 4,
+        "label": "Maks. Guc",
+        "value": "22"
+      },
+      {
+        "id": 5,
+        "label": "WiFi SSID",
+        "value": "sepascharge_esil"
+      },
+      {
+        "id": 6,
+        "label": "WiFi Sifre",
+        "value": "abc.1234"
+      },
+      {
+        "id": 9,
+        "label": "Sirket Tel",
+        "value": "0850 377 0999"
+      },
+      {
+        "id": 10,
+        "label": "Site",
+        "value": "www.sepascharge.com"
+      },
+      {
+        "id": 11,
+        "label": "Appstore",
+        "value": "https://apps.apple.com/tr/app/sepascharge/id6743440030?l=tr"
+      },
+      {
+        "id": 12,
+        "label": "Play Store",
+        "value": "https://play.google.com/store/apps/details?id=com.sepas.sepas&hl=tr"
+      },
+      {
+        "id": 13,
+        "label": "Logo/Yazi",
+        "value": "1"
+      },
+      {
+        "id": 35,
+        "label": "Gradient/Renk",
+        "value": "1"
+      },
+      {
+        "id": 44,
+        "label": "Box Seri No",
+        "value": ""
+      },
+      {
+        "id": 64,
+        "label": "Logo Adi",
+        "value": "sepas_logo"
+      }
+    ]
+  },
+  "GREENDRIVE": {
+    "label": "Greendrive (Rotawatt)",
+    "params": [
+      {
+        "id": 1,
+        "label": "OCPP URL",
+        "value": "ws://api.rotawatt.com/ocpp/OCPP16/Connection"
+      },
+      {
+        "id": 2,
+        "label": "OCPP ID",
+        "value": ""
+      },
+      {
+        "id": 3,
+        "label": "QR Kod",
+        "value": ""
+      },
+      {
+        "id": 9,
+        "label": "Sirket Tel",
+        "value": "444 4 869"
+      },
+      {
+        "id": 10,
+        "label": "Site",
+        "value": "www.rotawatt.com"
+      },
+      {
+        "id": 11,
+        "label": "Appstore",
+        "value": "https://apps.apple.com/tr/app/rotawatt/id6736650325?l=tr"
+      },
+      {
+        "id": 12,
+        "label": "Play Store",
+        "value": "https://play.google.com/store/apps/details?id=com.arvento.rotawatt"
+      },
+      {
+        "id": 44,
+        "label": "Box Seri No",
+        "value": ""
+      }
+    ]
+  },
+  "CELIKLER": {
+    "label": "Celikler",
+    "params": [
+      {
+        "id": 1,
+        "label": "OCPP URL",
+        "value": "ws://clk-hub.echargo.com"
+      },
+      {
+        "id": 2,
+        "label": "OCPP ID",
+        "value": ""
+      },
+      {
+        "id": 3,
+        "label": "QR Kod",
+        "value": ""
+      },
+      {
+        "id": 5,
+        "label": "WiFi SSID",
+        "value": "OTOPARK"
+      },
+      {
+        "id": 6,
+        "label": "WiFi Sifre",
+        "value": "20262026"
+      },
+      {
+        "id": 7,
+        "label": "Baglanti Turu",
+        "value": "0"
+      },
+      {
+        "id": 9,
+        "label": "Sirket Tel",
+        "value": "0850 577 1958"
+      },
+      {
+        "id": 10,
+        "label": "Site",
+        "value": "www.celiklerenerji.com"
+      },
+      {
+        "id": 11,
+        "label": "Appstore",
+        "value": "https://apps.apple.com/us/app/celikler-enerji/id6746149357"
+      },
+      {
+        "id": 12,
+        "label": "Play Store",
+        "value": "https://play.google.com/store/apps/details?id=com.raquun.celiklerenerji"
+      },
+      {
+        "id": 13,
+        "label": "Logo/Yazi",
+        "value": "1"
+      },
+      {
+        "id": 18,
+        "label": "Model",
+        "value": "1"
+      },
+      {
+        "id": 44,
+        "label": "Box Seri No",
+        "value": ""
+      }
+    ]
+  },
+  "E4SARJ": {
+    "label": "E4 Sarj",
+    "params": [
+      {
+        "id": 1,
+        "label": "OCPP URL",
+        "value": "ws://ocpp.e4sarj.com.tr/cir16"
+      },
+      {
+        "id": 2,
+        "label": "OCPP ID",
+        "value": ""
+      },
+      {
+        "id": 3,
+        "label": "QR Kod",
+        "value": ""
+      },
+      {
+        "id": 9,
+        "label": "Sirket Tel",
+        "value": "0850 811 2054"
+      },
+      {
+        "id": 10,
+        "label": "Site",
+        "value": "https://e4sarj.com.tr"
+      },
+      {
+        "id": 11,
+        "label": "Appstore",
+        "value": "https://apps.apple.com/tr/app/e4sarj/id6447972292"
+      },
+      {
+        "id": 12,
+        "label": "Play Store",
+        "value": "https://play.google.com/store/apps/details?id=com.arac.e4sarj&hl=tr"
+      },
+      {
+        "id": 13,
+        "label": "Logo/Yazi",
+        "value": "0"
+      },
+      {
+        "id": 14,
+        "label": "Sirket Adi",
+        "value": "E4 SARJ"
+      },
+      {
+        "id": 44,
+        "label": "Box Seri No",
+        "value": ""
+      }
+    ]
+  },
+  "CTG": {
+    "label": "CTG",
+    "params": [
+      {
+        "id": 1,
+        "label": "OCPP URL",
+        "value": "ws://ctg.ocpp.electroop.io"
+      },
+      {
+        "id": 2,
+        "label": "OCPP ID",
+        "value": ""
+      },
+      {
+        "id": 3,
+        "label": "QR Kod",
+        "value": ""
+      },
+      {
+        "id": 9,
+        "label": "Sirket Tel",
+        "value": "+90 850 308 7547"
+      },
+      {
+        "id": 10,
+        "label": "Site",
+        "value": "http://ctgelektrik.com"
+      },
+      {
+        "id": 11,
+        "label": "Appstore",
+        "value": "https://apps.apple.com/us/app/ctg-sarj/id6639613246"
+      },
+      {
+        "id": 12,
+        "label": "Play Store",
+        "value": "https://play.google.com/store/apps/details?id=com.elektron.ctg"
+      },
+      {
+        "id": 13,
+        "label": "Logo/Yazi",
+        "value": "1"
+      },
+      {
+        "id": 18,
+        "label": "Model",
+        "value": "1"
+      }
+    ]
+  },
+  "ESTASYON": {
+    "label": "Estasyon",
+    "params": [
+      {
+        "id": 1,
+        "label": "OCPP URL",
+        "value": "ws://ocpp.estasyon.com.tr/cir16"
+      },
+      {
+        "id": 2,
+        "label": "OCPP ID",
+        "value": ""
+      },
+      {
+        "id": 3,
+        "label": "QR Kod",
+        "value": ""
+      },
+      {
+        "id": 9,
+        "label": "Sirket Tel",
+        "value": "0850 205 44 22"
+      },
+      {
+        "id": 10,
+        "label": "Site",
+        "value": "www.estasyon.com.tr"
+      },
+      {
+        "id": 11,
+        "label": "Appstore",
+        "value": "https://apps.apple.com/gb/app/estasyon/id6755720209"
+      },
+      {
+        "id": 12,
+        "label": "Play Store",
+        "value": "https://play.google.com/store/apps/details?id=com.ipitex.estasyon&hl=tr"
+      },
+      {
+        "id": 44,
+        "label": "Box Seri No",
+        "value": ""
+      }
+    ]
+  }
+}

@@ -1,0 +1,61 @@
+[
+  {
+    "username": "superadmin",
+    "fullName": "superadmin",
+    "passwordHash": "$2b$10$vf3RghkxIWVTuKyvATCPceBPa3rSxTkBueLIOO7M4OzOtwMXRxlOG",
+    "role": "superadmin",
+    "createdAt": "2026-05-14T11:10:39.176Z"
+  },
+  {
+    "username": "dilaracatalcam",
+    "fullName": "dilara çatalçam",
+    "passwordHash": "$2b$10$t1nj6lx/GHFm7sBwsbgBrua1jdCboKapGz0/bFnglCtEWQwywCNpi",
+    "role": "superadmin",
+    "createdAt": "2026-05-14T11:33:40.021Z"
+  },
+  {
+    "username": "abdulhamitmercan",
+    "fullName": "abdülhamit mercan",
+    "passwordHash": "$2b$10$35YLFubkAEYG/J831K7ys.Hzyp7ex2FZatUVs5W4CVxxfgX2ASDI6",
+    "role": "superadmin",
+    "createdAt": "2026-05-14T12:54:14.562Z"
+  },
+  {
+    "username": "Subutayilteris",
+    "fullName": "ilkerakar",
+    "passwordHash": "$2b$10$nBhUcUZrolB3EGqHmpNYQuSe3xJeaPvGqYG.TD0FxEijG9VqPcDPu",
+    "role": "admin",
+    "createdAt": "2026-05-15T10:46:40.255Z"
+  },
+  {
+    "username": "deneme",
+    "fullName": "deneme",
+    "passwordHash": "$2b$10$UXXu6tu2kBQkFTryWz5ovu4YRgEz3m/pPNl63UG25iaM7zsFU5hRG",
+    "role": "operator",
+    "createdAt": "2026-05-22T06:18:06.324Z"
+  },
+  {
+    "username": "celik",
+    "fullName": "celik",
+    "passwordHash": "$2b$10$6e1m9Hk8XQ8ap1ZBMRMsrujz2XUkxn6bVHVN80.neV/MCLqIIBnlG",
+    "role": "operator",
+    "company": "Çelikler",
+    "createdAt": "2026-05-22T06:33:37.755Z"
+  },
+  {
+    "username": "baris_servis",
+    "fullName": "Servis hesap",
+    "passwordHash": "$2b$10$lPu7HBCTJEcjsZSXO.Wso.RzeA902R8N36v/XOOehFvvfW1e2TWYq",
+    "role": "admin",
+    "company": null,
+    "createdAt": "2026-06-29T14:47:29.879Z"
+  },
+  {
+    "username": "ilkerakar",
+    "fullName": "ilkerakar",
+    "passwordHash": "$2b$10$pxjLqmIFJogqSs88s6Qn.O64Kpgjj5w7pCEY9PUtawDkQiM4OmVAG",
+    "role": "admin",
+    "company": null,
+    "createdAt": "2026-07-31T11:37:59.821Z"
+  }
+]

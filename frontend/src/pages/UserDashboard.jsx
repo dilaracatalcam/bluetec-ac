@@ -129,7 +129,7 @@ export default function UserDashboard() {
 
     const fetchResponses = async () => {
       try {
-        const res = await fetch("/responses");
+        const res = await fetch("/api/responses");
         const json = await res.json();
 
         // SET OK map
