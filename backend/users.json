@@ -28,16 +28,9 @@
     "createdAt": "2026-05-15T10:46:40.255Z"
   },
   {
-    "username": "deneme",
-    "fullName": "deneme",
-    "passwordHash": "$2b$10$UXXu6tu2kBQkFTryWz5ovu4YRgEz3m/pPNl63UG25iaM7zsFU5hRG",
-    "role": "operator",
-    "createdAt": "2026-05-22T06:18:06.324Z"
-  },
-  {
     "username": "celik",
     "fullName": "celik",
-    "passwordHash": "$2b$10$6e1m9Hk8XQ8ap1ZBMRMsrujz2XUkxn6bVHVN80.neV/MCLqIIBnlG",
+    "passwordHash": "$2b$10$C00JT5UUXsYcSnog4WgxTOGwTzP/rWiUJVj3P.KQPJ9vrbKmmbjIW",
     "role": "operator",
     "company": "Çelikler",
     "createdAt": "2026-05-22T06:33:37.755Z"
@@ -57,5 +50,27 @@
     "role": "admin",
     "company": null,
     "createdAt": "2026-07-31T11:37:59.821Z"
+  },
+  {
+    "username": "denemecelik",
+    "fullName": "deneme celik",
+    "passwordHash": "$2b$10$IWZ5thlqcojpuJNTX7tRuumoAeUlI6nId5PoFgAjlt1Cz.gC5r/g6",
+    "role": "operator",
+    "company": "Çelikler",
+    "createdAt": "2026-08-04T13:01:42.534Z",
+    "allowedMacs": []
+  },
+  {
+    "username": "denemebireysel",
+    "fullName": "deneme bireysel",
+    "passwordHash": "$2b$10$AWIcgqjoKlCpQttyZu1Da.bfSu/xRbbR...KOslbHXRZvCFy32gBG",
+    "role": "operator",
+    "company": null,
+    "createdAt": "2026-08-04T13:02:33.317Z",
+    "allowedMacs": [
+      "DC:DA:0C:54:5A:04",
+      "DC:DA:0C:54:6F:30",
+      "DC:DA:0C:54:6C:D8"
+    ]
   }
 ]

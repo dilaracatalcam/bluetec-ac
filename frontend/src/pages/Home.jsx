@@ -9,6 +9,7 @@ import Connections from "../components/Connections.jsx";
 import DeviceSelect from "../components/DeviceSelect.jsx";
 import DeviceManagement from "../components/DeviceManagement.jsx";
 import DeviceSetup from "../components/DeviceSetup.jsx";
+import BulkUpdate from "../components/BulkUpdate.jsx";
 import OtaServerControl from "../components/OtaServerControl.jsx";
 import DeviceVersions from "../components/DeviceVersions.jsx";
 import OtaServerLogs from "../components/OtaServerLogs.jsx";
@@ -251,6 +252,7 @@ const SECTIONS = [
   { key: "users",        label: "Kullanıcı Yönetimi", icon: <HiOutlineUsers />, superadminOnly: true, adminOnly: true },
   { key: "device-mgmt",  label: "Cihaz Yönetimi",    icon: <HiOutlineCpuChip />, superadminOnly: true, adminOnly: true },
   { key: "device-setup", label: "Cihaz Kurulum",    icon: <HiOutlineWrenchScrewdriver />, superadminOnly: true, adminOnly: true },
+  { key: "bulk-update",  label: "Toplu Güncelleme", icon: <HiOutlineArrowUpTray />, superadminOnly: true, adminOnly: true },
   { key: "ota-server",   label: "OTA Sunucu Kontrolü", icon: <HiOutlineServerStack />, superadminOnly: true, adminOnly: true },
   { key: "device-versions", label: "Cihaz Versiyonları", icon: <HiOutlineDocumentMagnifyingGlass />, superadminOnly: true, adminOnly: true },
 ];
@@ -339,7 +341,22 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     return () => { cancelled = true; };
   }, [authFetch]);
 
+  /* ── Operatör cihaz seçimi ──
+     Operatörlere /api/devices MAC göndermiyor (backend siliyor), bu yüzden
+     serbest MAC girişi yerine cihaz listesinden seçim yapılır ve backend'e
+     deviceId gönderilir — MAC'i backend çözer. */
+  const isOperator = currentUser?.role === "operator";
+  const [myDevices, setMyDevices] = useState([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
+  const [connectedLabel, setConnectedLabel] = useState("");
 
+  useEffect(() => {
+    if (!isOperator) return;
+    authFetch("/api/devices")
+      .then((r) => r.json())
+      .then((d) => setMyDevices(d.devices || []))
+      .catch(() => {});
+  }, [isOperator, authFetch]);
 
   // Çoklu kullanıcı — aynı MAC'e bağlı diğer kullanıcılar + deactivate uyarısı
   const [otherUsersOnSameMac, setOtherUsersOnSameMac] = useState([]); // [{ username, fullName }]
@@ -603,15 +620,33 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   }, [isActive, authFetch]);
 
   const handleSubmit = async (e) => {
-    e.preventDefault(); setMessage(""); setLoading(true);
+    e.preventDefault(); setMessage("");
+
+    if (isOperator && !selectedDeviceId) {
+      setMessage("Önce bir cihaz seçin");
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
+
+    setLoading(true);
     try {
+      const body = isOperator ? { deviceId: selectedDeviceId } : { newTarget: mac };
       const r = await authFetch("/api/update-target", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newTarget: mac }),
+        body: JSON.stringify(body),
       });
       const d = await r.json();
       if (!r.ok) { setMessage(d.error || "Hata"); setIsConnected(false); }
-      else { setMessage(""); setIsConnected(true); }
+      else {
+        setMessage("");
+        setIsConnected(true);
+        if (isOperator) {
+          const dev = myDevices.find((x) => String(x.id) === String(selectedDeviceId));
+          setConnectedLabel(dev ? (dev.location || dev.device_code || `#${dev.id}`) : "Cihaz");
+        } else {
+          setConnectedLabel(mac);
+        }
+      }
     } catch { setMessage("Sunucuya ulaşılamadı"); setIsConnected(false); }
     finally { setLoading(false); }
   };
@@ -1434,7 +1469,12 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
 
   const renderSection = () => {
     switch (activeSection) {
-      case "device-select": return <DeviceSelect token={token} onConnect={(mac, device) => { setMac(mac); setIsConnected(true); setActiveSection("ocpp-wifi"); }} />;
+      case "device-select": return <DeviceSelect token={token} onConnect={(mac, device) => {
+        if (mac) setMac(mac);
+        setConnectedLabel(device?.location || device?.device_code || mac || "Cihaz");
+        setIsConnected(true);
+        setActiveSection("ocpp-wifi");
+      }} />;
       case "ocpp-wifi":  return renderOcppWifi();
       case "ui":         return renderUI();
       case "msp-config": return renderMspConfig();
@@ -1448,6 +1488,9 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                            : renderOcppWifi();
       case "device-setup": return currentUser?.role === "superadmin"
                            ? <DeviceSetup token={token} isActive={isActive} sendCommand={sendCommand} setReadValues={setReadValues} />
+                           : renderOcppWifi();
+      case "bulk-update": return currentUser?.role === "superadmin"
+                           ? <BulkUpdate token={token} />
                            : renderOcppWifi();
       case "device-mgmt": return currentUser?.role === "superadmin"
                            ? <DeviceManagement token={token} />
@@ -1559,8 +1602,10 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
               {badge.t}
             </div>
 
-            {isConnected && mac && (
-              <span className="hidden md:inline text-[11px] text-[var(--text-muted)] font-mono tracking-tight truncate">{mac}</span>
+            {isConnected && (connectedLabel || mac) && (
+              <span className="hidden md:inline text-[11px] text-[var(--text-muted)] font-mono tracking-tight truncate">
+                {connectedLabel || mac}
+              </span>
             )}
 
             {/* Aynı MAC'e bağlı diğer kullanıcılar badge'i */}
@@ -1579,11 +1624,28 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
 
             {/* Masaüstünde form sağda — mobilde GİZLİ, aşağıda 2. satıra düşer */}
             <form onSubmit={handleSubmit} className="hidden sm:flex gap-2 items-center shrink-0">
-              <input value={mac} onChange={(e) => setMac(e.target.value)}
-                placeholder="AA:BB:CC:DD:EE:FF" required
-                className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                           px-3 py-1.5 rounded-lg text-[12px] font-mono outline-none placeholder:text-[var(--text-muted)]
-                           focus:border-[var(--accent)] transition w-44" />
+              {isOperator ? (
+                <select value={selectedDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)} required
+                  className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                             px-3 py-1.5 rounded-lg text-[12px] outline-none
+                             focus:border-[var(--accent)] transition w-56 cursor-pointer">
+                  <option value="">
+                    {myDevices.length === 0 ? "Atanmış cihaz yok" : "Cihaz seçin…"}
+                  </option>
+                  {myDevices.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.location || d.device_code || `#${d.id}`}
+                      {d.company ? ` — ${d.company}` : ""}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input value={mac} onChange={(e) => setMac(e.target.value)}
+                  placeholder="AA:BB:CC:DD:EE:FF" required
+                  className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                             px-3 py-1.5 rounded-lg text-[12px] font-mono outline-none placeholder:text-[var(--text-muted)]
+                             focus:border-[var(--accent)] transition w-44" />
+              )}
               <button disabled={loading}
                 className={`px-4 py-1.5 rounded-lg text-[12px] font-bold transition cursor-pointer tracking-wide uppercase
                   ${loading ? "bg-[var(--bg-subtle)] text-[var(--text-muted)]" : "bg-emerald-500 hover:bg-emerald-400 text-white shadow-sm shadow-emerald-500/30"}`}>
@@ -1611,11 +1673,27 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
 
           {/* ── 2. Satır: Mobilde MAC input + butonlar ── */}
           <form onSubmit={handleSubmit} className="sm:hidden flex gap-2 items-center px-4 pb-3">
-            <input value={mac} onChange={(e) => setMac(e.target.value)}
-              placeholder="AA:BB:CC:DD:EE:FF" required
-              className="flex-1 min-w-0 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                         px-3 py-2 rounded-lg text-[13px] font-mono outline-none placeholder:text-[var(--text-muted)]
-                         focus:border-[var(--accent)] transition" />
+            {isOperator ? (
+              <select value={selectedDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)} required
+                className="flex-1 min-w-0 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                           px-3 py-2 rounded-lg text-[13px] outline-none
+                           focus:border-[var(--accent)] transition">
+                <option value="">
+                  {myDevices.length === 0 ? "Atanmış cihaz yok" : "Cihaz seçin…"}
+                </option>
+                {myDevices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.location || d.device_code || `#${d.id}`}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input value={mac} onChange={(e) => setMac(e.target.value)}
+                placeholder="AA:BB:CC:DD:EE:FF" required
+                className="flex-1 min-w-0 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                           px-3 py-2 rounded-lg text-[13px] font-mono outline-none placeholder:text-[var(--text-muted)]
+                           focus:border-[var(--accent)] transition" />
+            )}
             <button disabled={loading}
               className={`px-4 py-2 rounded-lg text-[12px] font-bold transition cursor-pointer tracking-wide uppercase shrink-0
                 ${loading ? "bg-[var(--bg-subtle)] text-[var(--text-muted)]" : "bg-emerald-500 active:bg-emerald-400 text-white shadow-sm shadow-emerald-500/30"}`}>
@@ -1640,9 +1718,9 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
           </form>
 
           {/* MAC mobilde küçük altta — sadece bağlıyken göster */}
-          {isConnected && mac && (
+          {isConnected && (connectedLabel || mac) && (
             <div className="md:hidden px-4 pb-2 text-[10px] text-[var(--text-muted)] font-mono tracking-tight">
-              {mac}
+              {connectedLabel || mac}
               {otherUsersOnSameMac.length > 0 && (
                 <span className="ml-2 text-amber-500 font-bold">
                   · {otherUsersOnSameMac.length} kullanıcı daha

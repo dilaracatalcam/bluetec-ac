@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { HiOutlineCpuChip, HiOutlineArrowPath, HiOutlineMagnifyingGlass } from "react-icons/hi2";
 import { TbPlugConnected } from "react-icons/tb";
 import ScrollableTable from "./ScrollableTable.jsx";
@@ -30,7 +30,7 @@ export default function DeviceSelect({ token, onConnect }) {
       .catch(() => {});
   }, [authFetch]);
 
-  // Şirket seçmeden MAC/konum ile hızlı arama yapabilmek için tüm cihazları arka planda yükle
+  // Şirket seçmeden konum/MAC ile hızlı arama yapabilmek için tüm (yetkili) cihazları arka planda yükle
   useEffect(() => {
     setLoadingAll(true);
     authFetch("/api/devices")
@@ -50,7 +50,14 @@ export default function DeviceSelect({ token, onConnect }) {
       .catch(() => setLoading(false));
   }, [selectedCompany, authFetch]);
 
-  // Şirket seçiliyse o şirketin cihazları, değilse (arama yazıldıysa) tüm cihazlar arasında ara
+  /* Operatörlere backend MAC göndermiyor (yetki sızdırmamak için).
+     Liste boyunca hiç MAC yoksa MAC sütununu ve MAC aramasını gizle —
+     boş bir sütun göstermenin anlamı yok. */
+  const hasMacs = useMemo(
+    () => allDevices.some((d) => d.mac) || devices.some((d) => d.mac),
+    [allDevices, devices]
+  );
+
   const searchSource = selectedCompany ? devices : (search.trim() ? allDevices : []);
   const isLoading = selectedCompany ? loading : (search.trim() ? loadingAll : false);
 
@@ -66,24 +73,38 @@ export default function DeviceSelect({ token, onConnect }) {
     );
   });
 
+  /* ── Bağlantı ──
+     MAC yerine deviceId gönderiliyor. Sebep: operatörler MAC'i hiç görmüyor,
+     eski kod `if (!selectedDevice?.mac) return;` ile SESSİZCE geri dönüyordu —
+     buton hiçbir şey yapmıyor, hata da göstermiyordu.
+     deviceId ile backend MAC'i kendi çözüyor ve yetkiyi kendi doğruluyor. */
   const handleConnect = async () => {
-    if (!selectedDevice?.mac) return;
+    if (!selectedDevice) return;
+    if (selectedDevice.id === undefined || selectedDevice.id === null) {
+      setError("Cihaz kimliği okunamadı, sayfayı yenileyip tekrar deneyin");
+      return;
+    }
+
     setConnecting(true);
     setError("");
     try {
       const r = await authFetch("/api/update-target", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newTarget: selectedDevice.mac }),
+        body: JSON.stringify({ deviceId: selectedDevice.id }),
       });
       const d = await r.json();
       if (!r.ok) { setError(d.error || "Bağlanılamadı"); setConnecting(false); return; }
-      onConnect?.(selectedDevice.mac, selectedDevice);
+      onConnect?.(selectedDevice.mac || "", selectedDevice);
     } catch {
       setError("Sunucuya ulaşılamadı");
       setConnecting(false);
     }
   };
+
+  const gridCols = hasMacs
+    ? "grid-cols-[minmax(200px,1fr)_140px_90px]"
+    : "grid-cols-[minmax(200px,1fr)_90px]";
 
   return (
     <div>
@@ -121,7 +142,11 @@ export default function DeviceSelect({ token, onConnect }) {
           <input
             value={search}
             onChange={(e) => { setSearch(e.target.value); setSelectedDevice(null); }}
-            placeholder={selectedCompany ? "Konum, ID veya MAC ara..." : "MAC, konum veya ID ile ara (şirket seçmeden)..."}
+            placeholder={
+              selectedCompany
+                ? (hasMacs ? "Konum, ID veya MAC ara..." : "Konum veya ID ara...")
+                : (hasMacs ? "MAC, konum veya ID ile ara (şirket seçmeden)..." : "Konum veya ID ile ara (şirket seçmeden)...")
+            }
             className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
                        pl-8 pr-3 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition
                        placeholder:text-[var(--text-muted)]"
@@ -137,7 +162,7 @@ export default function DeviceSelect({ token, onConnect }) {
                 <span className="text-[var(--accent)] font-semibold">{filtered.length}</span>
                 {selectedCompany
                   ? (search ? ` sonuç (toplam ${devices.length})` : " cihaz listelendi")
-                  : ` sonuç (tüm şirketler, ${allDevices.length} cihaz arasında)`}
+                  : ` sonuç (${allDevices.length} cihaz arasında)`}
               </>
             )}
           </span>
@@ -147,10 +172,12 @@ export default function DeviceSelect({ token, onConnect }) {
 
       {!isLoading && filtered.length > 0 && (
         <div className="border border-[var(--border-subtle)] rounded-xl overflow-hidden mb-4">
-          <ScrollableTable minWidth="460px">
-            <div className="grid grid-cols-[minmax(200px,1fr)_140px_90px] px-4 py-2 bg-[var(--bg-subtle)] border-b border-[var(--border-subtle)]">
+          <ScrollableTable minWidth={hasMacs ? "460px" : "320px"}>
+            <div className={`grid ${gridCols} px-4 py-2 bg-[var(--bg-subtle)] border-b border-[var(--border-subtle)]`}>
               <span className="text-[10px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">Konum — ID</span>
-              <span className="text-[10px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">MAC Adresi</span>
+              {hasMacs && (
+                <span className="text-[10px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">MAC Adresi</span>
+              )}
               <span className="text-[10px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">Bağlantı</span>
             </div>
             <div className="max-h-[400px] overflow-y-auto custom-scroll">
@@ -159,8 +186,8 @@ export default function DeviceSelect({ token, onConnect }) {
                 return (
                   <div
                     key={d.id}
-                    onClick={() => setSelectedDevice(d)}
-                    className={`grid grid-cols-[minmax(200px,1fr)_140px_90px] items-center px-4 py-3 cursor-pointer transition-colors border-b border-[var(--border-subtle)] last:border-b-0
+                    onClick={() => { setSelectedDevice(d); setError(""); }}
+                    className={`grid ${gridCols} items-center px-4 py-3 cursor-pointer transition-colors border-b border-[var(--border-subtle)] last:border-b-0
                       ${isSelected ? "bg-[var(--accent-soft)] border-l-2 border-l-[var(--accent)]" : "hover:bg-[var(--bg-hover)]"}`}
                   >
                     <div>
@@ -175,7 +202,9 @@ export default function DeviceSelect({ token, onConnect }) {
                         <div className="text-[10px] text-[var(--text-muted)] font-mono mt-0.5">{d.serial_no}</div>
                       )}
                     </div>
-                    <div className="text-[11px] text-[var(--text-muted)] font-mono truncate pr-2">{d.mac || "—"}</div>
+                    {hasMacs && (
+                      <div className="text-[11px] text-[var(--text-muted)] font-mono truncate pr-2">{d.mac || "—"}</div>
+                    )}
                     <div>
                       {d.connection ? (
                         <span className={`inline-flex items-center text-[10px] font-bold px-2 py-[3px] rounded-full
@@ -204,7 +233,11 @@ export default function DeviceSelect({ token, onConnect }) {
       {!selectedCompany && !search.trim() && (
         <div className="text-center py-12 text-[var(--text-muted)]">
           <HiOutlineCpuChip className="text-[32px] mx-auto mb-2 opacity-40" />
-          <p className="text-[12px]">Bir şirket seçin veya MAC ile arayın</p>
+          <p className="text-[12px]">
+            {allDevices.length === 0 && !loadingAll
+              ? "Size atanmış cihaz yok"
+              : "Bir şirket seçin veya arama yapın"}
+          </p>
         </div>
       )}
 
@@ -212,9 +245,13 @@ export default function DeviceSelect({ token, onConnect }) {
         <div className="mt-2 p-4 bg-[var(--bg-subtle)] border border-[var(--accent-border)] rounded-xl flex items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="text-[13px] font-semibold text-[var(--text-primary)] truncate">
-              {selectedDevice.location}{selectedDevice.device_code && ` — ${selectedDevice.device_code}`}
+              {selectedDevice.location || "—"}{selectedDevice.device_code && ` — ${selectedDevice.device_code}`}
             </div>
-            <div className="text-[11px] text-[var(--text-muted)] font-mono mt-0.5">{selectedDevice.mac}</div>
+            {selectedDevice.mac ? (
+              <div className="text-[11px] text-[var(--text-muted)] font-mono mt-0.5">{selectedDevice.mac}</div>
+            ) : selectedDevice.company ? (
+              <div className="text-[11px] text-[var(--text-muted)] mt-0.5">{selectedDevice.company}</div>
+            ) : null}
             {error && <div className="text-[11px] text-rose-400 font-medium mt-1">{error}</div>}
           </div>
           <button

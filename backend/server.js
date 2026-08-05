@@ -19,6 +19,7 @@ const { validateBin, validateTxt, convertCtoBin } = require('./ota-validators');
 const { updateFirmwareJson, dottedVersion, readFirmwareJson, extractVersions, removeFromFirmwareJson } = require('./ota-firmware-json');
 const { readOtaConfig, writeOtaConfig } = require('./ota-config');
 const otaLogTailer = require('./ota-log-tailer');
+const { buildScope, allowsDevice, allowsMac, visibleDevices } = require('./device-scope');
 
 const app = express();
 app.use(cors());
@@ -111,6 +112,12 @@ function writeUsers(users) {
     fs.renameSync(tmp, USERS_PATH);
 }
 
+// Istek sahibinin cihaz erisim kapsami
+function scopeFor(req) {
+    const users = readUsers();
+    return buildScope(users.find((u) => u.username === req.username), req.userRole);
+}
+
 // Token deposu
 const activeSessions = {};
 const TOKEN_EXPIRY = 24 * 60 * 60 * 1000;
@@ -149,9 +156,7 @@ app.post('/api/login', async (req, res) => {
     }
 
     const token = crypto.randomBytes(32).toString('hex');
-    const sessionId = `${user.username}_${crypto.randomBytes(8).toString('hex')}`;
     activeSessions[token] = {
-        sessionId,
         username: user.username,
         fullName: user.fullName,
         role: user.role,
@@ -160,8 +165,8 @@ app.post('/api/login', async (req, res) => {
     };
 
     // Slot meta'sında fullName'i de tutalım (UI'da gösterim için)
-    if (!slotMeta[sessionId]) slotMeta[sessionId] = {};
-    slotMeta[sessionId].fullName = user.fullName;
+    if (!slotMeta[user.username]) slotMeta[user.username] = {};
+    slotMeta[user.username].fullName = user.fullName;
 
     console.log(`[AUTH] ${user.username} (${user.role}) → ${page} giriş başarılı`);
 
@@ -170,7 +175,7 @@ app.post('/api/login', async (req, res) => {
         role: user.role,
         username: user.username,
         fullName: user.fullName,
-        session_id: sessionId
+        session_id: user.username,   // ← Frontend bunu localStorage'a kaydedip her API çağrısında gönderecek
     });
 });
 
@@ -200,7 +205,7 @@ function requireAuth(allowedRoles = null) {
         req.userRole = session.role;
         req.username = session.username;
         req.userFullName = session.fullName;
-        req.sessionId = session.sessionId;
+        req.sessionId = session.username; // session_id = username
         next();
     };
 }
@@ -211,12 +216,12 @@ app.post('/api/logout', (req, res) => {
     if (authHeader && authHeader.startsWith('Bearer ')) {
         const token = authHeader.split(' ')[1];
         if (activeSessions[token]) {
-            const session = activeSessions[token];
-            console.log(`[AUTH] ${session.username} çıkış yaptı`);
+            const username = activeSessions[token].username;
+            console.log(`[AUTH] ${username} çıkış yaptı`);
             delete activeSessions[token];
 
-            // Yalnızca bu oturumun bağlantı slotunu temizle
-            removeSlot(session.sessionId).catch((e) => console.error('logout slot temizle:', e));
+            // O kullanıcının slot'unu da temizle
+            removeSlot(username).catch((e) => console.error('logout slot temizle:', e));
         }
     }
     res.json({ message: 'Çıkış yapıldı' });
@@ -231,7 +236,7 @@ app.get('/api/me', requireAuth(), (req, res) => {
         username: user.username,
         fullName: user.fullName,
         role: user.role,
-        session_id: req.sessionId,
+        session_id: user.username,
     });
 });
 
@@ -253,12 +258,13 @@ app.get('/api/users', requireAuth(), requireSuperadmin, (_req, res) => {
         fullName: u.fullName,
         role: u.role,
         company: u.company || null,
+        allowedMacs: Array.isArray(u.allowedMacs) ? u.allowedMacs : [],
         createdAt: u.createdAt,
     })));
 });
 
 app.post('/api/users', requireAuth(), requireSuperadmin, async (req, res) => {
-    const { username, fullName, password, role, company } = req.body || {};
+    const { username, fullName, password, role, company, allowedMacs } = req.body || {};
 
     if (!username || !fullName || !password || !role) {
         return res.status(400).json({ error: 'Tüm alanlar gerekli' });
@@ -280,13 +286,47 @@ app.post('/api/users', requireAuth(), requireSuperadmin, async (req, res) => {
 
     try {
         const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-        users.push({ username, fullName, passwordHash, role, company: company || null, createdAt: new Date().toISOString() });
+        const cleanMacs = Array.isArray(allowedMacs)
+            ? [...new Set(allowedMacs.map((m) => String(m).trim().toUpperCase()).filter((m) => MAC_REGEX.test(m)))]
+            : [];
+        users.push({
+            username, fullName, passwordHash, role,
+            company: company || null,
+            allowedMacs: cleanMacs,
+            createdAt: new Date().toISOString(),
+        });
         writeUsers(users);
         console.log(`[USERS] ${req.username} yeni kullanıcı ekledi: ${username} (${role})`);
         res.json({ message: 'Kullanıcı eklendi', username });
     } catch (e) {
         res.status(500).json({ error: 'Kullanıcı eklenemedi' });
     }
+});
+
+// ── Kullanicinin sirket / cihaz yetkisini duzenle ── //
+app.put('/api/users/:username', requireAuth(), requireSuperadmin, (req, res) => {
+    const { company, allowedMacs, role } = req.body || {};
+    const users = readUsers();
+    const user = users.find((u) => u.username === req.params.username);
+    if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+    if (user.role === 'superadmin') return res.status(403).json({ error: 'Superadmin yetkisi değiştirilemez' });
+
+    if (role !== undefined) {
+        if (role !== 'admin' && role !== 'operator') {
+            return res.status(400).json({ error: 'Rol "admin" veya "operator" olmalı' });
+        }
+        user.role = role;
+    }
+    if (company !== undefined) user.company = company || null;
+    if (allowedMacs !== undefined) {
+        user.allowedMacs = Array.isArray(allowedMacs)
+            ? [...new Set(allowedMacs.map((m) => String(m).trim().toUpperCase()).filter((m) => MAC_REGEX.test(m)))]
+            : [];
+    }
+
+    writeUsers(users);
+    console.log(`[USERS] ${req.username} yetki güncelledi: ${user.username} (şirket: ${user.company || '—'}, cihaz: ${(user.allowedMacs || []).length})`);
+    res.json({ message: 'Yetkiler güncellendi' });
 });
 
 app.delete('/api/users/:username', requireAuth(), requireSuperadmin, async (req, res) => {
@@ -553,18 +593,73 @@ async function deactivateThenActivateForSlot(sessionId, target) {
 
 // Bağlan — target değiştir
 app.post('/api/update-target', requireAuth(), async (req, res) => {
-    const { newTarget } = req.body || {};
+    const { newTarget, deviceCode, deviceId } = req.body || {};
     const sessionId = req.sessionId;
 
-    if (!newTarget || !MAC_REGEX.test(newTarget)) {
-        return res.status(400).json({ error: 'Geçersiz veya eksik MAC adresi' });
+    let targetMac = newTarget;
+    let resolvedDeviceCode = deviceCode || null;
+
+    // Operatör doğrudan MAC gönderemez.
+    // Seçtiği cihazın ID'si üzerinden MAC backend tarafından çözülür.
+    if (req.userRole === 'operator') {
+        if (!deviceId) {
+            return res.status(400).json({ error: 'Cihaz seçilmedi' });
+        }
+
+        const devices = getDevices({});
+        const device = devices.find(
+            (d) => String(d.id) === String(deviceId)
+        );
+
+        if (!device) {
+            return res.status(404).json({ error: 'Cihaz bulunamadı' });
+        }
+
+        if (!allowsDevice(scopeFor(req), device)) {
+            return res.status(403).json({
+                error: 'Bu cihaza bağlanma yetkiniz yok'
+            });
+        }
+
+        targetMac = device.mac;
+        resolvedDeviceCode = device.device_code || null;
+    }
+
+    // Admin ve superadmin için mevcut deviceCode bağlantısı korunur.
+    else if (deviceCode) {
+        const device = getDeviceByCode(String(deviceCode));
+
+        if (!device) {
+            return res.status(404).json({ error: 'Cihaz bulunamadı' });
+        }
+
+        targetMac = device.mac;
+        resolvedDeviceCode = device.device_code || deviceCode;
+    }
+
+    if (!targetMac || !MAC_REGEX.test(targetMac)) {
+        return res.status(400).json({
+            error: 'Geçersiz cihaz veya MAC adresi'
+        });
+    }
+
+    // Yetki kontrolu — HER yol icin (ham MAC girisi, deviceCode, deviceId)
+    const connScope = scopeFor(req);
+    if (!connScope.unrestricted && !allowsMac(connScope, targetMac)) {
+        console.warn(`[AUTH] ${req.username} yetkisiz cihaza baglanmayi denedi: ${targetMac}`);
+        return res.status(403).json({ error: 'Bu cihaza bağlanma yetkiniz yok' });
     }
 
     try {
-        await deactivateThenActivateForSlot(sessionId, newTarget);
+        await deactivateThenActivateForSlot(sessionId, targetMac);
         touchSlot(sessionId);
-        console.log(`[CONNECT] ${sessionId} → ${newTarget}`);
-        res.json({ message: 'Başarılı', newTarget });
+
+        console.log(`[CONNECT] ${sessionId} → ${targetMac}`);
+
+        res.json({
+            message: 'Başarılı',
+            deviceCode: resolvedDeviceCode
+        });
     } catch (e) {
         console.error('update-target hata:', e);
         res.status(500).json({ error: 'target.json yazılamadı' });
@@ -632,6 +727,11 @@ app.post('/api/send-command', requireAuth(), async (req, res) => {
         const slot = data.requests.find((r) => r.session_id === sessionId);
         if (!slot) {
             return res.status(400).json({ message: 'Önce bir cihaza bağlanmalısınız.' });
+        }
+        const cmdScope = scopeFor(req);
+        if (!cmdScope.unrestricted && !allowsMac(cmdScope, slot.target)) {
+            console.warn(`[AUTH] ${req.username} yetkisiz cihaza komut denedi: ${slot.target}`);
+            return res.status(403).json({ message: 'Bu cihaza komut gönderme yetkiniz yok' });
         }
         slot.send_message = frame;
         await writeJsonRaw(TARGET_PATH, data);
@@ -856,7 +956,7 @@ try {
     console.log('[SSL] Sertifika bulunamadı, sadece HTTP çalışacak');
 }
 
-app.listen(PORT, '127.0.0.1', () => {
+app.listen(8005, '0.0.0.0', () => {
     console.log('HTTP çalışıyor: http://localhost:8005');
 });
 
@@ -874,12 +974,13 @@ console.log(`[SLOTS] inaktivite timeout: ${INACTIVITY_TIMEOUT / 60000} dk`);
 
 app.get("/api/devices/companies", requireAuth(), (req, res) => {
   try {
-    if (req.userRole === "operator") {
-      const users = readUsers();
-      const user = users.find((u) => u.username === req.username);
-      return res.json({ companies: [user?.company].filter(Boolean) });
-    }
-    res.json({ companies: getCompanies() });
+    const scope = scopeFor(req);
+    if (scope.unrestricted) return res.json({ companies: getCompanies() });
+
+    // Tek tek atanan cihazlar baska sirketlerden olabilir — onlarin
+    // sirketleri de listede gorunmeli.
+    const companies = [...new Set(visibleDevices(scope).map((d) => d.company).filter(Boolean))];
+    res.json({ companies });
   } catch (e) {
     res.status(500).json({ error: "Sirket listesi alinamadi" });
   }
@@ -887,13 +988,13 @@ app.get("/api/devices/companies", requireAuth(), (req, res) => {
 
 app.get("/api/devices/filters", requireAuth(), (req, res) => {
   try {
-    let company = req.query.company || null;
-    if (req.userRole === "operator") {
-      const users = readUsers();
-      const user = users.find((u) => u.username === req.username);
-      company = user?.company || null;
+    const scope = scopeFor(req);
+    if (scope.unrestricted) {
+      return res.json({ locations: getLocations(req.query.company || null) });
     }
-    res.json({ locations: getLocations(company) });
+    let list = visibleDevices(scope);
+    if (req.query.company) list = list.filter((d) => d.company === req.query.company);
+    res.json({ locations: [...new Set(list.map((d) => d.location).filter(Boolean))] });
   } catch (e) {
     res.status(500).json({ error: "Filtre listesi alinamadi" });
   }
@@ -901,20 +1002,22 @@ app.get("/api/devices/filters", requireAuth(), (req, res) => {
 
 app.get("/api/devices", requireAuth(), (req, res) => {
   try {
-    let company = req.query.company || null;
-    let userCompany = null;
-    if (req.userRole === "operator") {
-      const users = readUsers();
-      const user = users.find((u) => u.username === req.username);
-      userCompany = user?.company || null;
-      company = userCompany;
+    const scope = scopeFor(req);
+    let devices;
+
+    if (scope.unrestricted) {
+      devices = getDevices({
+        company: req.query.company || null,
+        location: req.query.location || null,
+        role: req.userRole,
+      });
+    } else {
+      devices = visibleDevices(scope);
+      if (req.query.company) devices = devices.filter((d) => d.company === req.query.company);
+      if (req.query.location) devices = devices.filter((d) => d.location === req.query.location);
     }
-    const devices = getDevices({
-      company,
-      location: req.query.location || null,
-      role: req.userRole,
-      userCompany,
-    });
+
+    // Operatorler MAC gormez — cihaz secimi id uzerinden yapilir.
     const sanitized = devices.map((d) => ({
       ...d,
       mac: req.userRole === "operator" ? undefined : d.mac,
@@ -1009,12 +1112,8 @@ app.get("/api/devices/:code", requireAuth(), (req, res) => {
   try {
     const device = getDeviceByCode(req.params.code);
     if (!device) return res.status(404).json({ error: "Cihaz bulunamadi" });
-    if (req.userRole === "operator") {
-      const users = readUsers();
-      const user = users.find((u) => u.username === req.username);
-      if (device.company !== user?.company) {
-        return res.status(403).json({ error: "Yetkisiz" });
-      }
+    if (!allowsDevice(scopeFor(req), device)) {
+      return res.status(403).json({ error: "Yetkisiz" });
     }
     const result = { ...device };
     if (req.userRole === "operator") delete result.mac;
