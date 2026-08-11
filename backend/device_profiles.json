@@ -355,12 +355,12 @@
       {
         "id": 2,
         "label": "OCPP ID",
-        "value": ""
+        "value": "5007000501"
       },
       {
         "id": 3,
         "label": "QR Kod",
-        "value": ""
+        "value": "50070005011"
       },
       {
         "id": 9,
@@ -385,8 +385,32 @@
       {
         "id": 44,
         "label": "Box Seri No",
-        "value": ""
+        "value": "BT110S222501391117"
+      },
+      {
+        "id": 7,
+        "label": "contype",
+        "value": "1"
+      },
+      {
+        "id": 64,
+        "label": "logo name",
+        "value": "estasyon_logo"
+      },
+      {
+        "id": 63,
+        "label": "logo activate",
+        "value": "1"
+      },
+      {
+        "id": 13,
+        "label": "logo or wriring",
+        "value": "1"
       }
     ]
+  },
+  "DENEME": {
+    "label": "deneme",
+    "params": []
   }
 }

@@ -66,11 +66,11 @@ const UI_PARAMS = [
   { id: 14, icon: <HiOutlineTag />,            label: "Şirket Adı", dependsOn: 13, dependsValue: "0" },
   { id: 35, icon: <TbColorSwatch />,           label: "Gradient/Renk",
     type: "dropdown", options: [
-      { value: "1", label: "Gradient" },
-      { value: "0", label: "Renk" },
+      { value: "0", label: "Gradient" },
+      { value: "1", label: "Renk" },
     ]},
   { id: 36, icon: <TbTargetArrow />,           label: "Renk Seçimi",
-    type: "color", dependsOn: 35, dependsValue: "0",
+    type: "color", dependsOn: 35, dependsValue: "1",
     depMessage: "Renk seçimi yapabilmek için lütfen Gradient seçmeyin" },
   // Tarama
   { id: 62, icon: <HiOutlineWifi />,           label: "Scan List" },
@@ -98,11 +98,10 @@ const MSP_CONFIG_ADMIN = [
       { value: "0", label: "Kablosuz" },
       { value: "1", label: "Kablolu" },
     ]},
-  { id: 19, icon: <HiOutlineCommandLine />,    label: "ESP Modu",
+  { id: 69, icon: <HiOutlineCommandLine />,    label: "MSP Modu",
     type: "dropdown", options: [
-      { value: "0", label: "Plug & Charge" },
-      { value: "1", label: "RFID Charge" },
-      { value: "2", label: "OCPP Charge" },
+      { value: "0", label: "Üretim Modu" },
+      { value: "1", label: "Test Modu" },
     ]},
 ];
 
@@ -161,7 +160,7 @@ const ESP_CTRL = [
     isOneShot: true, color: "red", sendValue: "1", successMsg: "Şarj durduruldu ✓",
     btnLabel: "Durdur" },
   { id: 33, icon: <HiOutlineTag />,              label: "ESP Software Versiyon", isInfo: true, isReadable: true },
-  { id: 68, icon: <HiOutlineCpuChip />,          label: "ESP Hardware Versiyon", isEditable: true },
+  { id: 68, icon: <HiOutlineCpuChip />,          label: "ESP Hardware Versiyon", isEditable: true, adminEditOnly: true },
   { id: 66, icon: <HiOutlineArrowPath />,        label: "RFID Update",
     isOneShot: true, color: "blue", sendValue: "1", successMsg: "RFID aktifleştirildi ✓",
     btnLabel: "Aktifleştir" },
@@ -209,7 +208,7 @@ function mapValue(id, raw) {
   const v = String(raw);
   if (id === 7) return ({ "0": "CommSupported", "1": "GSM", "2": "WiFi", "3": "ETH" })[v] || v;
   if (id === 13) return v === "0" ? "Yazı" : v === "1" ? "Logo" : v;
-  if (id === 35) return v === "0" ? "Renk" : v === "1" ? "Gradient" : v;
+  if (id === 35) return v === "0" ? "Gradient" : v === "1" ? "Renk" : v;
   if (id === 27) return v === "0" ? "Hata Yok" : `Hata: ${v}`;
   if (id === 25) return ({ "0": "Beklemede", "1": "Şarj Oluyor", "2": "Tamamlandı" })[v] || v;
   if (id === 15) return v === "0" ? "Kapalı" : v === "1" ? "Aktif" : v;
@@ -217,6 +216,7 @@ function mapValue(id, raw) {
   if (id === 17) return v === "0" ? "Ürün Modu" : v === "1" ? "Test Modu" : v;
   if (id === 18) return v === "0" ? "Kablosuz" : v === "1" ? "Kablolu" : v;
   if (id === 19) return ({ "0": "Plug & Charge", "1": "RFID Charge", "2": "OCPP Charge" })[v] || v;
+  if (id === 69) return v === "0" ? "Üretim Modu" : v === "1" ? "Test Modu" : v;
   if (id === 37) return ({ "NONE": "Bağlı Değil", "GSM": "GSM", "WiFi": "WiFi", "ETH": "Ethernet" })[v] || v;
   if (id === 38) return v === "0" ? "Deaktif" : v === "1" ? "Aktif" : v;
   if (id === 45) return v === "0" ? "Kopuk" : v === "1" ? "Bağlı" : v;
@@ -619,8 +619,8 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     }
   }, [isActive, authFetch]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault(); setMessage("");
+  const handleSubmit = async (e, force = false) => {
+    e?.preventDefault?.(); setMessage("");
 
     if (isOperator && !selectedDeviceId) {
       setMessage("Önce bir cihaz seçin");
@@ -630,12 +630,22 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
 
     setLoading(true);
     try {
-      const body = isOperator ? { deviceId: selectedDeviceId } : { newTarget: mac };
+      const body = isOperator ? { deviceId: selectedDeviceId, force } : { newTarget: mac, force };
       const r = await authFetch("/api/update-target", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const d = await r.json();
+
+      // Cihaz başka bir kullanıcıda meşgul — sadece superadmin devralabilir.
+      if (!r.ok && r.status === 409 && d.code === "DEVICE_OCCUPIED" && currentUser?.role === "superadmin") {
+        setLoading(false);
+        if (window.confirm(`Bu cihaz şu anda ${d.occupiedBy} tarafından kullanılıyor.\n\nBağlantısını keserek devralmak istiyor musunuz?`)) {
+          handleSubmit(null, true);
+        }
+        return;
+      }
+
       if (!r.ok) { setMessage(d.error || "Hata"); setIsConnected(false); }
       else {
         setMessage("");
@@ -1191,6 +1201,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                   value={V(p.id)} setOk={setOkMap[p.id]} disabled={!isActive}
                   failed={failedReads[p.id]} setFailed={failedSets[p.id]}
                   inputType={p.type} options={p.options}
+                  readOnly={p.adminEditOnly && isOperator}
                   bulkEditing={false} bulkDraft="" onBulkDraftChange={() => {}}
                   onSet={(id, val) => sendCommand("set", id, val)}
                   onRead={(id) => { setFailedReads((prev) => ({ ...prev, [id]: false })); sendCommand("read", id); }}
@@ -1469,12 +1480,15 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
 
   const renderSection = () => {
     switch (activeSection) {
-      case "device-select": return <DeviceSelect token={token} onConnect={(mac, device) => {
-        if (mac) setMac(mac);
-        setConnectedLabel(device?.location || device?.device_code || mac || "Cihaz");
-        setIsConnected(true);
-        setActiveSection("ocpp-wifi");
-      }} />;
+      case "device-select": return <DeviceSelect token={token}
+        isSuperadmin={currentUser?.role === "superadmin"}
+        onSelect={(device) => { if (device?.mac) setMac(device.mac); }}
+        onConnect={(mac, device) => {
+          if (mac) setMac(mac);
+          setConnectedLabel(device?.location || device?.device_code || mac || "Cihaz");
+          setIsConnected(true);
+          setActiveSection("ocpp-wifi");
+        }} />;
       case "ocpp-wifi":  return renderOcppWifi();
       case "ui":         return renderUI();
       case "msp-config": return renderMspConfig();
@@ -1484,7 +1498,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       case "ocpp-creds": return renderOcppCreds();
       case "ota":        return currentUser?.role === "superadmin" ? renderOTA() : renderOcppWifi();
       case "connections": return isAdmin
-                           ? <Connections token={token} />
+                           ? <Connections token={token} isSuperadmin={currentUser?.role === "superadmin"} />
                            : renderOcppWifi();
       case "device-setup": return currentUser?.role === "superadmin"
                            ? <DeviceSetup token={token} isActive={isActive} sendCommand={sendCommand} setReadValues={setReadValues} />

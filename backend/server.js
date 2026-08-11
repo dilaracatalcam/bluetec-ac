@@ -1,7 +1,7 @@
 const { getCompanies, getLocations, getDevices, getDeviceByCode, getCustomFields, addCustomField, deleteCustomField } = require('./db');
 require('dotenv').config();
 
-const INACTIVITY_TIMEOUT      = 10 * 60 * 1000; // 10 dakika (ms) — slot silme süresi
+const INACTIVITY_TIMEOUT      = 5 * 60 * 1000;  // 5 dakika (ms) — hareketsiz bağlantı otomatik kapatma süresi
 const SLOT_CLEANUP_INTERVAL   = 30 * 1000;      // 30 saniyede bir slot temizliği
 const SLOT_CLEAR_MSG_INTERVAL = 1500;           // send_message'ı temizleme gecikmesi
 
@@ -491,19 +491,42 @@ async function removeSlot(sessionId) {
     console.log(`[SLOT] silindi: ${sessionId}`);
 }
 
-// Periyodik slot temizliği — 10dk hareketsiz slotları sil
+// Periyodik slot temizliği — INACTIVITY_TIMEOUT boyunca hareketsiz kalan bağlantılar
+// önce yumuşak kapatılır (kullanıcıya "inaktivite" bildirimi gösterilsin diye),
+// hâlâ kimse geri dönmezse bir INACTIVITY_TIMEOUT daha sonra tamamen silinir.
 setInterval(async () => {
     const now = Date.now();
-    const toRemove = [];
+    const timedOut = [];
     for (const [sessionId, meta] of Object.entries(slotMeta)) {
         if (!meta.lastActivity) continue;
-        if (now - meta.lastActivity > INACTIVITY_TIMEOUT) {
-            toRemove.push(sessionId);
-        }
+        if (now - meta.lastActivity > INACTIVITY_TIMEOUT) timedOut.push(sessionId);
     }
-    for (const sid of toRemove) {
-        console.log(`[CLEANUP] ${sid} 10dk inaktif — slot siliniyor`);
-        await removeSlot(sid);
+    if (timedOut.length === 0) return;
+
+    const toHardRemove = [];
+    try {
+        const data = await readTarget();
+        let changed = false;
+        for (const sessionId of timedOut) {
+            const slot = data.requests.find((r) => r.session_id === sessionId);
+            if (slot && slot.control === 'activate') {
+                slot.control = 'deactivate';
+                changed = true;
+                slotMeta[sessionId].lastDeactivatedBy = 'İnaktivite (5 dakika boyunca işlem yapılmadı)';
+                slotMeta[sessionId].lastActivity = now; // hemen tekrar zaman aşımına uğramasın, bildirimi görmeye vakti olsun
+                console.log(`[CLEANUP] ${sessionId} inaktivite nedeniyle deaktif edildi`);
+            } else {
+                toHardRemove.push(sessionId);
+            }
+        }
+        if (changed) await writeJsonRaw(TARGET_PATH, data);
+    } catch (e) {
+        console.error('[CLEANUP] deaktivasyon hatası:', e.message);
+    }
+
+    for (const sessionId of toHardRemove) {
+        console.log(`[CLEANUP] ${sessionId} uzun süre inaktif — slot tamamen siliniyor`);
+        await removeSlot(sessionId);
     }
 }, SLOT_CLEANUP_INTERVAL);
 
@@ -543,7 +566,8 @@ const VAR_MAP = {
     msp_l1_volt: 54, msp_l1_cur: 55, msp_l2_volt: 56, msp_l2_cur: 57,
     msp_l3_volt: 58, msp_l3_cur: 59,
     msp_hw_ver: 60, msp_sw_ver: 61,
-    scan_list: 62, logo_update: 63, logo_name: 64, active_logo: 65
+    scan_list: 62, logo_update: 63, logo_name: 64, active_logo: 65,
+    msp_mode: 69, // mqttCONF_MODE — 0: üretim modu, 1: test modu
 };
 
 const VALID_IDS = [
@@ -551,7 +575,7 @@ const VALID_IDS = [
     20,21, 22,23,24,25,26,27, 28,29,30, 31,32,33,34,
     35,36, 37,38, 39,40,41,42,43,44, 45,
     46,47,48,49,50,51,52,53, 54,55,56,57,58,59,
-    60,61, 62,63,64,65, 66,67,68
+    60,61, 62,63,64,65, 66,67,68, 69
 ];
 
 const DEACTIVATE_WAIT_MS = 2000;
@@ -593,19 +617,15 @@ async function deactivateThenActivateForSlot(sessionId, target) {
 
 // Bağlan — target değiştir
 app.post('/api/update-target', requireAuth(), async (req, res) => {
-    const { newTarget, deviceCode, deviceId } = req.body || {};
+    const { newTarget, deviceCode, deviceId, force } = req.body || {};
     const sessionId = req.sessionId;
 
     let targetMac = newTarget;
     let resolvedDeviceCode = deviceCode || null;
 
-    // Operatör doğrudan MAC gönderemez.
-    // Seçtiği cihazın ID'si üzerinden MAC backend tarafından çözülür.
-    if (req.userRole === 'operator') {
-        if (!deviceId) {
-            return res.status(400).json({ error: 'Cihaz seçilmedi' });
-        }
-
+    // Cihaz seçim ekranı artık herkes için MAC yerine deviceId gönderiyor
+    // (operatör MAC'i hiç görmüyor). ID üzerinden MAC backend tarafından çözülür.
+    if (deviceId !== undefined && deviceId !== null) {
         const devices = getDevices({});
         const device = devices.find(
             (d) => String(d.id) === String(deviceId)
@@ -625,7 +645,12 @@ app.post('/api/update-target', requireAuth(), async (req, res) => {
         resolvedDeviceCode = device.device_code || null;
     }
 
-    // Admin ve superadmin için mevcut deviceCode bağlantısı korunur.
+    // Operatör deviceId olmadan doğrudan MAC/deviceCode gönderemez.
+    else if (req.userRole === 'operator') {
+        return res.status(400).json({ error: 'Cihaz seçilmedi' });
+    }
+
+    // Ham deviceCode ile bağlantı (deviceId gönderilmediyse).
     else if (deviceCode) {
         const device = getDeviceByCode(String(deviceCode));
 
@@ -650,6 +675,45 @@ app.post('/api/update-target', requireAuth(), async (req, res) => {
         return res.status(403).json({ error: 'Bu cihaza bağlanma yetkiniz yok' });
     }
 
+    // ── Cihaz meşgul mü? — Exclusive lock ──
+    // Aynı MAC'e başka bir session zaten "activate" durumundaysa:
+    //  - superadmin değilse tamamen engelle (override seçeneği yok)
+    //  - superadmin ise, force=true gelmediyse önce kime ait olduğunu bildirip onay iste
+    try {
+        const targetData = await readTarget();
+        const occupant = targetData.requests.find(
+            (r) => r.target === targetMac && r.control === 'activate' && r.session_id !== sessionId
+        );
+
+        if (occupant) {
+            const users2 = readUsers();
+            const occupantUser = users2.find((u) => u.username === occupant.session_id);
+            const occupantLabel = occupantUser?.fullName || occupant.session_id;
+
+            if (req.userRole !== 'superadmin') {
+                return res.status(409).json({
+                    error: `Bu cihaz şu anda ${occupantLabel} tarafından kullanılıyor`
+                });
+            }
+            if (!force) {
+                return res.status(409).json({
+                    error: 'occupied',
+                    code: 'DEVICE_OCCUPIED',
+                    occupiedBy: occupantLabel
+                });
+            }
+
+            // superadmin + force → önceki kullanıcının slot'unu deaktif et, ona bildirim düşsün
+            occupant.control = 'deactivate';
+            await writeJsonRaw(TARGET_PATH, targetData);
+            if (!slotMeta[occupant.session_id]) slotMeta[occupant.session_id] = {};
+            slotMeta[occupant.session_id].lastDeactivatedBy = req.userFullName || req.username;
+            console.log(`[OVERRIDE] ${sessionId} (superadmin) ${occupant.session_id} kullanıcısını ${targetMac} üzerinden düşürdü`);
+        }
+    } catch (e) {
+        console.error('occupancy kontrol hatası:', e);
+    }
+
     try {
         await deactivateThenActivateForSlot(sessionId, targetMac);
         touchSlot(sessionId);
@@ -666,18 +730,11 @@ app.post('/api/update-target', requireAuth(), async (req, res) => {
     }
 });
 
-// Keepalive — slot'un control'unu activate olarak yenile + aktivite zamanını güncelle
+// Keepalive — sadece token/oturumun canlı olduğunu doğrular.
+// ARTIK slot aktivitesini YENİLEMİYOR: sekmenin açık kalması "kullanım" sayılmasın —
+// 5dk hareketsizlik kuralı gerçek işlemlere (bağlan, komut gönder) göre işlesin.
 app.post('/api/keepalive', requireAuth(), async (req, res) => {
-    const sessionId = req.sessionId;
     try {
-        const data = await readTarget();
-        const slot = data.requests.find((r) => r.session_id === sessionId);
-        if (slot && slot.target) {
-            // Sadece aktivite touch — periyodik deactivate→activate'i artık yapmıyoruz
-            // (eskisinde "ESP gerçekten bağlı mı" kontrolü için döngü vardı, ama
-            //  çoklu session'da bu döngü diğer kullanıcıları rahatsız eder)
-        }
-        touchSlot(sessionId);
         res.json({ message: 'keepalive ok' });
     } catch (e) {
         res.status(500).json({ error: 'keepalive hata' });
@@ -893,6 +950,27 @@ app.get('/api/connections', requireAuth(['admin']), async (req, res) => {
     }
 });
 
+// Aktif Bağlantılar sayfasından — superadmin istediği kullanıcının bağlantısını kesebilir
+app.post('/api/connections/:sessionId/disconnect', requireAuth(), requireSuperadmin, async (req, res) => {
+    const targetSessionId = req.params.sessionId;
+    try {
+        const data = await readTarget();
+        const slot = data.requests.find((r) => r.session_id === targetSessionId && r.control === 'activate');
+        if (!slot) return res.status(404).json({ error: 'Aktif bağlantı bulunamadı' });
+
+        slot.control = 'deactivate';
+        await writeJsonRaw(TARGET_PATH, data);
+        if (!slotMeta[targetSessionId]) slotMeta[targetSessionId] = {};
+        slotMeta[targetSessionId].lastDeactivatedBy = req.userFullName || req.username;
+
+        console.log(`[ADMIN-DISCONNECT] ${req.username} (superadmin) ${targetSessionId} bağlantısını kesti`);
+        res.json({ message: 'Bağlantı kesildi' });
+    } catch (e) {
+        console.error('connections disconnect hata:', e);
+        res.status(500).json({ error: 'Bağlantı kesilemedi' });
+    }
+});
+
 // =============================================
 //  ÇOKLU KULLANICI ÇAKIŞMA TESPİTİ
 //  Her status okumasında: aynı MAC'e başka kullanıcı bağlı mı?
@@ -970,6 +1048,43 @@ if (initialUsers.length === 0) {
 console.log(`[TARGET] ${TARGET_PATH}`);
 console.log(`[RESPONSES] ${RESPONSES_PATH}`);
 console.log(`[SLOTS] inaktivite timeout: ${INACTIVITY_TIMEOUT / 60000} dk`);
+
+// Başlangıçta yetim slot temizliği — session_id gerçek bir kullanıcıya
+// karşılık gelmiyorsa (eski "kullanıcı_hash" şemasından kalma) sil.
+// Geriye kalanlara "şimdi" aktivite zamanı ata: slotMeta RAM'de tutulduğu
+// için her restart'ta sıfırlanıyor, atama yapılmazsa 10dk'lık temizlik
+// onları hiç göremez ve terk edilmiş slotlar sonsuza kadar "bağlı" görünür.
+(async () => {
+    try {
+        const validUsernames = new Set(readUsers().map((u) => u.username));
+
+        const t = await readTarget();
+        const beforeCount = t.requests.length;
+        t.requests = t.requests.filter((r) => validUsernames.has(r.session_id));
+        if (t.requests.length !== beforeCount) {
+            await writeJsonRaw(TARGET_PATH, t);
+            console.log(`[STARTUP] ${beforeCount - t.requests.length} yetim slot temizlendi (target.json)`);
+        }
+
+        const r = await readResponses();
+        let removedResp = 0;
+        for (const key of Object.keys(r.responses)) {
+            if (!validUsernames.has(key)) { delete r.responses[key]; removedResp++; }
+        }
+        if (removedResp > 0) {
+            await writeJsonRaw(RESPONSES_PATH, r);
+            console.log(`[STARTUP] ${removedResp} yetim response temizlendi (responses.json)`);
+        }
+
+        for (const slot of t.requests) {
+            if (!slotMeta[slot.session_id]) slotMeta[slot.session_id] = {};
+            slotMeta[slot.session_id].lastActivity = Date.now();
+        }
+    } catch (e) {
+        console.error('[STARTUP] slot temizliği hatası:', e.message);
+    }
+})();
+
 // Cihaz API
 
 app.get("/api/devices/companies", requireAuth(), (req, res) => {
@@ -1338,6 +1453,30 @@ function writeProfiles(profiles) {
   fs.writeFileSync(tmpPath, JSON.stringify(profiles, null, 2), "utf-8");
   fs.renameSync(tmpPath, DEVICE_PROFILES_PATH);
 }
+
+// ── Yeni şirket profili oluştur (KALICI) ── //
+app.post("/api/device-profiles", requireAuth(), (req, res) => {
+  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  try {
+    const { label } = req.body || {};
+    if (!label || !label.trim()) return res.status(400).json({ error: "Şirket adı boş olamaz" });
+
+    const baseKey = label.trim().toLocaleUpperCase("tr").replace(/[^A-ZÇĞİÖŞÜ0-9]/g, "");
+    if (!baseKey) return res.status(400).json({ error: "Geçerli bir şirket adı girin" });
+
+    const profiles = readProfiles();
+    let key = baseKey;
+    let suffix = 2;
+    while (profiles[key]) { key = `${baseKey}${suffix}`; suffix++; }
+
+    profiles[key] = { label: label.trim(), params: [] };
+    writeProfiles(profiles);
+    console.log(`[DEVICE-PROFILES] ${req.username} yeni şirket profili ekledi: ${key}`);
+    res.json({ message: "Şirket eklendi", key, profile: profiles[key] });
+  } catch (e) {
+    res.status(500).json({ error: "Şirket eklenemedi: " + e.message });
+  }
+});
 
 // ── Bir şirket profiline KALICI yeni parametre ekle ── //
 app.post("/api/device-profiles/:company/params", requireAuth(), (req, res) => {

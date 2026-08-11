@@ -16,6 +16,12 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
   const [resetResult, setResetResult] = useState("");
   const [loadError, setLoadError] = useState("");
 
+  // ── Yeni şirket profili ekleme (KALICI) ──
+  const [showAddProfile, setShowAddProfile] = useState(false);
+  const [newProfileLabel, setNewProfileLabel] = useState("");
+  const [profileError, setProfileError] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+
   // ── Yeni parametre ekleme (KALICI — device_profiles.json'a yazılır) ──
   const [showAddParam, setShowAddParam] = useState(false);
   const [newParamId, setNewParamId] = useState("");
@@ -59,6 +65,29 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
   };
 
   const profile = selectedProfile ? profiles[selectedProfile] : null;
+
+  // ── Yeni şirket profili ekle — device_profiles.json'a kalıcı yazılır ──
+  const handleAddProfile = async () => {
+    setProfileError("");
+    if (!newProfileLabel.trim()) { setProfileError("Şirket adı boş olamaz"); return; }
+
+    setProfileSaving(true);
+    try {
+      const r = await authFetch("/api/device-profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: newProfileLabel.trim() }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setProfileError(d.error || "Eklenemedi"); return; }
+
+      setProfiles((prev) => ({ ...prev, [d.key]: d.profile }));
+      setNewProfileLabel("");
+      setShowAddProfile(false);
+      handleProfileSelect(d.key);
+    } catch { setProfileError("Sunucuya ulaşılamadı"); }
+    finally { setProfileSaving(false); }
+  };
 
   // ── Yeni parametre ekle — device_profiles.json'a kalıcı yazılır ──
   const handleAddParam = async () => {
@@ -134,12 +163,8 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
     } catch { setParamError("Sunucuya ulaşılamadı"); }
   };
 
-  const handleSend = async () => {
-    if (!isActive || !selectedProfile) return;
-    const toSend = profile.params.filter((p) => drafts[p.id] !== "");
-
+  const sendParams = async (toSend) => {
     setSending(true);
-    setResults(null);
     const success = [];
     const failed = [];
 
@@ -182,7 +207,25 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
 
     setProgress("");
     setSending(false);
+    return { success, failed };
+  };
+
+  const handleSend = async () => {
+    if (!isActive || !selectedProfile) return;
+    const toSend = profile.params.filter((p) => drafts[p.id] !== "");
+    setResults(null);
+    const { success, failed } = await sendParams(toSend);
     setResults({ success, failed });
+  };
+
+  const handleRetryFailed = async () => {
+    if (!isActive || !selectedProfile || !results?.failed?.length) return;
+    const toRetry = profile.params.filter((p) => results.failed.includes(p.label) && drafts[p.id] !== "");
+    const { success: retrySuccess, failed: retryFailed } = await sendParams(toRetry);
+    setResults((prev) => ({
+      success: [...(prev?.success || []), ...retrySuccess],
+      failed: retryFailed,
+    }));
   };
 
   const handleReset = async () => {
@@ -246,17 +289,55 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
         <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
           Şirket Profili
         </label>
-        <select
-          value={selectedProfile}
-          onChange={(e) => handleProfileSelect(e.target.value)}
-          className="w-full sm:w-72 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                     px-3 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer"
-        >
-          <option value="">Şirket seçin...</option>
-          {Object.entries(profiles).map(([key, p]) => (
-            <option key={key} value={key}>{p.label}</option>
-          ))}
-        </select>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <select
+            value={selectedProfile}
+            onChange={(e) => handleProfileSelect(e.target.value)}
+            className="w-full sm:w-72 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                       px-3 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer"
+          >
+            <option value="">Şirket seçin...</option>
+            {Object.entries(profiles).map(([key, p]) => (
+              <option key={key} value={key}>{p.label}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => { setShowAddProfile((v) => !v); setProfileError(""); }}
+            className="flex items-center justify-center gap-1.5 text-[11px] font-bold px-3 py-2 rounded-lg border transition tracking-wide uppercase shrink-0
+                       bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft-hover)] cursor-pointer"
+          >
+            <HiOutlinePlus className="text-[12px]" />
+            Yeni Şirket
+          </button>
+        </div>
+
+        {showAddProfile && (
+          <div className="mt-2 p-3 bg-[var(--bg-sunken)] border border-[var(--border-subtle)] rounded-lg flex flex-col sm:flex-row gap-2 sm:items-center">
+            {profileError && (
+              <div className="text-[11px] text-rose-500 font-medium sm:mr-1">{profileError}</div>
+            )}
+            <input type="text" value={newProfileLabel} onChange={(e) => setNewProfileLabel(e.target.value)}
+              placeholder="Şirket adı (örn: Acrapol)"
+              onKeyDown={(e) => { if (e.key === "Enter") handleAddProfile(); }}
+              className="w-full sm:w-64 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                         px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition
+                         placeholder:text-[var(--text-muted)]" />
+            <div className="flex gap-2">
+              <button onClick={handleAddProfile} disabled={profileSaving}
+                className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-md border transition tracking-wide uppercase
+                           bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400 cursor-pointer disabled:opacity-50">
+                <HiOutlineCheckCircle className="text-[12px]" />
+                {profileSaving ? "Ekleniyor…" : "Ekle"}
+              </button>
+              <button onClick={() => { setShowAddProfile(false); setNewProfileLabel(""); setProfileError(""); }}
+                className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-md border transition tracking-wide uppercase
+                           bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] cursor-pointer">
+                <HiOutlineXMark className="text-[12px]" />
+                Vazgeç
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {profile && (
@@ -410,6 +491,20 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
               <HiOutlineArrowPath className={`text-[14px] ${sending ? "animate-spin" : ""}`} />
               {sending ? "Gönderiliyor..." : "Toplu Gönder"}
             </button>
+
+            {results?.failed?.length > 0 && (
+              <button
+                onClick={handleRetryFailed}
+                disabled={!isActive || sending}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[12px] font-bold border transition tracking-wide uppercase
+                  ${(!isActive || sending)
+                    ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
+                    : "bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/30 cursor-pointer"}`}
+              >
+                <HiOutlineArrowPath className={`text-[14px] ${sending ? "animate-spin" : ""}`} />
+                {sending ? "Gönderiliyor..." : `Gönderilemeyenleri Tekrar Gönder (${results.failed.length})`}
+              </button>
+            )}
 
             <button
               onClick={handleReset}

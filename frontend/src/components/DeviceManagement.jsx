@@ -147,9 +147,10 @@ export default function DeviceManagement({ token }) {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      // Mobil tarayıcılarda indirme asenkron başlıyor — hemen revoke edersek
-      // indirme tamamlanmadan URL geçersiz olup boş/bozuk dosya inebiliyor (masaüstünde sorun olmuyordu).
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      // Not: URL.revokeObjectURL() bilinçli olarak çağrılmıyor. Mobil tarayıcılarda
+      // indirme asenkron başlıyor; sabit bir sürede revoke etmek indirme bitmeden
+      // URL'i geçersiz kılıp boş/bozuk dosya inmesine yol açabiliyordu. Tarayıcı
+      // blob URL'lerini sayfa/sekme kapandığında zaten temizler.
     } catch { setError("Export başarısız"); }
   };
 

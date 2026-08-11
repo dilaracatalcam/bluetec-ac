@@ -3,7 +3,8 @@ import { HiOutlineCpuChip, HiOutlineArrowPath, HiOutlineMagnifyingGlass } from "
 import { TbPlugConnected } from "react-icons/tb";
 import ScrollableTable from "./ScrollableTable.jsx";
 
-export default function DeviceSelect({ token, onConnect }) {
+
+export default function DeviceSelect({ token, onConnect, onSelect, isSuperadmin }) {
   const authFetch = useCallback((url, opts = {}) => fetch(url, {
     ...opts,
     headers: { ...(opts.headers || {}), "Authorization": `Bearer ${token}` },
@@ -78,7 +79,7 @@ export default function DeviceSelect({ token, onConnect }) {
      eski kod `if (!selectedDevice?.mac) return;` ile SESSİZCE geri dönüyordu —
      buton hiçbir şey yapmıyor, hata da göstermiyordu.
      deviceId ile backend MAC'i kendi çözüyor ve yetkiyi kendi doğruluyor. */
-  const handleConnect = async () => {
+  const handleConnect = async (force = false) => {
     if (!selectedDevice) return;
     if (selectedDevice.id === undefined || selectedDevice.id === null) {
       setError("Cihaz kimliği okunamadı, sayfayı yenileyip tekrar deneyin");
@@ -91,9 +92,19 @@ export default function DeviceSelect({ token, onConnect }) {
       const r = await authFetch("/api/update-target", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deviceId: selectedDevice.id }),
+        body: JSON.stringify({ deviceId: selectedDevice.id, force }),
       });
       const d = await r.json();
+
+      // Cihaz başka bir kullanıcıda meşgul — sadece superadmin devredebilir.
+      if (!r.ok && r.status === 409 && d.code === "DEVICE_OCCUPIED" && isSuperadmin) {
+        setConnecting(false);
+        if (window.confirm(`Bu cihaz şu anda ${d.occupiedBy} tarafından kullanılıyor.\n\nBağlantısını keserek devralmak istiyor musunuz?`)) {
+          handleConnect(true);
+        }
+        return;
+      }
+
       if (!r.ok) { setError(d.error || "Bağlanılamadı"); setConnecting(false); return; }
       onConnect?.(selectedDevice.mac || "", selectedDevice);
     } catch {
@@ -186,7 +197,7 @@ export default function DeviceSelect({ token, onConnect }) {
                 return (
                   <div
                     key={d.id}
-                    onClick={() => { setSelectedDevice(d); setError(""); }}
+                    onClick={() => { setSelectedDevice(d); setError(""); onSelect?.(d); }}
                     className={`grid ${gridCols} items-center px-4 py-3 cursor-pointer transition-colors border-b border-[var(--border-subtle)] last:border-b-0
                       ${isSelected ? "bg-[var(--accent-soft)] border-l-2 border-l-[var(--accent)]" : "hover:bg-[var(--bg-hover)]"}`}
                   >
@@ -255,7 +266,7 @@ export default function DeviceSelect({ token, onConnect }) {
             {error && <div className="text-[11px] text-rose-400 font-medium mt-1">{error}</div>}
           </div>
           <button
-            onClick={handleConnect}
+            onClick={() => handleConnect()}
             disabled={connecting}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-[12px] font-bold border transition shrink-0 tracking-wide uppercase
               ${connecting

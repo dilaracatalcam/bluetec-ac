@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   HiOutlineSignal, HiOutlineUserCircle, HiOutlineUser,
-  HiOutlineShieldCheck, HiOutlineArrowPath, HiOutlineCpuChip
+  HiOutlineShieldCheck, HiOutlineArrowPath, HiOutlineCpuChip, HiOutlineXMark
 } from "react-icons/hi2";
 
 /* ── Connections ──
@@ -35,13 +35,14 @@ const ROLE_ICONS = {
   operator:   <HiOutlineUser />,
 };
 
-export default function Connections({ token }) {
+export default function Connections({ token, isSuperadmin }) {
   const [data, setData] = useState({ connections: [], myMac: null });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [disconnecting, setDisconnecting] = useState(null); // session_id | null
 
-  const authFetch = useCallback((url) =>
-    fetch(url, { headers: { "Authorization": `Bearer ${token}` } })
+  const authFetch = useCallback((url, opts = {}) =>
+    fetch(url, { ...opts, headers: { ...(opts.headers || {}), "Authorization": `Bearer ${token}` } })
   , [token]);
 
   const load = useCallback(async () => {
@@ -67,6 +68,24 @@ export default function Connections({ token }) {
     const iv = setInterval(load, 5000);
     return () => clearInterval(iv);
   }, [load]);
+
+  const handleDisconnect = async (c) => {
+    if (!window.confirm(`${c.fullName || c.username} (@${c.username}) kullanıcısının bağlantısını kesmek istediğinize emin misiniz?`)) return;
+    setDisconnecting(c.session_id);
+    try {
+      const r = await authFetch(`/api/connections/${encodeURIComponent(c.session_id)}/disconnect`, { method: "POST" });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        setError(d.error || "Bağlantı kesilemedi");
+        return;
+      }
+      await load();
+    } catch {
+      setError("Sunucuya ulaşılamadı");
+    } finally {
+      setDisconnecting(null);
+    }
+  };
 
   // MAC bazlı gruplama
   const groupedByMac = {};
@@ -156,6 +175,18 @@ export default function Connections({ token }) {
                   <span className={`text-[9px] font-bold tracking-wider uppercase px-1.5 py-[1px] rounded border ${ROLE_COLORS[c.role] || ROLE_COLORS.operator}`}>
                     {ROLE_LABELS[c.role] || c.role}
                   </span>
+                  {isSuperadmin && !c.isSelf && (
+                    <button
+                      onClick={() => handleDisconnect(c)}
+                      disabled={disconnecting === c.session_id}
+                      title="Bağlantısını kes"
+                      className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md border transition tracking-wide uppercase shrink-0
+                                 bg-rose-500/10 text-rose-500 border-rose-500/30 hover:bg-rose-500/20 cursor-pointer disabled:opacity-50"
+                    >
+                      <HiOutlineXMark className="text-[12px]" />
+                      {disconnecting === c.session_id ? "Kesiliyor…" : "Kopar"}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
