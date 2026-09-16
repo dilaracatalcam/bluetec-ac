@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { passwordPolicyError, PASSWORD_HINT } from "../lib/passwordPolicy.js";
 import {
   HiOutlineUsers, HiOutlineUserPlus, HiOutlineTrash, HiOutlineKey,
   HiOutlineXMark, HiOutlineCheck, HiOutlineExclamationCircle,
@@ -121,7 +122,7 @@ export default function UserManagement({ token, currentUsername }) {
   const [info, setInfo] = useState("");
 
   const [addForm, setAddForm] = useState({
-    username: "", fullName: "", password: "", role: "operator", company: "", allowedMacs: [],
+    username: "", fullName: "", password: "", role: "operator", company: "", allowedMacs: [], email: "",
   });
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState("");
@@ -204,8 +205,9 @@ export default function UserManagement({ token, currentUsername }) {
     if (!/^[a-zA-Z0-9_-]{3,32}$/.test(addForm.username)) {
       setAddError("Kullanıcı adı 3-32 karakter olmalı (harf/rakam/_/-)"); return;
     }
-    if (addForm.password.length < 6) {
-      setAddError("Şifre en az 6 karakter olmalı"); return;
+    const addPwErr = passwordPolicyError(addForm.password);
+    if (addPwErr) {
+      setAddError(addPwErr); return;
     }
     if (addForm.role === "operator" && !addForm.company && addForm.allowedMacs.length === 0) {
       setAddError("Operator için şirket seçin ya da en az bir cihaz atayın — aksi halde hiçbir cihaz göremez");
@@ -223,7 +225,7 @@ export default function UserManagement({ token, currentUsername }) {
       if (!r.ok) { setAddError(d.error || "Kullanıcı eklenemedi"); return; }
       setInfo(`${addForm.fullName} (${addForm.username}) eklendi`);
       setTimeout(() => setInfo(""), 4000);
-      setAddForm({ username: "", fullName: "", password: "", role: "operator", company: "", allowedMacs: [] });
+      setAddForm({ username: "", fullName: "", password: "", role: "operator", company: "", allowedMacs: [], email: "" });
       await loadUsers();
     } catch { setAddError("Sunucuya ulaşılamadı"); }
     finally { setAddSaving(false); }
@@ -237,7 +239,7 @@ export default function UserManagement({ token, currentUsername }) {
       const r = await authFetch(`/api/users/${encodeURIComponent(scopeUser.username)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ company: scopeUser.company || null, allowedMacs: scopeUser.allowedMacs }),
+        body: JSON.stringify({ company: scopeUser.company || null, allowedMacs: scopeUser.allowedMacs, email: scopeUser.email || null }),
       });
       const d = await r.json();
       if (!r.ok) { setScopeError(d.error || "Yetkiler güncellenemedi"); return; }
@@ -267,7 +269,8 @@ export default function UserManagement({ token, currentUsername }) {
   const handlePasswordChange = async (e) => {
     e?.preventDefault?.();
     setPwError("");
-    if (!pwNew || pwNew.length < 6) { setPwError("Şifre en az 6 karakter olmalı"); return; }
+    const resetPwErr = passwordPolicyError(pwNew);
+    if (resetPwErr) { setPwError(resetPwErr); return; }
     setPwSaving(true);
     try {
       const r = await authFetch(`/api/users/${encodeURIComponent(pwModalUser)}/password`, {
@@ -339,7 +342,8 @@ export default function UserManagement({ token, currentUsername }) {
             <label className="block text-[10px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Şifre</label>
             <input type="text" value={addForm.password}
               onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
-              placeholder="en az 6 karakter" className={inputCls + " font-mono"} />
+              placeholder="Şifre" className={inputCls + " font-mono"} />
+            <p className="text-[10px] text-[var(--text-muted)] mt-1">{PASSWORD_HINT}</p>
           </div>
           <div>
             <label className="block text-[10px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Rol</label>
@@ -349,6 +353,14 @@ export default function UserManagement({ token, currentUsername }) {
               <option value="operator">Operator (sadece Dashboard)</option>
               <option value="admin">Admin (Dashboard + Panel)</option>
             </select>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-[10px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">
+              E-posta <span className="normal-case font-normal text-[var(--text-muted)]">(opsiyonel — şifremi unuttum linki için gerekli)</span>
+            </label>
+            <input type="email" value={addForm.email}
+              onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+              placeholder="ali@sirket.com" className={inputCls} />
           </div>
 
           <div className="sm:col-span-2">
@@ -450,11 +462,17 @@ export default function UserManagement({ token, currentUsername }) {
                     <span>@{u.username}</span>
                     <span className="opacity-50">·</span>
                     <span>{created}</span>
+                    {u.email && (
+                      <>
+                        <span className="opacity-50">·</span>
+                        <span className="truncate">{u.email}</span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {!isSuperadmin && (
-                    <button onClick={() => { setScopeUser({ username: u.username, company: u.company || "", allowedMacs: [...(u.allowedMacs || [])] }); setScopeError(""); }}
+                    <button onClick={() => { setScopeUser({ username: u.username, company: u.company || "", allowedMacs: [...(u.allowedMacs || [])], email: u.email || "" }); setScopeError(""); }}
                       title="Cihaz yetkisini düzenle"
                       className="p-1.5 rounded-md border bg-[var(--bg-sunken)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-sky-500/10 hover:text-sky-500 hover:border-sky-500/30 transition cursor-pointer">
                       <HiOutlineAdjustmentsHorizontal className="text-[13px]" />
@@ -500,6 +518,13 @@ export default function UserManagement({ token, currentUsername }) {
                 <HiOutlineExclamationCircle className="text-[12px] shrink-0" />{scopeError}
               </div>
             )}
+
+            <label className="block text-[10px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">
+              E-posta <span className="normal-case font-normal text-[var(--text-muted)]">(şifremi unuttum linki için)</span>
+            </label>
+            <input type="email" value={scopeUser.email}
+              onChange={(e) => setScopeUser({ ...scopeUser, email: e.target.value })}
+              placeholder="ali@sirket.com" className={inputCls + " mb-3"} />
 
             <label className="block text-[10px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Şirket</label>
             <select value={scopeUser.company}
@@ -552,8 +577,9 @@ export default function UserManagement({ token, currentUsername }) {
               </div>
             )}
             <label className="block text-[10px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Yeni Şifre</label>
+            <p className="text-[10px] text-[var(--text-muted)] mb-1">{PASSWORD_HINT}</p>
             <input type="text" value={pwNew} onChange={(e) => setPwNew(e.target.value)}
-              placeholder="en az 6 karakter" autoFocus
+              placeholder="Yeni şifre" autoFocus
               onKeyDown={(e) => { if (e.key === "Enter") handlePasswordChange(); }}
               className={inputCls + " font-mono mb-4"} />
             <div className="flex justify-end gap-2">

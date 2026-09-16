@@ -5,12 +5,12 @@ import { HiOutlineArrowPath, HiOutlineExclamationCircle, HiOutlinePencilSquare }
    ESP "0x4DB748" formatında bekliyor.
    HTML color picker "#4db748" formatında döner.
 */
-function espHexToHtml(v) {
+export function espHexToHtml(v) {
   if (!v) return "#000000";
   const clean = String(v).replace(/^0x/i, "").replace(/^#/, "");
   return "#" + clean.padStart(6, "0").toLowerCase();
 }
-function htmlToEspHex(v) {
+export function htmlToEspHex(v) {
   const clean = String(v).replace(/^#/, "").toUpperCase();
   return "0x" + clean;
 }

@@ -1,4 +1,4 @@
-import { HiOutlineArrowRightOnRectangle, HiOutlineSun, HiOutlineMoon, HiOutlineXMark } from "react-icons/hi2";
+import { HiOutlineArrowRightOnRectangle, HiOutlineSun, HiOutlineMoon, HiOutlineXMark, HiOutlineUserCircle } from "react-icons/hi2";
 
 /* ── Sidebar ──
    Masaüstünde sabit (260px), mobilde slide-in overlay.
@@ -18,6 +18,7 @@ export default function Sidebar({
   mobileOpen = false,
   onCloseMobile,
   currentUser = null,
+  onOpenAccount,
 }) {
   const handleClick = (key) => {
     onSectionChange?.(key);
@@ -48,17 +49,13 @@ export default function Sidebar({
         {/* Brand */}
         <div className="h-[60px] flex items-center justify-between px-5 border-b border-[var(--border-subtle)] shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="relative w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-teal-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-              <svg viewBox="0 0 24 24" className="w-4 h-4 text-white" fill="currentColor">
-                <path d="M7 2v11h3v9l7-12h-4l3-8z" />
-              </svg>
-              <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-[var(--bg-sidebar)]" />
-            </div>
-            <div className="flex flex-col leading-none">
-              <span className="text-[14px] font-bold tracking-tight text-[var(--text-primary)] font-display">
-                bluetech
-              </span>
-              <span className="text-[9px] font-medium tracking-[0.15em] uppercase text-[var(--text-muted)] mt-0.5">
+            <div className="flex flex-col leading-none gap-1">
+              <img
+                src={theme === "dark" ? "/brand/bluetech-logo-white.png" : "/brand/bluetech-logo-dark.png"}
+                alt="Bluetech"
+                className="h-4 w-auto"
+              />
+              <span className="text-[9px] font-medium tracking-[0.15em] uppercase text-[var(--text-muted)]">
                 EV Charge Panel
               </span>
             </div>
@@ -165,6 +162,21 @@ export default function Sidebar({
 
         {/* Footer actions */}
         <div className="border-t border-[var(--border-subtle)] px-3 py-3 space-y-1">
+          {onOpenAccount && (
+            <button
+              onClick={onOpenAccount}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[12px] font-medium
+                         text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]
+                         transition-colors"
+            >
+              <HiOutlineUserCircle className="text-[15px]" />
+              <span className="flex-1 text-left">Hesabım</span>
+              {currentUser && !currentUser.email && (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="E-posta tanımlı değil" />
+              )}
+            </button>
+          )}
+
           <button
             onClick={onToggleTheme}
             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[12px] font-medium

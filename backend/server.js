@@ -1,4 +1,4 @@
-const { getCompanies, getLocations, getDevices, getDeviceByCode, getCustomFields, addCustomField, deleteCustomField } = require('./db');
+const { getCompanies, getLocations, getDevices, getDeviceByCode, getCustomFields, addCustomField, deleteCustomField, isSyntheticSessionStale } = require('./db');
 require('dotenv').config();
 
 const INACTIVITY_TIMEOUT      = 5 * 60 * 1000;  // 5 dakika (ms) — hareketsiz bağlantı otomatik kapatma süresi
@@ -20,6 +20,8 @@ const { updateFirmwareJson, dottedVersion, readFirmwareJson, extractVersions, re
 const { readOtaConfig, writeOtaConfig } = require('./ota-config');
 const otaLogTailer = require('./ota-log-tailer');
 const { buildScope, allowsDevice, allowsMac, visibleDevices } = require('./device-scope');
+const rateLimit = require('express-rate-limit');
+const { sendPasswordResetEmail } = require('./email');
 
 const app = express();
 app.use(cors());
@@ -35,6 +37,7 @@ if (fs.existsSync(distPath)) {
 const TARGET_PATH    = process.env.TARGET_PATH    || '/home/bluetech/target.json';
 const RESPONSES_PATH = process.env.RESPONSES_PATH || '/home/bluetech/responses.json';
 const USERS_PATH     = process.env.USERS_PATH     || path.join(__dirname, 'users.json');
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'http://localhost:5173';
 
 // ── OTA Sunucu Kontrolü — şirket sunucusuna SFTP ile dosya gönderme ──
 const OTA_REMOTE_HOST    = process.env.OTA_REMOTE_HOST    || '85.105.100.7';
@@ -236,6 +239,7 @@ app.get('/api/me', requireAuth(), (req, res) => {
         username: user.username,
         fullName: user.fullName,
         role: user.role,
+        email: user.email || null,
         session_id: user.username,
     });
 });
@@ -251,6 +255,18 @@ function requireSuperadmin(req, res, next) {
     next();
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Şifre kuralları — tüm şifre belirleme/değiştirme uçlarında (kullanıcı
+// oluşturma, kendi şifresini değiştirme, e-posta ile sıfırlama) ortak kullanılır.
+function passwordPolicyError(pw) {
+    if (!pw || pw.length < 6) return 'Şifre en az 6 karakter olmalı';
+    if (!/[a-z]/.test(pw)) return 'Şifre en az bir küçük harf içermeli';
+    if (!/[A-Z]/.test(pw)) return 'Şifre en az bir büyük harf içermeli';
+    if (!/[^a-zA-Z0-9]/.test(pw)) return 'Şifre en az bir özel karakter içermeli';
+    return null;
+}
+
 app.get('/api/users', requireAuth(), requireSuperadmin, (_req, res) => {
     const users = readUsers();
     res.json(users.map((u) => ({
@@ -259,12 +275,13 @@ app.get('/api/users', requireAuth(), requireSuperadmin, (_req, res) => {
         role: u.role,
         company: u.company || null,
         allowedMacs: Array.isArray(u.allowedMacs) ? u.allowedMacs : [],
+        email: u.email || null,
         createdAt: u.createdAt,
     })));
 });
 
 app.post('/api/users', requireAuth(), requireSuperadmin, async (req, res) => {
-    const { username, fullName, password, role, company, allowedMacs } = req.body || {};
+    const { username, fullName, password, role, company, allowedMacs, email } = req.body || {};
 
     if (!username || !fullName || !password || !role) {
         return res.status(400).json({ error: 'Tüm alanlar gerekli' });
@@ -272,11 +289,15 @@ app.post('/api/users', requireAuth(), requireSuperadmin, async (req, res) => {
     if (!/^[a-zA-Z0-9_-]{3,32}$/.test(username)) {
         return res.status(400).json({ error: 'Kullanıcı adı 3-32 karakter (harf/rakam/_/-)' });
     }
-    if (password.length < 6) {
-        return res.status(400).json({ error: 'Şifre en az 6 karakter olmalı' });
+    const createPwError = passwordPolicyError(password);
+    if (createPwError) {
+        return res.status(400).json({ error: createPwError });
     }
     if (role !== 'admin' && role !== 'operator') {
         return res.status(400).json({ error: 'Rol "admin" veya "operator" olmalı' });
+    }
+    if (email && !EMAIL_REGEX.test(email)) {
+        return res.status(400).json({ error: 'Geçersiz e-posta adresi' });
     }
 
     const users = readUsers();
@@ -293,6 +314,7 @@ app.post('/api/users', requireAuth(), requireSuperadmin, async (req, res) => {
             username, fullName, passwordHash, role,
             company: company || null,
             allowedMacs: cleanMacs,
+            email: email || null,
             createdAt: new Date().toISOString(),
         });
         writeUsers(users);
@@ -305,7 +327,7 @@ app.post('/api/users', requireAuth(), requireSuperadmin, async (req, res) => {
 
 // ── Kullanicinin sirket / cihaz yetkisini duzenle ── //
 app.put('/api/users/:username', requireAuth(), requireSuperadmin, (req, res) => {
-    const { company, allowedMacs, role } = req.body || {};
+    const { company, allowedMacs, role, email } = req.body || {};
     const users = readUsers();
     const user = users.find((u) => u.username === req.params.username);
     if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
@@ -322,6 +344,12 @@ app.put('/api/users/:username', requireAuth(), requireSuperadmin, (req, res) => 
         user.allowedMacs = Array.isArray(allowedMacs)
             ? [...new Set(allowedMacs.map((m) => String(m).trim().toUpperCase()).filter((m) => MAC_REGEX.test(m)))]
             : [];
+    }
+    if (email !== undefined) {
+        if (email && !EMAIL_REGEX.test(email)) {
+            return res.status(400).json({ error: 'Geçersiz e-posta adresi' });
+        }
+        user.email = email || null;
     }
 
     writeUsers(users);
@@ -350,12 +378,90 @@ app.delete('/api/users/:username', requireAuth(), requireSuperadmin, async (req,
     res.json({ message: 'Kullanıcı silindi' });
 });
 
+// Kendi e-postasını tanımla/güncelle — herhangi bir rol, sadece kendi hesabı için.
+// Şifresini unutan bir kullanıcının bize ulaşabilmesi için (forgot-password akışı)
+// her hesapta bir e-posta olması hedefleniyor; kendi şifresini değiştirme de
+// aşağıda bu alan doluysa açılıyor.
+app.put('/api/me/email', requireAuth(), async (req, res) => {
+    const { email, currentPassword } = req.body || {};
+    if (!email || !EMAIL_REGEX.test(email)) {
+        return res.status(400).json({ error: 'Geçerli bir e-posta adresi girin' });
+    }
+    if (!currentPassword) {
+        return res.status(400).json({ error: 'Mevcut şifreniz gerekli' });
+    }
+
+    const users = readUsers();
+    const user = users.find((u) => u.username === req.username);
+    if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+
+    // Kurtarma e-postası, hesap ele geçirme senaryolarında en çok istismar edilen
+    // alanlardan biri — bu yüzden değiştirmeden önce şifre ile "step-up" doğrulama
+    // isteniyor (Google/GitHub vb. sitelerdeki yaklaşımın aynısı).
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!ok) return res.status(401).json({ error: 'Şifre hatalı' });
+
+    user.email = email;
+    writeUsers(users);
+    console.log(`[USERS] ${req.username} kendi e-postasını tanımladı`);
+    res.json({ message: 'E-posta kaydedildi', email });
+});
+
+// Kendi kullanıcı adını değiştir — herhangi bir rol, sadece kendi hesabı için.
+// Kullanıcı adı; aktif oturumların (activeSessions) ve cihaz bağlantı slotlarının
+// (target.json/responses.json/slotMeta) anahtarı olduğu için değişince eski
+// kullanıcı adına ait her şey temizlenir ve kullanıcı yeniden giriş yapmalıdır.
+app.put('/api/me/username', requireAuth(), async (req, res) => {
+    const { newUsername, currentPassword } = req.body || {};
+    const oldUsername = req.username;
+
+    if (!newUsername || !/^[a-zA-Z0-9_-]{3,32}$/.test(newUsername)) {
+        return res.status(400).json({ error: 'Kullanıcı adı 3-32 karakter olmalı (harf/rakam/_/-)' });
+    }
+    if (newUsername === oldUsername) {
+        return res.status(400).json({ error: 'Yeni kullanıcı adı mevcut kullanıcı adıyla aynı' });
+    }
+    if (!currentPassword) {
+        return res.status(400).json({ error: 'Mevcut şifreniz gerekli' });
+    }
+
+    const users = readUsers();
+    if (users.some((u) => u.username === newUsername)) {
+        return res.status(409).json({ error: 'Bu kullanıcı adı zaten kullanılıyor' });
+    }
+
+    const user = users.find((u) => u.username === oldUsername);
+    if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+
+    // Kullanıcı adı = giriş bilgisi — e-postada olduğu gibi burada da şifre ile
+    // step-up doğrulama isteniyor (ele geçirilmiş bir oturumun sessizce hesabı
+    // devralmasını engellemek için).
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!ok) return res.status(401).json({ error: 'Şifre hatalı' });
+
+    user.username = newUsername;
+    writeUsers(users);
+
+    // Eski kullanıcı adına bağlı aktif cihaz bağlantısını/oturum verisini temizle.
+    await removeSlot(oldUsername).catch(() => {});
+
+    // Bu kullanıcının tüm token'ları (isteğin kendi token'ı dahil) iptal edilir —
+    // yeni kullanıcı adıyla tekrar giriş yapması gerekir.
+    for (const tok of Object.keys(activeSessions)) {
+        if (activeSessions[tok].username === oldUsername) delete activeSessions[tok];
+    }
+
+    console.log(`[USERS] ${oldUsername} kullanıcı adını ${newUsername} olarak değiştirdi`);
+    res.json({ message: 'Kullanıcı adı değiştirildi', username: newUsername });
+});
+
 app.post('/api/users/:username/password', requireAuth(), async (req, res) => {
     const targetUsername = req.params.username;
     const { newPassword, oldPassword } = req.body || {};
 
-    if (!newPassword || newPassword.length < 6) {
-        return res.status(400).json({ error: 'Yeni şifre en az 6 karakter olmalı' });
+    const changePwError = passwordPolicyError(newPassword);
+    if (changePwError) {
+        return res.status(400).json({ error: changePwError });
     }
 
     const isSelf = req.username === targetUsername;
@@ -369,16 +475,111 @@ app.post('/api/users/:username/password', requireAuth(), async (req, res) => {
     const user = users.find((u) => u.username === targetUsername);
     if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
 
+    // Kendi şifresini değiştiren herkes (rol fark etmez) önce bir kurtarma
+    // e-postası tanımlamış olmalı — aksi halde yeni şifreyi unutursa hesabına
+    // ulaşmanın hiçbir yolu kalmaz.
+    if (isSelf && !user.email) {
+        return res.status(400).json({ error: 'Şifre değiştirmeden önce e-posta adresinizi tanımlamalısınız' });
+    }
+
     if (isSelf && !isSuperadmin) {
         if (!oldPassword) return res.status(400).json({ error: 'Eski şifre gerekli' });
         const ok = await bcrypt.compare(oldPassword, user.passwordHash);
         if (!ok) return res.status(401).json({ error: 'Eski şifre hatalı' });
     }
 
+    const sameAsOld = await bcrypt.compare(newPassword, user.passwordHash);
+    if (sameAsOld) {
+        return res.status(400).json({ error: 'Yeni şifre eski şifreyle aynı olamaz' });
+    }
+
     user.passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     writeUsers(users);
     console.log(`[USERS] ${req.username} şifre değiştirdi: ${targetUsername}`);
     res.json({ message: 'Şifre değiştirildi' });
+});
+
+// =============================================
+//  ŞİFREMİ UNUTTUM — e-posta ile şifre sıfırlama
+//  Oturum gerektirmez. Token bellekte tutulur (activeSessions ile aynı
+//  desen) — tek kullanımlık, 30dk geçerli.
+// =============================================
+
+const PASSWORD_RESET_TOKEN_TTL = 30 * 60 * 1000; // 30 dakika
+const passwordResetTokens = {}; // token -> { username, expiresAt }
+
+const forgotPasswordLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: Number(process.env.FORGOT_PASSWORD_RATE_LIMIT) || 5, // testlerde yüksek bir değere set edilir
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Çok fazla istek — lütfen daha sonra tekrar deneyin' },
+});
+
+app.post('/api/forgot-password', forgotPasswordLimiter, async (req, res) => {
+    const { username } = req.body || {};
+    // Kullanıcı adı sistemde olsun ya da olmasın aynı yanıt dönülür —
+    // aksi halde yanıt farkından hangi kullanıcı adlarının var olduğu anlaşılabilir.
+    const genericResponse = { message: 'Eğer bu kullanıcı adı sistemde kayıtlıysa, şifre sıfırlama e-postası gönderildi.' };
+
+    if (!username) return res.status(400).json({ error: 'Kullanıcı adı gerekli' });
+
+    const users = readUsers();
+    const user = users.find((u) => u.username === username);
+
+    if (!user || !user.email) {
+        return res.json(genericResponse);
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    passwordResetTokens[token] = { username: user.username, expiresAt: Date.now() + PASSWORD_RESET_TOKEN_TTL };
+    const resetLink = `${PUBLIC_BASE_URL}/?resetToken=${token}`;
+
+    try {
+        await sendPasswordResetEmail(user.email, resetLink, user.fullName);
+        console.log(`[AUTH] ${username} için şifre sıfırlama e-postası gönderildi`);
+    } catch (e) {
+        console.error(`[AUTH] şifre sıfırlama e-postası gönderilemedi (${username}):`, e.message);
+    }
+
+    res.json(genericResponse);
+});
+
+app.post('/api/reset-password', async (req, res) => {
+    const { token, newPassword } = req.body || {};
+    if (!token || !newPassword) return res.status(400).json({ error: 'Token ve yeni şifre gerekli' });
+    const resetPwError = passwordPolicyError(newPassword);
+    if (resetPwError) return res.status(400).json({ error: resetPwError });
+
+    const entry = passwordResetTokens[token];
+    if (!entry || entry.expiresAt < Date.now()) {
+        delete passwordResetTokens[token];
+        return res.status(400).json({ error: 'Link geçersiz veya süresi dolmuş' });
+    }
+
+    const users = readUsers();
+    const user = users.find((u) => u.username === entry.username);
+    if (!user) {
+        delete passwordResetTokens[token];
+        return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+    }
+
+    const sameAsOld = await bcrypt.compare(newPassword, user.passwordHash);
+    if (sameAsOld) {
+        return res.status(400).json({ error: 'Yeni şifre eski şifreyle aynı olamaz' });
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    writeUsers(users);
+    delete passwordResetTokens[token];
+
+    // Güvenlik: linkle şifre değiştirilince bu kullanıcının tüm aktif oturumları iptal edilir.
+    for (const tok of Object.keys(activeSessions)) {
+        if (activeSessions[tok].username === user.username) delete activeSessions[tok];
+    }
+
+    console.log(`[AUTH] ${user.username} şifresini sıfırlama linkiyle değiştirdi`);
+    res.json({ message: 'Şifre başarıyla değiştirildi' });
 });
 
 // =============================================
@@ -418,8 +619,16 @@ function readJsonRaw(p) {
     });
 }
 
+// Aynı dosyaya (özellikle target.json) eşzamanlı yazımlar — paralel bulk-job
+// şeritleri ya da birden fazla kullanıcı aynı anda — ayrı ayrı .tmp dosyaları
+// kullanmıyor, HEPSİ "<path>.tmp" ismini paylaşıyor. İki yazım üst üste
+// binerse biri diğerinin .tmp'sini yeniden adlandırmaya çalışırken
+// "ENOENT: no such file" alır (dosya zaten öbürü tarafından taşınmış).
+// Bu yüzden aynı path'e yazımlar burada SIRAYLA (bir kuyrukla) yapılıyor.
+const writeQueues = new Map(); // filePath -> son yazımın "kesin bitti" sözü (hiç reddetmez)
 function writeJsonRaw(filePath, data) {
-    return new Promise((resolve, reject) => {
+    const prevSettled = writeQueues.get(filePath) || Promise.resolve();
+    const result = prevSettled.then(() => new Promise((resolve, reject) => {
         const tmpPath = filePath + '.tmp';
         const content = JSON.stringify(data, null, 2);
         fs.writeFile(tmpPath, content, 'utf-8', (err) => {
@@ -429,7 +638,31 @@ function writeJsonRaw(filePath, data) {
                 resolve();
             });
         });
-    });
+    }));
+    // Kuyruğa, hatayla da bitse bir sonrakini engellemeyecek "sessiz" hâlini koy —
+    // ama çağırana gerçek başarı/hata result üzerinden aynen ulaşır.
+    writeQueues.set(filePath, result.catch(() => {}));
+    return result;
+}
+
+// ── Genel amaçlı kilit (mutex) ──
+// writeJsonRaw'daki kuyruk sadece SON yazma adımını sıraya koyuyordu — ama
+// "oku target.json'ı -> değiştir -> yaz" dizisinin TAMAMI atomik değilse şu
+// olabiliyor: İki şerit nerdeyse aynı anda okur (ikisi de aynı eski hâli
+// görür), ikisi de kendi değişikliğini üstüne ekleyip yazar — yazmalar
+// sırayla gerçekleşir ama İKİNCİSİ, BİRİNCİNİN eklediği değişikliği hiç
+// görmediği için yazdığında onu SİLER (ya da tam tersi, silinen bir slot'u
+// geri diriltir). Sahada gerçekten gözlendi: bir bulk-job şeridinin
+// removeSlot'u, tam o anda başka bir şeridin activate yazmasıyla çakışıp
+// kaybolmuştu — cihaz sonsuza dek "meşgul" görünmeye devam etti.
+// Çözüm: "oku+değiştir+yaz" dizisinin TAMAMINI (sadece son yazmayı değil)
+// dosya bazlı bir kilitle sarmalamak — bkz. withLock kullanan yerler.
+const criticalSectionLocks = new Map();
+function withLock(key, fn) {
+    const prev = criticalSectionLocks.get(key) || Promise.resolve();
+    const run = prev.then(fn, fn);
+    criticalSectionLocks.set(key, run.catch(() => {}));
+    return run;
 }
 
 // target.json yapısı garanti et: { requests: [...] }
@@ -474,17 +707,21 @@ function findOrCreateSlot(requests, sessionId, defaultTarget = "") {
 // Slot'u target.json + responses.json + slotMeta'dan tamamen sil
 async function removeSlot(sessionId) {
     try {
-        const t = await readTarget();
-        t.requests = t.requests.filter((r) => r.session_id !== sessionId);
-        await writeJsonRaw(TARGET_PATH, t);
+        await withLock(TARGET_PATH, async () => {
+            const t = await readTarget();
+            t.requests = t.requests.filter((r) => r.session_id !== sessionId);
+            await writeJsonRaw(TARGET_PATH, t);
+        });
     } catch (e) { console.error('removeSlot target:', e); }
 
     try {
-        const r = await readResponses();
-        if (r.responses[sessionId]) {
-            delete r.responses[sessionId];
-            await writeJsonRaw(RESPONSES_PATH, r);
-        }
+        await withLock(RESPONSES_PATH, async () => {
+            const r = await readResponses();
+            if (r.responses[sessionId]) {
+                delete r.responses[sessionId];
+                await writeJsonRaw(RESPONSES_PATH, r);
+            }
+        });
     } catch (e) { console.error('removeSlot responses:', e); }
 
     delete slotMeta[sessionId];
@@ -494,6 +731,9 @@ async function removeSlot(sessionId) {
 // Periyodik slot temizliği — INACTIVITY_TIMEOUT boyunca hareketsiz kalan bağlantılar
 // önce yumuşak kapatılır (kullanıcıya "inaktivite" bildirimi gösterilsin diye),
 // hâlâ kimse geri dönmezse bir INACTIVITY_TIMEOUT daha sonra tamamen silinir.
+// require.main guard: server.js bir test dosyasından require() edildiğinde bu
+// arka plan işi başlamasın (gerçek başlatmada — node server.js — davranış aynı).
+if (require.main === module) {
 setInterval(async () => {
     const now = Date.now();
     const timedOut = [];
@@ -529,6 +769,7 @@ setInterval(async () => {
         await removeSlot(sessionId);
     }
 }, SLOT_CLEANUP_INTERVAL);
+}
 
 // =============================================
 //  ESP YARDIMCILARI
@@ -583,33 +824,86 @@ const DEACTIVATE_WAIT_MS = 2000;
 // Slot için deactivate → bekle → activate döngüsü
 // (sadece o session_id'nin slot'unu değiştirir, diğerleri etkilenmez)
 async function deactivateThenActivateForSlot(sessionId, target) {
-    let data = await readTarget();
-    let slot = findOrCreateSlot(data.requests, sessionId, target);
-    slot.target = target;
-    slot.control = "deactivate";
-    await writeJsonRaw(TARGET_PATH, data);
+    await withLock(TARGET_PATH, async () => {
+        const data = await readTarget();
+        const slot = findOrCreateSlot(data.requests, sessionId, target);
+        slot.target = target;
+        slot.control = "deactivate";
+        await writeJsonRaw(TARGET_PATH, data);
+    });
     console.log(`[CYCLE] ${sessionId} deactivate yazıldı`);
 
     // Bu session'ın status_response'unu sıfırla
     try {
-        const r = await readResponses();
-        if (r.responses[sessionId]) {
-            r.responses[sessionId].status_response = { topic: "", data: "" };
-            await writeJsonRaw(RESPONSES_PATH, r);
-        }
+        await withLock(RESPONSES_PATH, async () => {
+            const r = await readResponses();
+            if (r.responses[sessionId]) {
+                r.responses[sessionId].status_response = { topic: "", data: "" };
+                await writeJsonRaw(RESPONSES_PATH, r);
+            }
+        });
     } catch {}
 
     await new Promise(r => setTimeout(r, DEACTIVATE_WAIT_MS));
 
-    data = await readTarget();
-    slot = findOrCreateSlot(data.requests, sessionId, target);
-    slot.target = target;
-    slot.control = "activate";
-    await writeJsonRaw(TARGET_PATH, data);
+    await withLock(TARGET_PATH, async () => {
+        const data = await readTarget();
+        const slot = findOrCreateSlot(data.requests, sessionId, target);
+        slot.target = target;
+        slot.control = "activate";
+        await writeJsonRaw(TARGET_PATH, data);
+    });
     console.log(`[CYCLE] ${sessionId} activate yazıldı`);
 
     await new Promise(r => setTimeout(r, DEACTIVATE_WAIT_MS));
 }
+
+// ── Toplu Parametre — arka planda çalışan kalıcı iş (bkz. bulk-jobs.js) ──
+// Kendi session_id'sini ("bulk:<jobId>") kullanır, gerçek kullanıcı
+// oturumlarıyla çakışmaz; tarayıcı sekmesi kapansa bile server.js process'i
+// içinde çalışmaya devam eder.
+const { initBulkJobs } = require('./bulk-jobs');
+const bulkJobs = initBulkJobs({
+    readTarget, writeJsonRaw, findOrCreateSlot, deactivateThenActivateForSlot,
+    removeSlot, readResponses, isPythonRunning, TARGET_PATH, RESPONSES_PATH, touchSlot, readUsers, withLock,
+    checkLogoWritten: otaLogTailer.checkLogoWritten, OTA_LOG_PATH,
+});
+
+// ── Toplu Güncelleme (OTA firmware) — aynı gerekçeyle backend'de kalıcı
+// (bkz. ota-bulk-jobs.js). Kendi session_id'sini ("ota:<jobId>") kullanır. ──
+const { initOtaBulkJobs } = require('./ota-bulk-jobs');
+const otaBulkJobs = initOtaBulkJobs({
+    readTarget, writeJsonRaw, findOrCreateSlot, deactivateThenActivateForSlot,
+    removeSlot, readResponses, isPythonRunning, TARGET_PATH, RESPONSES_PATH, touchSlot, readUsers, withLock,
+    getMacUpdateStatus: otaLogTailer.getMacUpdateStatus, OTA_LOG_PATH,
+});
+
+// Sunucu yeniden başladığında (deploy, crash-restart) bekleyen otomatik
+// tekrar denemelerini (bkz. "Kaç dakikada, kaç kere" ayarı) DB'den okuyup
+// yeniden kurar — aksi halde bir restart sessizce bu zamanlayıcıları kaybeder.
+bulkJobs.resumeAutoRetries();
+otaBulkJobs.resumeAutoRetries();
+
+// Otomatik tekrar için "başarısız/doğrulanamadı" sayılan fazlar — manuel
+// "Tekrar Dene" uçları da AYNI listeyi kullanır (tek kaynak, bkz. bulk-jobs.js).
+const BULK_JOB_RETRYABLE_PHASES = bulkJobs.RETRYABLE_PHASES;
+const OTA_BULK_JOB_RETRYABLE_PHASES = otaBulkJobs.RETRYABLE_PHASES;
+
+// Panelden gelen "N dakikada bir, toplam M kere" ayarını makul sınırlara
+// oturtur — 0/boş = kapalı (mevcut davranış, geriye dönük uyumlu).
+function clampAutoRetry(minutesRaw, maxRaw) {
+    const minutes = Math.max(0, Math.min(Number(minutesRaw) || 0, 24 * 60)); // en fazla 24 saat arayla
+    const max = Math.max(0, Math.min(Number(maxRaw) || 0, 20)); // en fazla 20 otomatik deneme
+    if (minutes <= 0 || max <= 0) return { autoRetryMinutes: null, autoRetryMax: null };
+    return { autoRetryMinutes: minutes, autoRetryMax: max };
+}
+
+// ── Toplu Okuma — şirket bazlı canlı cihaz durumu panosu (bkz. device-status-poll.js) ──
+const { initDeviceStatusPoll } = require('./device-status-poll');
+const deviceStatusPoll = initDeviceStatusPoll({
+    readTarget, writeJsonRaw, findOrCreateSlot, deactivateThenActivateForSlot,
+    removeSlot, readResponses, isPythonRunning, TARGET_PATH, touchSlot, withLock, getDevices,
+});
 
 // =============================================
 //  ANA API ENDPOINT'LERİ — SESSION_ID BAZLI
@@ -685,7 +979,14 @@ app.post('/api/update-target', requireAuth(), async (req, res) => {
             (r) => r.target === targetMac && r.control === 'activate' && r.session_id !== sessionId
         );
 
-        if (occupant) {
+        if (occupant && isSyntheticSessionStale(occupant.session_id)) {
+            // bulk:/ota: önekli sahte bir session, sahibi iş artık çalışmıyor —
+            // çökmüş/durmuş bir toplu iş şeridinden kalma yetim kayıt. Zaman
+            // aşımı beklemeden hemen temizle, kullanıcıyı "meşgul" diye
+            // engelleme (bkz. db.js isSyntheticSessionStale açıklaması).
+            console.log(`[OCCUPANCY] yetim session temizlendi: ${occupant.session_id} (${targetMac} üzerinde takılı kalmış)`);
+            await removeSlot(occupant.session_id).catch(() => {});
+        } else if (occupant) {
             const users2 = readUsers();
             const occupantUser = users2.find((u) => u.username === occupant.session_id);
             const occupantLabel = occupantUser?.fullName || occupant.session_id;
@@ -780,29 +1081,38 @@ app.post('/api/send-command', requireAuth(), async (req, res) => {
     }
 
     try {
-        const data = await readTarget();
-        const slot = data.requests.find((r) => r.session_id === sessionId);
-        if (!slot) {
-            return res.status(400).json({ message: 'Önce bir cihaza bağlanmalısınız.' });
-        }
-        const cmdScope = scopeFor(req);
-        if (!cmdScope.unrestricted && !allowsMac(cmdScope, slot.target)) {
-            console.warn(`[AUTH] ${req.username} yetkisiz cihaza komut denedi: ${slot.target}`);
+        let notConnected = false, unauthorizedTarget = null;
+        await withLock(TARGET_PATH, async () => {
+            const data = await readTarget();
+            const slot = data.requests.find((r) => r.session_id === sessionId);
+            if (!slot) { notConnected = true; return; }
+            const cmdScope = scopeFor(req);
+            if (!cmdScope.unrestricted && !allowsMac(cmdScope, slot.target)) { unauthorizedTarget = slot.target; return; }
+            slot.send_message = frame;
+            await writeJsonRaw(TARGET_PATH, data);
+        });
+        if (notConnected) return res.status(400).json({ message: 'Önce bir cihaza bağlanmalısınız.' });
+        if (unauthorizedTarget) {
+            console.warn(`[AUTH] ${req.username} yetkisiz cihaza komut denedi: ${unauthorizedTarget}`);
             return res.status(403).json({ message: 'Bu cihaza komut gönderme yetkiniz yok' });
         }
-        slot.send_message = frame;
-        await writeJsonRaw(TARGET_PATH, data);
         touchSlot(sessionId);
 
-        // 1.5sn sonra send_message'ı temizle (denek.py mesajı okumuş olur)
+        // 1.5sn sonra send_message'ı temizle (denek.py mesajı okumuş olur) —
+        // ama sadece hâlâ BİZİM gönderdiğimiz frame duruyorsa. Aksi halde,
+        // 1.5sn içinde art arda gönderilen bir sonraki komutun frame'ini,
+        // eski komutun gecikmeli temizleyicisi silebilir (bkz. bulk-jobs.js
+        // sendFrame'deki aynı düzeltme).
         setTimeout(async () => {
             try {
-                const d = await readTarget();
-                const s = d.requests.find((r) => r.session_id === sessionId);
-                if (s) {
-                    s.send_message = "";
-                    await writeJsonRaw(TARGET_PATH, d);
-                }
+                await withLock(TARGET_PATH, async () => {
+                    const d = await readTarget();
+                    const s = d.requests.find((r) => r.session_id === sessionId);
+                    if (s && s.send_message === frame) {
+                        s.send_message = "";
+                        await writeJsonRaw(TARGET_PATH, d);
+                    }
+                });
             } catch {}
         }, SLOT_CLEAR_MSG_INTERVAL);
 
@@ -980,6 +1290,8 @@ app.post('/api/connections/:sessionId/disconnect', requireAuth(), requireSuperad
 //  Bu denetim periyodik olarak çalışır (denek.py'nin slot'umuzun
 //  control'unu manuel deactivate yapması durumu için).
 // =============================================
+// require.main guard: bkz. yukarıdaki ilk setInterval açıklaması.
+if (require.main === module) {
 setInterval(async () => {
     try {
         const target = await readTarget();
@@ -1012,10 +1324,17 @@ setInterval(async () => {
         // sessiz
     }
 }, 5000); // 5sn'de bir kontrol
+}
 
 // =============================================
 //  SUNUCU BAŞLAT
 // =============================================
+// require.main guard: bu blok (HTTPS/HTTP dinleme + başlangıç temizliği)
+// sadece "node server.js" ile doğrudan çalıştırıldığında yürütülür. Bir test
+// dosyası server.js'i require() ettiğinde port dinlemesi/arka plan temizliği
+// başlamaz — module.exports = app ile aşağıda dışa açılan app supertest'e
+// verilir. Gerçek başlatma yönteminde (node server.js) davranış birebir aynı.
+if (require.main === module) {
 
 const PORT = process.env.PORT || 8005;
 const HTTPS_PORT = process.env.HTTPS_PORT || 8005;
@@ -1080,10 +1399,26 @@ console.log(`[SLOTS] inaktivite timeout: ${INACTIVITY_TIMEOUT / 60000} dk`);
             if (!slotMeta[slot.session_id]) slotMeta[slot.session_id] = {};
             slotMeta[slot.session_id].lastActivity = Date.now();
         }
+
+        // Restart anında "running" görünen bulk-job'lar — onları çalıştıran
+        // arka plan görevi process'le birlikte öldü, sonsuza kadar "devam
+        // ediyor" gibi takılı kalırlardı. Açıkça durdurulmuş say.
+        const stuckJobs = bulkJobs.listJobs({ activeOnly: true });
+        for (const j of stuckJobs) {
+            bulkJobs.stopJob(j.id);
+            console.log(`[STARTUP] yarım kalan bulk-job durduruldu: ${j.id}`);
+        }
+        const stuckOtaJobs = otaBulkJobs.listJobs({ activeOnly: true });
+        for (const j of stuckOtaJobs) {
+            otaBulkJobs.stopJob(j.id);
+            console.log(`[STARTUP] yarım kalan ota-bulk-job durduruldu: ${j.id}`);
+        }
     } catch (e) {
         console.error('[STARTUP] slot temizliği hatası:', e.message);
     }
 })();
+
+}
 
 // Cihaz API
 
@@ -1143,6 +1478,26 @@ app.get("/api/devices", requireAuth(), (req, res) => {
   }
 });
 
+// ── Toplu Okuma — şirket bazlı canlı cihaz durumu (bkz. device-status-poll.js) ──
+// Her GET isteği arka plandaki izleme döngüsünü "hâlâ birisi bakıyor" diye
+// canlı tutar (ensureWatching) — sayfa kapatılınca 45sn içinde kendiliğinden
+// durur. Operatör sadece kendi şirketini görebilir, superadmin ?company= ile
+// istediğini sorgulayabilir.
+app.get("/api/device-status", requireAuth(), (req, res) => {
+  try {
+    const scope = scopeFor(req);
+    const company = scope.unrestricted ? (req.query.company || null) : scope.company;
+    if (!company) return res.json({ devices: [] });
+
+    deviceStatusPoll.ensureWatching(company);
+    const rows = deviceStatusPoll.getStatuses(company);
+    const sanitized = rows.map((r) => ({ ...r, mac: req.userRole === "operator" ? undefined : r.mac }));
+    res.json({ devices: sanitized });
+  } catch (e) {
+    console.error("[STATUS-POLL] durum alınamadı:", e.message);
+    res.status(500).json({ error: "Durum alınamadı" });
+  }
+});
 
 // Cihaz listesi export
 app.get("/api/devices/export", requireAuth(), async (req, res) => {
@@ -1394,6 +1749,283 @@ app.post("/api/devices/bulk-update", requireAuth(), (req, res) => {
   } catch (e) {
     console.error("[DEVICES-BULK] hata:", e.message);
     res.status(500).json({ error: "Toplu güncelleme başarısız: " + e.message });
+  }
+});
+
+// =============================================
+//  Toplu Parametre — kalıcı, arka planda çalışan işler (bkz. bulk-jobs.js)
+//  superadmin (Panel) ve operator (kendi şirket hesabı, Dashboard) erişir —
+//  Toplu Güncelleme (firmware OTA) ile aynı ihtiyatla "admin" rolü dışarıda.
+// =============================================
+const BULK_JOB_ROLES = ["superadmin", "operator"];
+
+app.post("/api/bulk-jobs", requireAuth(), (req, res) => {
+  if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
+  try {
+    const { company, deviceIds, workerCount, autoRetryMinutes, autoRetryMax } = req.body || {};
+    // Geriye dönük uyumluluk: eski tekli {paramId, value} de kabul edilir,
+    // asıl beklenen yeni biçim: params: [{paramId, value}, ...] — tek
+    // ekrandan birden fazla parametre aynı cihazlara art arda gönderilebilsin.
+    const rawParams = Array.isArray(req.body?.params) && req.body.params.length > 0
+      ? req.body.params
+      : (req.body?.paramId !== undefined ? [{ paramId: req.body.paramId, value: req.body.value }] : []);
+    if (rawParams.length === 0) return res.status(400).json({ error: "Parametre seçilmedi" });
+
+    const params = [];
+    for (const rp of rawParams) {
+      const paramIdNum = Number(rp.paramId);
+      const def = bulkJobs.BULK_PARAMS[paramIdNum];
+      if (!def) return res.status(400).json({ error: `Geçersiz parametre: ${rp.paramId}` });
+      if (rp.value === undefined || rp.value === null || rp.value === "") {
+        return res.status(400).json({ error: `"${def.label}" için değer boş olamaz` });
+      }
+      params.push({ id: paramIdNum, value: String(rp.value) });
+    }
+    if (!Array.isArray(deviceIds) || deviceIds.length === 0) return res.status(400).json({ error: "Cihaz seçilmedi" });
+    // Üst sınır 8 — uzaktaki köprü (85.105.100.7:9001) tek TCP bağlantısı
+    // üzerinden her şeyi yönlendiriyor, aşırı paralellik orayı zorlayabilir.
+    const clampedWorkerCount = Math.max(1, Math.min(Number(workerCount) || 1, 8));
+
+    const scope = scopeFor(req);
+    const allDevices = getDevices({});
+    const idSet = new Set(deviceIds.map(String));
+    const devices = allDevices.filter((d) => idSet.has(String(d.id)));
+    if (devices.length !== deviceIds.length) return res.status(404).json({ error: "Bazı cihazlar bulunamadı" });
+    const unauthorized = devices.find((d) => !allowsDevice(scope, d));
+    if (unauthorized) return res.status(403).json({ error: "Bu cihazlardan en az birine erişim yetkiniz yok" });
+
+    const autoRetry = clampAutoRetry(autoRetryMinutes, autoRetryMax);
+    const jobId = bulkJobs.startJob({
+      company: company || null, params, devices, createdBy: req.username, workerCount: clampedWorkerCount, ...autoRetry,
+    });
+    const paramSummary = params.map((p) => `${bulkJobs.BULK_PARAMS[p.id].label}=${p.value}`).join(", ");
+    const autoRetryNote = autoRetry.autoRetryMinutes ? `, oto-tekrar=${autoRetry.autoRetryMinutes}dk×${autoRetry.autoRetryMax}` : "";
+    console.log(`[BULK-JOB] ${req.username} başlattı: ${jobId} (${paramSummary}, ${devices.length} cihaz, ${clampedWorkerCount} paralel${autoRetryNote})`);
+    res.json({ id: jobId });
+  } catch (e) {
+    console.error("[BULK-JOB] başlatma hatası:", e.message);
+    res.status(500).json({ error: "İş başlatılamadı: " + e.message });
+  }
+});
+
+app.get("/api/bulk-jobs/:id", requireAuth(), (req, res) => {
+  if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
+  try {
+    const job = bulkJobs.getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: "İş bulunamadı" });
+    const scope = scopeFor(req);
+    if (!scope.unrestricted && job.created_by !== req.username) {
+      return res.status(403).json({ error: "Bu işi görme yetkiniz yok" });
+    }
+    // Operatörler diğer uçlarda (/api/devices) olduğu gibi MAC görmez.
+    const sanitizedJob = req.userRole === "operator"
+      ? { ...job, devices: job.devices.map((d) => ({ ...d, mac: undefined })) }
+      : job;
+    res.json({ job: sanitizedJob });
+  } catch (e) {
+    res.status(500).json({ error: "İş alınamadı" });
+  }
+});
+
+app.get("/api/bulk-jobs", requireAuth(), (req, res) => {
+  if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
+  try {
+    const scope = scopeFor(req);
+    const opts = { activeOnly: req.query.active === "1" };
+    if (!scope.unrestricted) opts.createdBy = req.username; // operator sadece kendi işlerini görür
+    else if (req.query.company) opts.company = req.query.company;
+    res.json({ jobs: bulkJobs.listJobs(opts) });
+  } catch (e) {
+    res.status(500).json({ error: "İşler alınamadı" });
+  }
+});
+
+app.post("/api/bulk-jobs/:id/stop", requireAuth(), (req, res) => {
+  if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
+  try {
+    const job = bulkJobs.getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: "İş bulunamadı" });
+    const scope = scopeFor(req);
+    if (!scope.unrestricted && job.created_by !== req.username) return res.status(403).json({ error: "Yetkisiz" });
+    bulkJobs.stopJob(req.params.id);
+    res.json({ message: "Durduruldu" });
+  } catch (e) {
+    res.status(500).json({ error: "Durdurulamadı" });
+  }
+});
+
+// "Kapat" — işi listeden gizle (veri silinmiyor, sadece otomatik yakalamadan çıkarılıyor)
+app.post("/api/bulk-jobs/:id/dismiss", requireAuth(), (req, res) => {
+  if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
+  try {
+    const job = bulkJobs.getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: "İş bulunamadı" });
+    const scope = scopeFor(req);
+    if (!scope.unrestricted && job.created_by !== req.username) return res.status(403).json({ error: "Yetkisiz" });
+    bulkJobs.dismissJob(req.params.id);
+    res.json({ message: "Kapatıldı" });
+  } catch (e) {
+    res.status(500).json({ error: "Kapatılamadı" });
+  }
+});
+
+app.post("/api/bulk-jobs/:id/retry", requireAuth(), (req, res) => {
+  if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
+  try {
+    const oldJob = bulkJobs.getJob(req.params.id);
+    if (!oldJob) return res.status(404).json({ error: "İş bulunamadı" });
+    const scope = scopeFor(req);
+    if (!scope.unrestricted && oldJob.created_by !== req.username) return res.status(403).json({ error: "Yetkisiz" });
+
+    const retryDevices = oldJob.devices.filter((d) => BULK_JOB_RETRYABLE_PHASES.includes(d.phase));
+    if (retryDevices.length === 0) return res.status(400).json({ error: "Tekrar denenecek cihaz yok" });
+
+    // Elle tekrar deneniyorsa bu işe ait bekleyen otomatik tekrar (varsa)
+    // artık gereksiz — ikisi çakışıp iki ayrı iş doğurmasın.
+    bulkJobs.cancelScheduledAutoRetry(req.params.id);
+
+    // device_id (SQLite autoincrement) yerine MAC üzerinden eşleştiriliyor —
+    // aradan bir toplu cihaz düzenleme/import geçtiyse id'ler yeniden atanmış
+    // olabilir (bkz. replaceAllDevices), o zaman device_id artık aynı fiziksel
+    // cihaza denk gelmeyebilir ama MAC değişmez. Daha önce tam bu yüzden bir
+    // retry sıfır cihazla sessizce "bitmiş" görünmüştü.
+    const retryMacs = new Set(retryDevices.map((d) => d.mac).filter(Boolean));
+    const devices = getDevices({}).filter((d) => retryMacs.has(d.mac));
+    if (devices.length === 0) {
+      return res.status(404).json({ error: "Tekrar denenecek cihazlar artık bulunamıyor (MAC eşleşmedi — cihaz listesi değişmiş olabilir)" });
+    }
+    const unauthorized = devices.find((d) => !allowsDevice(scope, d));
+    if (unauthorized) return res.status(403).json({ error: "Bu cihazlardan en az birine erişim yetkiniz yok" });
+
+    const jobId = bulkJobs.startJob({
+      company: oldJob.company,
+      params: oldJob.params.map((p) => ({ id: p.id, value: p.value })),
+      devices, createdBy: req.username, workerCount: oldJob.worker_count || 1,
+      // Başta seçilen oto-tekrar ayarları elle tekrar denendiğinde de korunur —
+      // "used" sayacı TAŞINMAZ, bu elle tetiklenen bir deneme (otomatik
+      // haktan düşülmüyor), ama devam eden zincir aynı ayarlarla sürer.
+      autoRetryMinutes: oldJob.auto_retry_minutes, autoRetryMax: oldJob.auto_retry_max, autoRetryUsed: oldJob.auto_retry_used,
+    });
+    console.log(`[BULK-JOB] ${req.username} tekrar denedi: ${req.params.id} -> ${jobId} (${devices.length} cihaz)`);
+    res.json({ id: jobId });
+  } catch (e) {
+    console.error("[BULK-JOB] retry hatası:", e.message);
+    res.status(500).json({ error: "Tekrar denenemedi" });
+  }
+});
+
+// =============================================
+//  Toplu Güncelleme (OTA firmware) — kalıcı, arka planda çalışan işler
+//  (bkz. ota-bulk-jobs.js). Sadece superadmin — BulkUpdate.jsx zaten
+//  sadece superadmin'e açık (Home.jsx'teki "bulk-update" case'i).
+// =============================================
+app.post("/api/ota-bulk-jobs", requireAuth(), (req, res) => {
+  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  try {
+    const { company, kind, verifyVersion, devices, workerCount, autoRetryMinutes, autoRetryMax } = req.body || {};
+    if (kind !== "esp" && kind !== "msp") return res.status(400).json({ error: "Geçersiz güncelleme tipi" });
+    if (!Array.isArray(devices) || devices.length === 0) return res.status(400).json({ error: "Cihaz seçilmedi" });
+
+    const cleanDevices = [];
+    for (const d of devices) {
+      const mac = String(d?.mac || "").toUpperCase();
+      if (!MAC_REGEX.test(mac)) return res.status(400).json({ error: `Geçersiz MAC: ${d?.mac}` });
+      cleanDevices.push({ mac, location: d.location || null, device_code: d.device_code || null });
+    }
+    // Üst sınır 8 — Toplu Parametre'deki aynı gerekçe (uzaktaki köprü tek TCP
+    // bağlantısı). İndirmenin kendisi ayrı bir HTTP hattından gittiği için bu
+    // sınır sadece bağlan/aktifleştir/komut gönder adımlarını korur.
+    const clampedWorkerCount = Math.max(1, Math.min(Number(workerCount) || 1, 8));
+
+    const otaType = kind === "esp" ? "1" : "2";
+    const autoRetry = clampAutoRetry(autoRetryMinutes, autoRetryMax);
+    const jobId = otaBulkJobs.startJob({
+      company: company || null, kind, otaType, verifyVersion: !!verifyVersion,
+      devices: cleanDevices, createdBy: req.username, workerCount: clampedWorkerCount, ...autoRetry,
+    });
+    const autoRetryNote = autoRetry.autoRetryMinutes ? `, oto-tekrar=${autoRetry.autoRetryMinutes}dk×${autoRetry.autoRetryMax}` : "";
+    console.log(`[OTA-BULK-JOB] ${req.username} başlattı: ${jobId} (${kind}, doğrulama=${!!verifyVersion}, ${cleanDevices.length} cihaz, ${clampedWorkerCount} paralel${autoRetryNote})`);
+    res.json({ id: jobId });
+  } catch (e) {
+    console.error("[OTA-BULK-JOB] başlatma hatası:", e.message);
+    res.status(500).json({ error: "İş başlatılamadı: " + e.message });
+  }
+});
+
+app.get("/api/ota-bulk-jobs/:id", requireAuth(), (req, res) => {
+  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  try {
+    const job = otaBulkJobs.getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: "İş bulunamadı" });
+    res.json({ job });
+  } catch (e) {
+    res.status(500).json({ error: "İş alınamadı" });
+  }
+});
+
+app.get("/api/ota-bulk-jobs", requireAuth(), (req, res) => {
+  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  try {
+    const opts = { activeOnly: req.query.active === "1" };
+    if (req.query.company) opts.company = req.query.company;
+    res.json({ jobs: otaBulkJobs.listJobs(opts) });
+  } catch (e) {
+    res.status(500).json({ error: "İşler alınamadı" });
+  }
+});
+
+app.post("/api/ota-bulk-jobs/:id/stop", requireAuth(), (req, res) => {
+  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  try {
+    const job = otaBulkJobs.getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: "İş bulunamadı" });
+    otaBulkJobs.stopJob(req.params.id);
+    res.json({ message: "Durduruldu" });
+  } catch (e) {
+    res.status(500).json({ error: "Durdurulamadı" });
+  }
+});
+
+app.post("/api/ota-bulk-jobs/:id/dismiss", requireAuth(), (req, res) => {
+  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  try {
+    const job = otaBulkJobs.getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: "İş bulunamadı" });
+    otaBulkJobs.dismissJob(req.params.id);
+    res.json({ message: "Kapatıldı" });
+  } catch (e) {
+    res.status(500).json({ error: "Kapatılamadı" });
+  }
+});
+
+// "Tekrar Dene" — başarısız/atlanan/yanıt vermeyen/doğrulanamayan cihazlarla
+// AYNI ayarlarla (kind/otaType/verifyVersion) yeni bir iş başlatır. Toplu
+// Parametre'nin retry'ından farkı: burada device_id yerine mac/location/
+// device_code zaten job kaydının kendisinde duruyor (devices tablosuna
+// bağımlı değil), o yüzden yeniden çözümlemeye gerek yok.
+app.post("/api/ota-bulk-jobs/:id/retry", requireAuth(), (req, res) => {
+  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  try {
+    const oldJob = otaBulkJobs.getJob(req.params.id);
+    if (!oldJob) return res.status(404).json({ error: "İş bulunamadı" });
+
+    const retryDevices = oldJob.devices.filter((d) => OTA_BULK_JOB_RETRYABLE_PHASES.includes(d.phase));
+    if (retryDevices.length === 0) return res.status(400).json({ error: "Tekrar denenecek cihaz yok" });
+
+    otaBulkJobs.cancelScheduledAutoRetry(req.params.id);
+
+    const otaType = oldJob.kind === "esp" ? "1" : "2";
+    const jobId = otaBulkJobs.startJob({
+      company: oldJob.company, kind: oldJob.kind, otaType, verifyVersion: !!oldJob.verify_version,
+      devices: retryDevices.map((d) => ({ mac: d.mac, location: d.location, device_code: d.device_code })),
+      createdBy: req.username, workerCount: oldJob.worker_count || 1,
+      autoRetryMinutes: oldJob.auto_retry_minutes, autoRetryMax: oldJob.auto_retry_max, autoRetryUsed: oldJob.auto_retry_used,
+    });
+    console.log(`[OTA-BULK-JOB] ${req.username} tekrar denedi: ${req.params.id} -> ${jobId} (${retryDevices.length} cihaz)`);
+    res.json({ id: jobId });
+  } catch (e) {
+    console.error("[OTA-BULK-JOB] retry hatası:", e.message);
+    res.status(500).json({ error: "Tekrar denenemedi" });
   }
 });
 
@@ -1841,6 +2473,33 @@ app.get("/api/ota-server/logs", requireAuth(), async (req, res) => {
   }
 });
 
+// ── Toplu Güncelleme (BulkUpdate.jsx) izleme döngüsünün soru sorduğu uç —
+// OTA sunucu logundan MAC başına indirme/rapor durumunu döner. Daha önce
+// bu route hiç yoktu (sadece frontend'de çağrılıyordu) — panel "Hazırlanıyor/
+// Sırada"da donup kalıyordu çünkü ilerleme/başarı/başarısız bilgisi hiç
+// gelmiyordu (her istek 404). Mantığın kendisi zaten ota-log-tailer.js'te
+// (getMacUpdateStatus) hazırdı, sadece buraya bağlanmamıştı.
+// macs=<mac>|<sinceMs>,<mac>|<sinceMs>,...  kind=esp|msp
+app.get("/api/ota-server/update-status", requireAuth(), async (req, res) => {
+  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+
+  const kind = req.query.kind === "msp" ? "msp" : "esp";
+  const macsParam = req.query.macs || "";
+  const macEntries = macsParam.split(",").filter(Boolean).map((part) => {
+    const [mac, since] = part.split("|");
+    return { mac, since: Number(since) || 0 };
+  });
+  if (macEntries.length === 0) return res.json({ statuses: {} });
+
+  try {
+    const statuses = await otaLogTailer.getMacUpdateStatus({ logPath: OTA_LOG_PATH, macEntries, kind });
+    res.json({ statuses });
+  } catch (e) {
+    console.error("[OTA-SERVER] update-status hatası:", e.message);
+    res.status(500).json({ error: "Durum okunamadı: " + e.message });
+  }
+});
+
 // ── Yüklenmiş bir ESP/MSP firmware'ini sil — hem 85.105'teki dosyayı hem firmware.json kaydını ── //
 app.post("/api/ota-server/delete", requireAuth(), async (req, res) => {
   if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
@@ -1912,3 +2571,12 @@ app.post("/api/ota-server/delete", requireAuth(), async (req, res) => {
     firmwareJson: firmwareJsonInfo,
   });
 });
+
+// Testler için: gerçek e-posta gönderimi olmadan (SMTP yapılandırılmamış test
+// ortamında) şifre sıfırlama token'ına erişim. Production'da process.env.VITEST
+// tanımlı olmadığı için bu blok hiç çalışmaz, app._testHooks eklenmez.
+if (process.env.VITEST) {
+    app._testHooks = { passwordResetTokens };
+}
+
+module.exports = app;

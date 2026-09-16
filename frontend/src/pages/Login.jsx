@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   HiOutlineLockClosed, HiOutlineUser, HiOutlineExclamationCircle,
   HiOutlineEye, HiOutlineEyeSlash, HiOutlineSun, HiOutlineMoon,
@@ -18,6 +18,50 @@ export default function Login({ page, onLogin }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Bazı tarayıcılar (özellikle Chrome autofill) kayıtlı kullanıcı adı/şifreyi
+  // dolduruyor ama React'in onChange'ini tetiklemiyor — state boş kalıp "Giriş
+  // Yap" pasif görünüyor. ref ile gönderim anında gerçek DOM değerini okuyoruz.
+  const usernameRef = useRef(null);
+  const passwordRef = useRef(null);
+
+  // ── Şifremi unuttum ──
+  const [mode, setMode] = useState("login"); // "login" | "forgot"
+  const [forgotUsername, setForgotUsername] = useState("");
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState("");
+
+  const goToForgot = () => {
+    setError("");
+    setForgotMessage("");
+    setForgotUsername(username);
+    setMode("forgot");
+  };
+  const goToLogin = () => {
+    setError("");
+    setForgotMessage("");
+    setMode("login");
+  };
+
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    if (!forgotUsername) return;
+    setError("");
+    setForgotLoading(true);
+    try {
+      const r = await fetch("/api/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: forgotUsername }),
+      });
+      const data = await r.json().catch(() => ({}));
+      setForgotMessage(data.message || "Eğer bu kullanıcı adı sistemde kayıtlıysa, şifre sıfırlama e-postası gönderildi.");
+    } catch {
+      setError("Sunucuya ulaşılamadı");
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
   // Tema — Home.jsx ile aynı localStorage anahtarı, aynı class sistemi
   const [theme, setTheme] = useState(() => {
     if (typeof window === "undefined") return "dark";
@@ -34,13 +78,23 @@ export default function Login({ page, onLogin }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+
+    // Autofill'in doldurup React state'ine yansıtmadığı durumlar için gerçek
+    // DOM değerlerini esas al.
+    const u = usernameRef.current?.value ?? username;
+    const p = passwordRef.current?.value ?? password;
+    if (!u || !p) {
+      setError("Kullanıcı adı ve şifre gerekli");
+      return;
+    }
+
     setLoading(true);
 
     try {
       const r = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, page }),
+        body: JSON.stringify({ username: u, password: p, page }),
       });
 
       const data = await r.json();
@@ -59,10 +113,12 @@ export default function Login({ page, onLogin }) {
   };
 
   const isAdmin = page === "admin";
-  const title = isAdmin ? "Admin Panel Girişi" : "Dashboard Girişi";
-  const subtitle = isAdmin
-    ? "Yönetici yetkisi gerektirir"
-    : "İzleme ve temel kontrol paneli";
+  const title = mode === "forgot"
+    ? "Şifre Sıfırlama"
+    : isAdmin ? "Admin Panel Girişi" : "Dashboard Girişi";
+  const subtitle = mode === "forgot"
+    ? "Kullanıcı adınızı girin, size bir sıfırlama linki gönderelim"
+    : isAdmin ? "Yönetici yetkisi gerektirir" : "İzleme ve temel kontrol paneli";
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--bg-app)] text-[var(--text-primary)] font-body relative overflow-hidden">
@@ -143,16 +199,13 @@ export default function Login({ page, onLogin }) {
       {/* Top bar: brand + theme toggle */}
       <header className="relative z-10 flex items-center justify-between px-5 sm:px-8 py-4">
         <div className="flex items-center gap-2.5">
-          <div className="relative w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-teal-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-            <svg viewBox="0 0 24 24" className="w-4 h-4 text-white" fill="currentColor">
-              <path d="M7 2v11h3v9l7-12h-4l3-8z" />
-            </svg>
-          </div>
-          <div className="flex flex-col leading-none">
-            <span className="text-[14px] font-bold tracking-tight text-[var(--text-primary)] font-display">
-              bluetech
-            </span>
-            <span className="text-[9px] font-medium tracking-[0.15em] uppercase text-[var(--text-muted)] mt-0.5">
+          <div className="flex flex-col leading-none gap-1">
+            <img
+              src={theme === "dark" ? "/brand/bluetech-logo-white.png" : "/brand/bluetech-logo-dark.png"}
+              alt="Bluetech"
+              className="h-5 w-auto"
+            />
+            <span className="text-[9px] font-medium tracking-[0.15em] uppercase text-[var(--text-muted)]">
               EV Charge Panel
             </span>
           </div>
@@ -173,7 +226,7 @@ export default function Login({ page, onLogin }) {
 
       {/* Center card */}
       <main className="relative z-10 flex-1 flex items-center justify-center px-4 pb-8">
-        <form onSubmit={handleSubmit}
+        <form onSubmit={mode === "forgot" ? handleForgotSubmit : handleSubmit}
           className="w-full max-w-sm fade-up">
 
           {/* Rol etiketi */}
@@ -210,81 +263,150 @@ export default function Login({ page, onLogin }) {
             )}
 
             {/* Form alanları */}
-            <div className="flex flex-col gap-3">
-              {/* Kullanıcı adı */}
-              <div>
-                <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
-                  Kullanıcı Adı
-                </label>
-                <div className="relative">
-                  <HiOutlineUser className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-[15px] pointer-events-none" />
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="kullanici.adi"
-                    autoComplete="username"
-                    className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                               pl-10 pr-3 py-2.5 rounded-lg text-[13px] font-mono outline-none
-                               placeholder:text-[var(--text-muted)] placeholder:font-sans
-                               focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
-                  />
+            {mode === "login" ? (
+              <div className="flex flex-col gap-3">
+                {/* Kullanıcı adı */}
+                <div>
+                  <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
+                    Kullanıcı Adı
+                  </label>
+                  <div className="relative">
+                    <HiOutlineUser className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-[15px] pointer-events-none" />
+                    <input
+                      ref={usernameRef}
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="kullanici.adi"
+                      autoComplete="username"
+                      className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                                 pl-10 pr-3 py-2.5 rounded-lg text-[13px] font-mono outline-none
+                                 placeholder:text-[var(--text-muted)] placeholder:font-sans
+                                 focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              {/* Şifre */}
-              <div>
-                <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
-                  Şifre
-                </label>
-                <div className="relative">
-                  <HiOutlineLockClosed className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-[15px] pointer-events-none" />
-                  <input
-                    type={showPass ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    autoComplete="current-password"
-                    onKeyDown={(e) => e.key === "Enter" && handleSubmit(e)}
-                    className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                               pl-10 pr-10 py-2.5 rounded-lg text-[13px] font-mono outline-none
-                               placeholder:text-[var(--text-muted)] placeholder:font-sans
-                               focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
-                  />
+                {/* Şifre */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5 ml-0.5 mr-0.5">
+                    <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)]">
+                      Şifre
+                    </label>
+                    <button
+                      type="button"
+                      onClick={goToForgot}
+                      className="text-[10px] font-semibold text-[var(--text-muted)] hover:text-[var(--accent)] transition cursor-pointer"
+                    >
+                      Şifremi unuttum?
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <HiOutlineLockClosed className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-[15px] pointer-events-none" />
+                    <input
+                      ref={passwordRef}
+                      type={showPass ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      autoComplete="current-password"
+                      onKeyDown={(e) => e.key === "Enter" && handleSubmit(e)}
+                      className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                                 pl-10 pr-10 py-2.5 rounded-lg text-[13px] font-mono outline-none
+                                 placeholder:text-[var(--text-muted)] placeholder:font-sans
+                                 focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPass((s) => !s)}
+                      tabIndex={-1}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md
+                                 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]
+                                 transition"
+                      title={showPass ? "Şifreyi gizle" : "Şifreyi göster"}
+                    >
+                      {showPass ? <HiOutlineEyeSlash className="text-[15px]" /> : <HiOutlineEye className="text-[15px]" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Giriş butonu */}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className={`w-full py-2.5 rounded-lg text-[13px] font-bold tracking-wide uppercase transition mt-2
+                    ${loading
+                      ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border-subtle)] cursor-not-allowed"
+                      : isAdmin
+                        ? "bg-amber-500 hover:bg-amber-400 text-white shadow-md shadow-amber-500/30 cursor-pointer"
+                        : "bg-[var(--accent)] hover:brightness-110 text-white shadow-md shadow-cyan-500/30 cursor-pointer"
+                    }`}
+                >
+                  {loading ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Giriş yapılıyor…
+                    </span>
+                  ) : "Giriş Yap"}
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {forgotMessage ? (
+                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[12px]">
+                    <span className="font-medium leading-snug">{forgotMessage}</span>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
+                      Kullanıcı Adı
+                    </label>
+                    <div className="relative">
+                      <HiOutlineUser className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-[15px] pointer-events-none" />
+                      <input
+                        type="text"
+                        value={forgotUsername}
+                        onChange={(e) => setForgotUsername(e.target.value)}
+                        placeholder="kullanici.adi"
+                        autoComplete="username"
+                        autoFocus
+                        className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                                   pl-10 pr-3 py-2.5 rounded-lg text-[13px] font-mono outline-none
+                                   placeholder:text-[var(--text-muted)] placeholder:font-sans
+                                   focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {!forgotMessage && (
                   <button
-                    type="button"
-                    onClick={() => setShowPass((s) => !s)}
-                    tabIndex={-1}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md
-                               text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]
-                               transition"
-                    title={showPass ? "Şifreyi gizle" : "Şifreyi göster"}
+                    type="submit"
+                    disabled={forgotLoading || !forgotUsername}
+                    className={`w-full py-2.5 rounded-lg text-[13px] font-bold tracking-wide uppercase transition mt-2
+                      ${forgotLoading || !forgotUsername
+                        ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border-subtle)] cursor-not-allowed"
+                        : "bg-[var(--accent)] hover:brightness-110 text-white shadow-md shadow-cyan-500/30 cursor-pointer"
+                      }`}
                   >
-                    {showPass ? <HiOutlineEyeSlash className="text-[15px]" /> : <HiOutlineEye className="text-[15px]" />}
+                    {forgotLoading ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Gönderiliyor…
+                      </span>
+                    ) : "Sıfırlama Linki Gönder"}
                   </button>
-                </div>
-              </div>
+                )}
 
-              {/* Giriş butonu */}
-              <button
-                type="submit"
-                disabled={loading || !username || !password}
-                className={`w-full py-2.5 rounded-lg text-[13px] font-bold tracking-wide uppercase transition mt-2
-                  ${loading || !username || !password
-                    ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border-subtle)] cursor-not-allowed"
-                    : isAdmin
-                      ? "bg-amber-500 hover:bg-amber-400 text-white shadow-md shadow-amber-500/30 cursor-pointer"
-                      : "bg-[var(--accent)] hover:brightness-110 text-white shadow-md shadow-cyan-500/30 cursor-pointer"
-                  }`}
-              >
-                {loading ? (
-                  <span className="inline-flex items-center gap-2">
-                    <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Giriş yapılıyor…
-                  </span>
-                ) : "Giriş Yap"}
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={goToLogin}
+                  className="text-[11px] font-semibold text-[var(--text-muted)] hover:text-[var(--accent)] transition cursor-pointer text-center mt-1"
+                >
+                  ← Girişe dön
+                </button>
+              </div>
+            )}
 
             {/* Alt bilgi */}
             <div className="mt-5 pt-4 border-t border-[var(--border-subtle)] flex items-center justify-between text-[10px] font-mono text-[var(--text-muted)] tracking-wide">

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import Home from "./pages/Home.jsx";
 import Login from "./pages/Login.jsx";
+import ResetPassword from "./pages/ResetPassword.jsx";
 
 const LS_KEYS = {
   token: "bluetech-token",
@@ -69,6 +70,25 @@ export default function App() {
   const handleNavigate = (newPage) => {
     setPage(newPage);
   };
+
+  // E-postadaki şifre sıfırlama linki (?resetToken=...) — oturum durumundan
+  // bağımsız, her zaman öncelikli. Link tıklanınca Login/Home yerine bu görünür.
+  // "Girişe Dön" sadece URL'yi (history.replaceState ile) temizlerse React bunu
+  // fark edip yeniden render etmez — resetTokenDone state'i bu yeniden render'ı tetikler.
+  const [resetTokenDone, setResetTokenDone] = useState(false);
+  const resetToken = resetTokenDone ? null : (() => {
+    try { return new URLSearchParams(window.location.search).get("resetToken"); }
+    catch { return null; }
+  })();
+  const clearResetToken = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("resetToken");
+    window.history.replaceState({}, "", url.toString());
+    setResetTokenDone(true);
+  };
+  if (resetToken) {
+    return <ResetPassword token={resetToken} onDone={clearResetToken} />;
+  }
 
   // Token yoksa daima dashboard login göster — localStorage'daki page'i yoksay
   if (!token) {

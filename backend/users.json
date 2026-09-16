@@ -9,31 +9,18 @@
   {
     "username": "dilaracatalcam",
     "fullName": "dilara çatalçam",
-    "passwordHash": "$2b$10$t1nj6lx/GHFm7sBwsbgBrua1jdCboKapGz0/bFnglCtEWQwywCNpi",
+    "passwordHash": "$2b$10$NTB/pkkIiigOKvSWvKcbs.7kWuVXLoZfhTaonxpVe.SOfEYchp36u",
     "role": "superadmin",
-    "createdAt": "2026-05-14T11:33:40.021Z"
+    "createdAt": "2026-05-14T11:33:40.021Z",
+    "email": "catalcamdilara@gmail.com"
   },
   {
     "username": "abdulhamitmercan",
     "fullName": "abdülhamit mercan",
-    "passwordHash": "$2b$10$35YLFubkAEYG/J831K7ys.Hzyp7ex2FZatUVs5W4CVxxfgX2ASDI6",
+    "passwordHash": "$2b$10$56Mm5TRMgccuCNpXM5StE.7CxRQmbBv4rKs4caeGE9Q3jzdlMoj5C",
     "role": "superadmin",
-    "createdAt": "2026-05-14T12:54:14.562Z"
-  },
-  {
-    "username": "Subutayilteris",
-    "fullName": "ilkerakar",
-    "passwordHash": "$2b$10$nBhUcUZrolB3EGqHmpNYQuSe3xJeaPvGqYG.TD0FxEijG9VqPcDPu",
-    "role": "admin",
-    "createdAt": "2026-05-15T10:46:40.255Z"
-  },
-  {
-    "username": "celik",
-    "fullName": "celik",
-    "passwordHash": "$2b$10$C00JT5UUXsYcSnog4WgxTOGwTzP/rWiUJVj3P.KQPJ9vrbKmmbjIW",
-    "role": "operator",
-    "company": "Çelikler",
-    "createdAt": "2026-05-22T06:33:37.755Z"
+    "createdAt": "2026-05-14T12:54:14.562Z",
+    "email": "abdulhamitmercan25@gmail.com"
   },
   {
     "username": "baris_servis",
@@ -41,36 +28,145 @@
     "passwordHash": "$2b$10$lPu7HBCTJEcjsZSXO.Wso.RzeA902R8N36v/XOOehFvvfW1e2TWYq",
     "role": "admin",
     "company": null,
-    "createdAt": "2026-06-29T14:47:29.879Z"
+    "createdAt": "2026-06-29T14:47:29.879Z",
+    "email": "baris.yagiz@bluetechevc.com"
   },
   {
     "username": "ilkerakar",
     "fullName": "ilkerakar",
-    "passwordHash": "$2b$10$pxjLqmIFJogqSs88s6Qn.O64Kpgjj5w7pCEY9PUtawDkQiM4OmVAG",
+    "passwordHash": "$2b$10$ovHKPdv5bJ8RiHP5IPH/G.hTXedDdAaiGJ5PLbzc/A2SgS9tXo57q",
     "role": "admin",
     "company": null,
     "createdAt": "2026-07-31T11:37:59.821Z"
   },
   {
-    "username": "denemecelik",
-    "fullName": "deneme celik",
-    "passwordHash": "$2b$10$IWZ5thlqcojpuJNTX7tRuumoAeUlI6nId5PoFgAjlt1Cz.gC5r/g6",
+    "username": "acropol",
+    "fullName": "Acropol",
+    "passwordHash": "$2b$10$a7bJZozUPZkKZBTY/RyYaeMCOVQcWHu33Qkb4F23XS6bB9VXGZc..",
     "role": "operator",
-    "company": "Çelikler",
-    "createdAt": "2026-08-04T13:01:42.534Z",
-    "allowedMacs": []
+    "company": "Acropol",
+    "allowedMacs": [],
+    "email": null,
+    "createdAt": "2026-08-21T11:04:58.823Z"
   },
   {
-    "username": "denemebireysel",
-    "fullName": "deneme bireysel",
-    "passwordHash": "$2b$10$AWIcgqjoKlCpQttyZu1Da.bfSu/xRbbR...KOslbHXRZvCFy32gBG",
+    "username": "ctg",
+    "fullName": "CTG",
+    "passwordHash": "$2b$10$KPzsyWNjfqaivh8FMWqVK.UJm3mCaMarDhPI0eb80742FT4xXVGP2",
     "role": "operator",
+    "company": "CTG",
+    "allowedMacs": [],
+    "email": null,
+    "createdAt": "2026-08-21T11:04:58.885Z"
+  },
+  {
+    "username": "e4sarj",
+    "fullName": "E4 Şarj",
+    "passwordHash": "$2b$10$j9vyaLt8LungO/t9viaC4.BlnA0y2dNlxcOG3zpX9sFAKwEAOV6xG",
+    "role": "operator",
+    "company": "E4 Şarj",
+    "allowedMacs": [],
+    "email": null,
+    "createdAt": "2026-08-21T11:04:58.947Z"
+  },
+  {
+    "username": "estasyon",
+    "fullName": "Estasyon",
+    "passwordHash": "$2b$10$5d6jimjrsPuAkUNrVe8/vOgso.NuHHyPvayMsUUDiNwysuw1XVBuO",
+    "role": "operator",
+    "company": "Estasyon",
+    "allowedMacs": [],
+    "email": null,
+    "createdAt": "2026-08-21T11:04:59.008Z"
+  },
+  {
+    "username": "oncharge",
+    "fullName": "Oncharge",
+    "passwordHash": "$2b$10$ndUlsrGOtpNymxz7rUfxFOr8hSKzhGaZff29jBanzFGyc827mFrLy",
+    "role": "operator",
+    "company": "Oncharge",
+    "allowedMacs": [],
+    "email": null,
+    "createdAt": "2026-08-21T11:04:59.070Z"
+  },
+  {
+    "username": "otopiriz",
+    "fullName": "Otopiriz",
+    "passwordHash": "$2b$10$fZbNbgP8MpT2wXHd5DkXhe880CB3Jk2rqm6bZpSjCwvGSL5YejaFe",
+    "role": "operator",
+    "company": "Otopiriz",
+    "allowedMacs": [],
+    "email": null,
+    "createdAt": "2026-08-21T11:04:59.134Z"
+  },
+  {
+    "username": "rotawatt",
+    "fullName": "Rotawatt",
+    "passwordHash": "$2b$10$LEQ82HQ4cGxINieTy8XwOO.styGWkNwoFSksmFRzdbk8xlWrkt6NG",
+    "role": "operator",
+    "company": "Rotawatt",
+    "allowedMacs": [],
+    "email": null,
+    "createdAt": "2026-08-21T11:04:59.195Z"
+  },
+  {
+    "username": "sepas",
+    "fullName": "Sepaş",
+    "passwordHash": "$2b$10$ZwxVMkhbF3bo.CACn/G2rObW3i5mqqUiRwnJyBrsbb0Z13UGcqtnS",
+    "role": "operator",
+    "company": "Sepaş",
+    "allowedMacs": [],
+    "email": null,
+    "createdAt": "2026-08-21T11:04:59.257Z"
+  },
+  {
+    "username": "celikler",
+    "fullName": "Çelikler",
+    "passwordHash": "$2b$10$uR3lfy6BKz3ffE2.ehxYc.aXETKYJ6j32d1EcWYrlkcD1q61mTcmK",
+    "role": "operator",
+    "company": "Çelikler",
+    "allowedMacs": [],
+    "email": null,
+    "createdAt": "2026-08-21T11:04:59.318Z"
+  },
+  {
+    "username": "MuhammedYumak",
+    "fullName": "MuhammedYumak",
+    "passwordHash": "$2b$10$37znw32MZIb6llet5W/PSujpasx1Q5aAbu/Ak3yKB45OaPbzki0ke",
+    "role": "admin",
     "company": null,
-    "createdAt": "2026-08-04T13:02:33.317Z",
-    "allowedMacs": [
-      "DC:DA:0C:54:5A:04",
-      "DC:DA:0C:54:6F:30",
-      "DC:DA:0C:54:6C:D8"
-    ]
+    "allowedMacs": [],
+    "email": "muhammed.yumak@bluetechcharge.com",
+    "createdAt": "2026-09-07T12:16:24.454Z"
+  },
+  {
+    "username": "deneme",
+    "fullName": "deneme",
+    "passwordHash": "$2b$10$EdqjY0goJ8iWPyX1G/HzGOcmxhBcE1lL2liXT06GsY2gX4yRIGKrK",
+    "role": "operator",
+    "company": "Çelikler",
+    "allowedMacs": [],
+    "email": "deneme@gmail.com",
+    "createdAt": "2026-09-14T11:23:09.856Z"
+  },
+  {
+    "username": "deneme_acropol",
+    "fullName": "deneme_acropol",
+    "passwordHash": "$2b$10$Y67gDRQcPr3hZRDfZ/5OAu9YD.b27gO83Ww1S/d5jifUaea6kMvAq",
+    "role": "operator",
+    "company": "Acropol",
+    "allowedMacs": [],
+    "email": null,
+    "createdAt": "2026-09-14T12:25:48.266Z"
+  },
+  {
+    "username": "deneme_otopriz",
+    "fullName": "deneme",
+    "passwordHash": "$2b$10$WN8oCo1Khv.4eclcgrAiXuNtNENJBfdP/DT3zXwdl5lqLWeMgwmjS",
+    "role": "operator",
+    "company": "Otopiriz",
+    "allowedMacs": [],
+    "email": null,
+    "createdAt": "2026-09-14T12:35:48.314Z"
   }
 ]

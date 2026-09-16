@@ -34,7 +34,15 @@
 
 const fs = require("fs");
 
-const MAX_BUFFERED_LINES = 4000;    // dogrulama icin yazma sonrasi satirlar da lazim
+// Toplu Güncelleme paralel çalışırken (birden fazla cihaz aynı anda
+// indiriyor) bir cihazın "başladı" satırı, DİĞER cihazların ürettiği yoğun
+// log trafiği yüzünden bu pencereden düşebiliyor — sahada gözlendi: cihaz
+// gerçekten indiriyordu (%73'e kadar ilerlemişti) ama sonraki bir kontrolde
+// sanki hiç başlamamış gibi görünüp "uptodate"/"waiting"e döndü, eski
+// yüzde de DB'de öylece kaldı. Pencere büyütülerek bu kaybolma ihtimali
+// azaltılıyor (8 cihaz × ~400 satırlık tam bir indirme ≈ 3200 satır —
+// eskiden bu TEK BAŞINA pencereyi dolduruyordu).
+const MAX_BUFFERED_LINES = 20000;   // dogrulama icin yazma sonrasi satirlar da lazim
 const SEED_BYTES = 262144;          // ilk okumada dosyanin son ~256KB'i
 
 // Log dosyasini yazan sunucunun saat dilimi. Panel UTC'de calissa bile
@@ -139,6 +147,22 @@ function kindFromVersion(v) {
 /* Dosya adindan tip: msp_hw31.txt -> msp, fw_hw13_v407.bin -> esp */
 function kindFromFile(f) {
   return /^msp/i.test(f) ? "msp" : "esp";
+}
+
+/* Dosya adindan surum turet: fw_hw13_v417.bin -> v@4.1.7, msp_hw31_v12.txt -> msp@1.2
+   Saha loglarinda goruldu: cihaz raporu (current/latest tasiyan "OTA REPORT"
+   satiri) FARKLI BIR AGDAN baglaninca (GSM/mobil NAT ile sik) sunucu
+   tarafinda hic yazilmiyor, sadece surum bilgisi tasimayan erken
+   "path=/ota_report" formu geliyor (bkz. asagidaki report parse notu).
+   Boyle durumlarda hedef surum hala guvenilir bir yerden turetilebilir:
+   inen dosyanin adi — cihaz zaten bu dosyayi indirip yazdigina gore adi
+   gercek hedefi birebir yansitir. */
+function versionFromFilename(file) {
+  if (!file) return null;
+  const m = String(file).match(/^(fw|msp)_hw\d+_v(\d+)\.(?:bin|txt)$/i);
+  if (!m) return null;
+  const prefix = /^msp$/i.test(m[1]) ? "msp" : "v";
+  return `${prefix}@${m[2].split("").join(".")}`;
 }
 
 /* Ham status -> anlam. Bilinmeyen status "unknown" doner, ASLA otomatik
@@ -271,6 +295,7 @@ async function getMacUpdateStatus({ logPath, macEntries, kind = "esp" }) {
       percent: null,
       lastProgressAt: null,
       lastSid: null,
+      lastFile: null,          // en son indirilen/yazilan dosya adi (ör. fw_hw13_v417.bin)
 
       // Rapor
       lastResult: null,        // written | success | failed | no_update | unknown
@@ -334,6 +359,7 @@ async function getMacUpdateStatus({ logPath, macEntries, kind = "esp" }) {
         entry.percent = null;
       }
       entry.lastProgressAt = parsed.ts;
+      if (parsed.file) entry.lastFile = parsed.file;
 
     } else if (parsed.type === "progress") {
       entry.hasStarted = true;
@@ -341,6 +367,7 @@ async function getMacUpdateStatus({ logPath, macEntries, kind = "esp" }) {
       entry.percent = parsed.percent;
       entry.lastProgressAt = parsed.ts;
       entry.lastActivityAt = parsed.ts;
+      if (parsed.file) entry.lastFile = parsed.file;
 
     } else if (parsed.type === "report") {
       entry.lastResult = parsed.result;
@@ -348,7 +375,16 @@ async function getMacUpdateStatus({ logPath, macEntries, kind = "esp" }) {
       entry.lastResultAt = parsed.ts;
       entry.lastActivityAt = parsed.ts;
       if (parsed.current) { entry.versionAtReport = parsed.current; entry.currentVersion = parsed.current; }
-      if (parsed.latest)  { entry.targetVersion = parsed.latest;    entry.latestVersion = parsed.latest; }
+      if (parsed.latest) {
+        entry.targetVersion = parsed.latest;
+        entry.latestVersion = parsed.latest;
+      } else if (!entry.targetVersion) {
+        // "OTA REPORT" (current/latest tasiyan) satiri hic gelmemis olabilir
+        // (bkz. versionFromFilename tanimindaki saha notu) — inen dosyanin
+        // adindan hedefi turet ki panel eski surumde takili kalmasin.
+        const fromFile = versionFromFilename(entry.lastFile);
+        if (fromFile) { entry.targetVersion = fromFile; entry.latestVersion = fromFile; }
+      }
       // Yeni bir rapor geldiyse onceki dogrulama gecersiz
       entry.postWriteVersion = null;
       entry.postWriteAt = null;
@@ -381,4 +417,28 @@ async function getRecentLogLines({ logPath, requestedLines }) {
   };
 }
 
-module.exports = { getRecentLogLines, getMacUpdateStatus, parseOtaLine, LOG_TZ_OFFSET };
+/* ═══════════════════════════════════════════════════════════════
+   Logo yazma onayı — parseOtaLine bu satırları BİLEREK yok sayıyor
+   (üstteki not: "status=written buradan geliyor, firmware statusu
+   sanılmamalı"). Toplu Parametre'nin logo doğrulaması ÖNCE MQTT
+   üzerinden "Aktif Logo" (id 65) okuyarak yapılıyordu ama sahada
+   defalarca yanlış "doğrulanamadı" verdi — oysa bu loglardaki
+   "path=/logo_report ... status=written" kaydı KESİN kanıt: cihaz
+   dosyayı gerçekten indirip flash'a yazmış. O yüzden logo doğrulaması
+   artık BUNU okuyor, MQTT'ye güvenmiyor.
+   ═══════════════════════════════════════════════════════════════ */
+async function checkLogoWritten({ logPath, mac, sinceTs }) {
+  await refreshBuffer({ logPath });
+  const upMac = mac.toUpperCase();
+  for (const line of lineBuffer) {
+    if (!/path=\/logo_report/.test(line) || !/status=written/.test(line)) continue;
+    const m = line.match(/\bid=([0-9A-Fa-f:]{17})\b/);
+    if (!m || m[1].toUpperCase() !== upMac) continue;
+    const ts = parseTimestamp(line);
+    if (sinceTs && ts !== null && ts < sinceTs) continue;
+    return true;
+  }
+  return false;
+}
+
+module.exports = { getRecentLogLines, getMacUpdateStatus, parseOtaLine, checkLogoWritten, LOG_TZ_OFFSET };

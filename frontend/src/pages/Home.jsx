@@ -10,9 +10,14 @@ import DeviceSelect from "../components/DeviceSelect.jsx";
 import DeviceManagement from "../components/DeviceManagement.jsx";
 import DeviceSetup from "../components/DeviceSetup.jsx";
 import BulkUpdate from "../components/BulkUpdate.jsx";
+import BulkParamUpdate from "../components/BulkParamUpdate.jsx";
+import DeviceStatusBoard from "../components/DeviceStatusBoard.jsx";
+import TelemetryHero from "../components/TelemetryHero.jsx";
+import AccountSettings from "../components/AccountSettings.jsx";
 import OtaServerControl from "../components/OtaServerControl.jsx";
 import DeviceVersions from "../components/DeviceVersions.jsx";
 import OtaServerLogs from "../components/OtaServerLogs.jsx";
+import { mapValue, csColor } from "../lib/deviceValueMapping.js";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
 import {
@@ -26,7 +31,8 @@ import {
   HiOutlinePencilSquare, HiOutlineIdentification,
   HiOutlineWrenchScrewdriver, HiOutlineServerStack,
   HiOutlineFingerPrint, HiOutlineCircleStack, HiOutlineBars3,
-  HiOutlineSignal, HiOutlineUsers, HiOutlineDocumentMagnifyingGlass
+  HiOutlineSignal, HiOutlineUsers, HiOutlineDocumentMagnifyingGlass, HiOutlineUserCircle,
+  HiOutlineViewColumns, HiOutlineChevronDown, HiOutlineEllipsisVertical, HiOutlineXMark
 } from "react-icons/hi2";
 import { TbPlugConnected, TbBrandApple, TbBrandGooglePlay, TbGauge, TbColorSwatch, TbTargetArrow, TbActivity, TbAlertCircle, TbTemperature, TbDroplet, TbEngine } from "react-icons/tb";
 import { BsLightningCharge, BsBattery, BsUsbSymbol, BsShieldLock, BsThermometer, BsSpeedometer } from "react-icons/bs";
@@ -202,44 +208,9 @@ const OCPP_CREDS = [
   { id: 44, icon: <HiOutlineTag />,                 label: "Box Seri No" },
 ];
 
-/* ── Helpers ── */
-function mapValue(id, raw) {
-  if (raw === undefined || raw === null) return "——";
-  const v = String(raw);
-  if (id === 7) return ({ "0": "CommSupported", "1": "GSM", "2": "WiFi", "3": "ETH" })[v] || v;
-  if (id === 13) return v === "0" ? "Yazı" : v === "1" ? "Logo" : v;
-  if (id === 35) return v === "0" ? "Gradient" : v === "1" ? "Renk" : v;
-  if (id === 27) return v === "0" ? "Hata Yok" : `Hata: ${v}`;
-  if (id === 25) return ({ "0": "Beklemede", "1": "Şarj Oluyor", "2": "Tamamlandı" })[v] || v;
-  if (id === 15) return v === "0" ? "Kapalı" : v === "1" ? "Aktif" : v;
-  if (id === 16) return v === "0" ? "MSP Hesaplama" : v === "1" ? "AC Meter" : v;
-  if (id === 17) return v === "0" ? "Ürün Modu" : v === "1" ? "Test Modu" : v;
-  if (id === 18) return v === "0" ? "Kablosuz" : v === "1" ? "Kablolu" : v;
-  if (id === 19) return ({ "0": "Plug & Charge", "1": "RFID Charge", "2": "OCPP Charge" })[v] || v;
-  if (id === 69) return v === "0" ? "Üretim Modu" : v === "1" ? "Test Modu" : v;
-  if (id === 37) return ({ "NONE": "Bağlı Değil", "GSM": "GSM", "WiFi": "WiFi", "ETH": "Ethernet" })[v] || v;
-  if (id === 38) return v === "0" ? "Deaktif" : v === "1" ? "Aktif" : v;
-  if (id === 45) return v === "0" ? "Kopuk" : v === "1" ? "Bağlı" : v;
-  if (id === 46) return v === "0" ? "Kapalı" : v === "1" ? "Açık" : v;
-  if (id === 48) return v === "0" ? "Yok" : v === "1" ? "Var ⚠️" : v;
-  if (id === 52) return v === "0" ? "Kapalı" : v === "1" ? "Açık" : v;
-  if (id === 53) return v === "0" ? "Pasif" : v === "1" ? "Aktif" : v;
-  if (id === 64 || id === 65) return ({
-    "acrapol_logo":  "Acrapol",
-    "celikler_logo": "Çelikler",
-    "ctg_logo":      "CTG",
-    "sepas_logo":    "Sepas",
-  })[v] || v;
-  return v;
-}
-function csColor(raw) {
-  const v = String(raw);
-  return v === "0" ? "yellow" : v === "1" ? "green" : v === "2" ? "blue" : undefined;
-}
-
 /* ── Section tanımları — sidebar için ── */
 const SECTIONS = [
-  { key: "device-select", label: "Cihaz Sec", icon: <HiOutlineCpuChip /> },
+  { key: "device-select", label: "Cihaz Seç", icon: <HiOutlineCpuChip /> },
   { key: "ocpp-wifi",    label: "OCPP & WiFi",       icon: <HiOutlineGlobeAlt /> },
   { key: "ui",           label: "Bağlantı & UI",     icon: <TbPlugConnected /> },
   { key: "msp-config",   label: "MSP Konfigürasyon", icon: <HiOutlineCog6Tooth /> },
@@ -253,8 +224,13 @@ const SECTIONS = [
   { key: "device-mgmt",  label: "Cihaz Yönetimi",    icon: <HiOutlineCpuChip />, superadminOnly: true, adminOnly: true },
   { key: "device-setup", label: "Cihaz Kurulum",    icon: <HiOutlineWrenchScrewdriver />, superadminOnly: true, adminOnly: true },
   { key: "bulk-update",  label: "Toplu Güncelleme", icon: <HiOutlineArrowUpTray />, superadminOnly: true, adminOnly: true },
+  // superadmin panelden, operator (şirket hesabı) kendi dashboard'undan erişir —
+  // "admin" rolü kasıtlı dışarıda (Toplu Güncelleme/firmware ile aynı ihtiyat).
+  { key: "bulk-param",   label: "Toplu Parametre",  icon: <HiOutlinePencilSquare />, roles: ["superadmin", "operator"] },
+  { key: "device-status", label: "Toplu Okuma",     icon: <HiOutlineViewColumns />, roles: ["superadmin", "operator"] },
   { key: "ota-server",   label: "OTA Sunucu Kontrolü", icon: <HiOutlineServerStack />, superadminOnly: true, adminOnly: true },
   { key: "device-versions", label: "Cihaz Versiyonları", icon: <HiOutlineDocumentMagnifyingGlass />, superadminOnly: true, adminOnly: true },
+  { key: "account",      label: "Hesap Yönetimi",   icon: <HiOutlineUserCircle /> },
 ];
 
 /* ── Main ── */
@@ -323,11 +299,45 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     if (typeof window === "undefined") return "dark";
     try { return window.localStorage?.getItem("bluetech-theme") || "dark"; } catch { return "dark"; }
   });
-  const [activeSection, setActiveSection] = useState("device-select");
+  // Sol menüdeki bölüm geçişleri URL hash'ine (#bölüm-anahtarı) yazılır —
+  // böylece tarayıcının geri/ileri tuşları bölümler arasında gezinebiliyor.
+  // Hash yalnızca istemci tarafında yorumlanır, sunucuya hiç gitmediği için
+  // (server.js'te ayrıca bir route/değişiklik gerekmiyor) sayfa yenilemede de
+  // aynı bölüm açık kalır.
+  const readSectionFromHash = () => {
+    try {
+      const h = window.location.hash.replace(/^#/, "");
+      return h || null;
+    } catch { return null; }
+  };
+  const [activeSection, setActiveSectionState] = useState(() => readSectionFromHash() || "device-select");
+  const navigateToSection = (key) => {
+    setActiveSectionState(key);
+    try {
+      if (window.location.hash.replace(/^#/, "") !== key) window.location.hash = key;
+    } catch {}
+  };
+  useEffect(() => {
+    const onHashChange = () => {
+      const key = readSectionFromHash();
+      if (key) setActiveSectionState(key);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
+  const [diagOpen, setDiagOpen] = useState(false);
+  const [emailBannerDismissed, setEmailBannerDismissed] = useState(false);
+  const [connectMenuOpen, setConnectMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!connectMenuOpen) return;
+    const onDocClick = (e) => { if (!e.target.closest("[data-connect-menu]")) setConnectMenuOpen(false); };
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, [connectMenuOpen]);
 
   // Mevcut kullanıcı bilgisi — /api/me ile çekilir
-  const [currentUser, setCurrentUser] = useState(null); // { username, fullName, role }
+  const [currentUser, setCurrentUser] = useState(null); // { username, fullName, role, email }
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -349,6 +359,16 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   const [myDevices, setMyDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [connectedLabel, setConnectedLabel] = useState("");
+
+  // DeviceSelect (Cihaz Seç) VE DeviceStatusBoard (Toplu Okuma popover'ındaki
+  // "Cihaza Bağlan" butonu) AYNI akışı kullanıyor — bağlantı kurulunca cihaz
+  // ekranına geçiş tek bir yerden yönetilsin diye ortak bir handler.
+  const handleDeviceConnected = useCallback((mac, device) => {
+    if (mac) setMac(mac);
+    setConnectedLabel(device?.location || device?.device_code || mac || "Cihaz");
+    setIsConnected(true);
+    navigateToSection("ocpp-wifi");
+  }, [setMac, navigateToSection]);
 
   useEffect(() => {
     if (!isOperator) return;
@@ -374,6 +394,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     () => SECTIONS.filter((s) => {
       if (s.adminOnly && !isAdmin) return false;
       if (s.superadminOnly && currentUser?.role !== "superadmin") return false;
+      if (s.roles && !s.roles.includes(currentUser?.role)) return false;
       return true;
     }),
     [isAdmin, currentUser]
@@ -384,7 +405,12 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   useEffect(() => {
     if (activeSection === "device-select") return; // bu her zaman görünür, dokunma
     const stillVisible = visibleSections.some((s) => s.key === activeSection);
-    if (!stillVisible) setActiveSection("ocpp-wifi");
+    if (!stillVisible) {
+      // Otomatik düşme — kullanıcının kendi geçmiş girdisi değil, bu yüzden
+      // yeni bir history entry itmiyoruz (replace).
+      setActiveSectionState("ocpp-wifi");
+      try { window.history.replaceState(null, "", "#ocpp-wifi"); } catch {}
+    }
   }, [visibleSections, activeSection]);
 
   useEffect(() => {
@@ -502,12 +528,16 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   const pendingSetsRef = useRef({}); // { [variableId]: { value: string, until: number } }
   const SET_GRACE_MS = 4000;
 
-  const sendCommand = useCallback(async (type, variable, value = "") => {
+  const sendCommand = useCallback(async (type, variable, value = "", opts = {}) => {
     if (!isActive) { setMessage("ESP aktif değil"); return false; }
+    const { keepStale = false, silent = false } = opts;
 
     // Read komutu atılırken eski değeri hemen sil — böylece yeni değer gelene kadar
-    // ekranda "—" görünür, eski/bayat değerle yeni okunan değer karışmaz
-    if (type === "read") {
+    // ekranda "—" görünür, eski/bayat değerle yeni okunan değer karışmaz.
+    // keepStale: canlı telemetri otomatik yenilemesi gibi arka plan okumalarında
+    // eski değer ekranda kalmaya devam eder, yenisi gelince üzerine yazılır —
+    // her ~10sn'de bir tüm kartların "——" olup tekrar dolması (flicker) önlenir.
+    if (type === "read" && !keepStale) {
       setReadValues((prev) => {
         const next = { ...prev };
         delete next[variable];
@@ -521,17 +551,19 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
         body: JSON.stringify({ type, variable, value }),
       });
       const d = await r.json();
-      if (!r.ok) { setMessage(d.message || "Hata"); return false; }
+      if (!r.ok) { if (!silent) setMessage(d.message || "Hata"); return false; }
 
       if (type === "set" && value !== undefined && value !== null) {
         setReadValues((prev) => ({ ...prev, [variable]: String(value) }));
         pendingSetsRef.current[variable] = { value: String(value), until: Date.now() + SET_GRACE_MS };
       }
 
-      setMessage(type === "set" ? "Değer gönderildi…" : "Okunuyor…");
-      setTimeout(() => setMessage(""), 3000);
+      if (!silent) {
+        setMessage(type === "set" ? "Değer gönderildi…" : "Okunuyor…");
+        setTimeout(() => setMessage(""), 3000);
+      }
       return true;
-    } catch { setMessage("Sunucuya ulaşılamadı"); return false; }
+    } catch { if (!silent) setMessage("Sunucuya ulaşılamadı"); return false; }
   }, [isActive, authFetch]);
 
   const fireOneShot = useCallback(async (id, value, successMsg) => {
@@ -563,6 +595,50 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       setTimeout(() => setOneShotOk((prev) => ({ ...prev, [id]: null })), 4000);
     }
   }, [isActive, sendCommand, authFetch]);
+
+  // ESP Reset GÜVENLİK KONTROLÜ: şarj veren bir cihaza yanlışlıkla basılıp
+  // resetlenmesin diye, komutu göndermeden önce id 25'i (şarj durumu) kontrol
+  // ediyoruz — bulk-jobs.js / device-status-poll.js'teki AYNI sözleşme:
+  // cihaz string kod gönderiyor (P1_IDLE...P6_ERR), sadece "P4_CHARGING" =
+  // şarjda. DİKKAT: genel "CHARG" değil tam "CHARGING" aranmalı — aksi halde
+  // "P5_CHARGE_ENDED" (şarj BİTTİ, artık şarj etmiyor) de yanlışlıkla
+  // "şarjda" sayılıp reset gereksiz yere engellenir. id 25 pasif telemetri
+  // olduğu için (cihaz sadece durum
+  // DEĞİŞİNCE kendiliğinden yayınlıyor, taze "oku" isteğine her zaman cevap
+  // vermeyebiliyor) önce ekrandaki son bilinen değere bakıp sonra taze bir
+  // okuma deniyoruz; hiçbir değer alınamazsa (doğrulanamıyor) sert engellemek
+  // yerine açık bir uyarıyla onay istiyoruz.
+  const handleEspReset = useCallback(async () => {
+    if (!isActive || oneShotLoading[20]) return;
+    setOneShotOk((prev) => ({ ...prev, 20: null }));
+    setOneShotLoading((prev) => ({ ...prev, 20: true }));
+
+    let raw = readValues[25];
+    try {
+      await sendCommand("read", 25, "", { keepStale: true, silent: true });
+      for (let i = 0; i < 4; i++) {
+        await new Promise((r) => setTimeout(r, 400));
+        const resp = await authFetch("/api/responses");
+        const j = await resp.json();
+        const msgs = j.message_response || [];
+        const found = msgs.find((m) => Number(m.cmd) === 2 && Number(m.msg) === 25 && m.data !== undefined && m.data !== null);
+        if (found) { raw = found.data; break; }
+      }
+    } catch {}
+
+    if (raw && (String(raw) === "1" || /CHARGING/i.test(String(raw)))) {
+      setOneShotLoading((prev) => ({ ...prev, 20: false }));
+      setOneShotOk((prev) => ({ ...prev, 20: "Cihaz şarj veriyor, reset engellendi ✕" }));
+      setTimeout(() => setOneShotOk((prev) => ({ ...prev, 20: null })), 5000);
+      return;
+    }
+    if (!raw && !window.confirm("Şarj durumu doğrulanamadı, cihaz şarj veriyor olabilir.\n\nYine de resetlemek istiyor musunuz?")) {
+      setOneShotLoading((prev) => ({ ...prev, 20: false }));
+      return;
+    }
+
+    await fireOneShot(20, "1", "ESP resetlendi ✓");
+  }, [isActive, oneShotLoading, readValues, sendCommand, authFetch, fireOneShot]);
 
   const fireRead = useCallback(async (id) => {
     if (!isActive) {
@@ -682,18 +758,60 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   };
 
   const badge = (() => {
-    if (!isConnected) return { t: "Bağlantı Yok", c: "border-[var(--border-subtle)] text-[var(--text-muted)] bg-[var(--bg-subtle)]", d: "bg-[var(--text-muted)]" };
-    if (espStatus === "active") return { t: "Çevrimiçi", c: "bg-emerald-500/10 border-emerald-500/30 text-emerald-400", d: "bg-emerald-400 animate-pulse" };
-    if (espStatus === "unknown") return { t: "Bekleniyor…", c: "bg-amber-500/10 border-amber-500/30 text-amber-400", d: "bg-amber-400 animate-pulse" };
-    return { t: "Çevrimdışı", c: "bg-rose-500/10 border-rose-500/30 text-rose-400", d: "bg-rose-400" };
+    if (!isConnected) return { t: "Bağlantı Yok", tc: "text-[var(--text-muted)]", d: "bg-[var(--text-muted)]" };
+    if (espStatus === "active") return { t: "Çevrimiçi", tc: "text-emerald-500", d: "bg-emerald-400 animate-pulse" };
+    if (espStatus === "unknown") return { t: "Bekleniyor…", tc: "text-amber-500", d: "bg-amber-400 animate-pulse" };
+    return { t: "Çevrimdışı", tc: "text-rose-500", d: "bg-rose-400" };
   })();
 
   const V = (id) => mapValue(id, readValues[id]);
 
   /* ── Toplu Read / Set state'leri ── */
   const [batchReadingId, setBatchReadingId] = useState(null);
+  const batchReadingIdRef = useRef(null);
+  useEffect(() => { batchReadingIdRef.current = batchReadingId; }, [batchReadingId]);
   const [batchProgress, setBatchProgress] = useState("");
   const [failedReads, setFailedReads] = useState({});
+
+  // Tek bir değişkeni okuyup readValues'a yazar — hem manuel "Tümünü Oku" hem
+  // de aşağıdaki sessiz otomatik yenileme tarafından paylaşılan çekirdek mantık.
+  // keepStale: true → cihazdan yeni yanıt gelene kadar eski değer ekranda kalır
+  // (flicker olmaz). Kontrol aralığı sıklaştırıldı (300ms x 5 ≈ 1.5sn) — cihaz
+  // hızlı cevap verdiğinde eskisine göre (500+500ms, sadece 2 kontrol) daha
+  // erken yakalanıyor, toplam bekleme süresi de kısaldı.
+  const readOneValue = async (p, { keepStale = false } = {}) => {
+    await sendCommand("read", p.id, "", { keepStale, silent: keepStale });
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await new Promise((r) => setTimeout(r, 300));
+      try {
+        const resp = await authFetch("/api/responses");
+        const j = await resp.json();
+        const msgs = j.message_response || [];
+        // "" (boş veri) de bir cevap ama kullanışlı değil — cihaz bazı
+        // telemetri alanlarına (şarj süresi, güç, durum...) pasif olarak
+        // yalnızca durum DEĞİŞTİĞİNDE dolu değer basıyor; aradaki okuma
+        // isteklerine boş string ile cevap verebiliyor. Bunu "değer" sayıp
+        // ekranı "——"a düşürmek yerine (eski dolu değer varsa kaybolmasın
+        // diye) yok sayıp bir sonraki turda tekrar deniyoruz.
+        const found = msgs.find((m) => Number(m.cmd) === 2 && Number(m.msg) === p.id);
+        if (found && found.data !== undefined && found.data !== null && found.data !== "") {
+          setReadValues((prev) => ({ ...prev, [p.id]: found.data }));
+          return true;
+        }
+      } catch {}
+    }
+    return false;
+  };
+
+  // "Cihaz Tanılama" üst bardaki (…) menüsünden HERHANGİ bir sekmedeyken
+  // açılabiliyor — o yüzden Canlı Telemetri sekmesine özel arka plan
+  // döngüsüne güvenmeden, modal açılır açılmaz bu 3 alanı bir kere taze okur.
+  useEffect(() => {
+    if (!diagOpen || !isActive) return;
+    TELEMETRY.filter((p) => ![22, 23, 24, 25].includes(p.id)).forEach((p) => readOneValue(p, { keepStale: true }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diagOpen]);
 
   const batchRead = async (params, panelId) => {
     if (!isActive || batchReadingId) return;
@@ -703,26 +821,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     for (let i = 0; i < params.length; i++) {
       const p = params[i];
       setBatchProgress(`${p.label} okunuyor… (${i + 1}/${params.length})`);
-
-      await sendCommand("read", p.id);
-      await new Promise((r) => setTimeout(r, 500));
-
-      let success = false;
-      for (let retry = 0; retry < 2; retry++) {
-        try {
-          const resp = await authFetch("/api/responses");
-          const j = await resp.json();
-          const msgs = j.message_response || [];
-          const found = msgs.find((m) => Number(m.cmd) === 2 && Number(m.msg) === p.id);
-          if (found && found.data !== undefined && found.data !== null) {
-            setReadValues((prev) => ({ ...prev, [p.id]: found.data }));
-            success = true;
-            break;
-          }
-        } catch {}
-        if (retry === 0) await new Promise((r) => setTimeout(r, 500));
-      }
-
+      const success = await readOneValue(p, { keepStale: true });
       failed[p.id] = !success;
     }
 
@@ -736,6 +835,35 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     else setMessage("Tüm değerler okundu ✓");
     setTimeout(() => setMessage(""), 4000);
   };
+
+  // ── Canlı Telemetri / MSP Telemetri — otomatik yenileme ──
+  // Bu iki sekmede manuel "Oku" butonu YOK — sayfaya girer girmez otomatik
+  // başlar, değerler arka planda sessizce (mesaj/ilerleme göstermeden) art
+  // arda okunup her turun bitiminde ~1 saniye beklenip yeniden başlar.
+  // keepStale:true sayesinde yeni değer gelene kadar eskisi ekranda kalır —
+  // "——" a dönüp tekrar dolma (flicker/yanıp sönme) olmaz.
+  useEffect(() => {
+    if (!isActive) return;
+    if (activeSection !== "telemetry" && activeSection !== "msp-tele") return;
+    const params = activeSection === "telemetry" ? TELEMETRY : MSP_TELEMETRY;
+
+    let cancelled = false;
+    let timer;
+    const tick = async () => {
+      if (cancelled) return;
+      if (!batchReadingIdRef.current) {
+        for (const p of params) {
+          if (cancelled) return;
+          await readOneValue(p, { keepStale: true });
+        }
+      }
+      if (!cancelled) timer = setTimeout(tick, 1000);
+    };
+    tick();
+
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, activeSection]);
 
   const [bulkEditingId, setBulkEditingId] = useState(null);
   const [bulkDrafts, setBulkDrafts] = useState({});
@@ -1249,14 +1377,68 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     );
   };
 
+  // Bu kartlarda artık manuel "Oku" butonu yok — değerler sayfa açılır açılmaz
+  // arka planda otomatik okunup sessizce güncelleniyor (bkz. yukarıdaki
+  // otomatik yenileme efekti).
+  // "Bağlan"/"Kopar" iki ayrı buton yerine tek bir açma/kapama switch —
+  // kapalıyken tıklamak forma submit ettirip bağlanmayı tetikler (Enter ile
+  // de çalışsın diye type=submit), açıkken tıklamak direkt koparir.
+  const ConnectSwitch = () => (
+    <button
+      type={isConnected ? "button" : "submit"}
+      onClick={isConnected ? handleDisconnect : undefined}
+      disabled={loading}
+      title={isConnected ? "Bağlantıyı kes" : "Bağlan"}
+      className={`relative shrink-0 w-12 h-7 rounded-full border transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
+        ${isConnected ? "bg-emerald-500 border-emerald-400" : "bg-[var(--bg-subtle)] border-[var(--border-subtle)]"}`}
+    >
+      <span className={`absolute top-[3px] w-[22px] h-[22px] rounded-full bg-white shadow transition-all duration-200 flex items-center justify-center
+        ${isConnected ? "left-[23px]" : "left-[3px]"}`}>
+        {loading && <HiOutlineArrowPath className="text-[11px] text-[var(--text-muted)] animate-spin" />}
+      </span>
+    </button>
+  );
+
+  // "ESP Reset" gibi kritik/az kullanılan işlemler artık ana barda ayrı bir
+  // buton değil, üç nokta menüsünün içinde — yanlışlıkla tıklanma riski azalsın.
+  const ConnectOptionsMenu = () => (
+    <div className="relative shrink-0" data-connect-menu>
+      <button type="button" onClick={() => setConnectMenuOpen((v) => !v)}
+        title="Diğer işlemler"
+        className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition cursor-pointer">
+        <HiOutlineEllipsisVertical className="text-[16px]" />
+      </button>
+      {connectMenuOpen && (
+        <div className="absolute right-0 top-full mt-1.5 z-30 w-44 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-lg py-1">
+          <button type="button"
+            onClick={() => { setConnectMenuOpen(false); handleEspReset(); }}
+            disabled={!isConnected || !isActive || oneShotLoading[20]}
+            className="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-semibold text-amber-500 hover:bg-amber-500/10
+                       disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition text-left">
+            <HiOutlineArrowPath className={`text-[13px] ${oneShotLoading[20] ? "animate-spin" : ""}`} />
+            {oneShotLoading[20] ? "Resetleniyor…" : "ESP Reset"}
+          </button>
+          <button type="button"
+            onClick={() => { setConnectMenuOpen(false); setDiagOpen(true); }}
+            disabled={!isConnected}
+            className="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]
+                       disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition text-left">
+            <HiOutlineWrenchScrewdriver className="text-[13px]" />
+            Cihaz Tanılama
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   const renderTelemetryCard = (p, showStateColor = false) => (
-    <div key={p.id} className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] rounded-lg px-2.5 py-2 flex flex-col hover:border-[var(--accent-border)] transition-colors min-h-[110px]">
+    <div key={p.id} className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] rounded-lg px-2.5 py-2.5 flex flex-col hover:border-[var(--accent-border)] transition-colors">
       <div className="flex items-center gap-1 mb-1.5 min-h-[14px]">
         {p.icon && <span className="text-[11px] text-[var(--text-secondary)] shrink-0">{p.icon}</span>}
         <span className="text-[9px] text-[var(--text-secondary)] font-semibold tracking-wide uppercase truncate">{p.label}</span>
         <span className="text-[8px] text-amber-400 ml-auto font-mono shrink-0" style={{ visibility: failedReads[p.id] ? 'visible' : 'hidden' }}>!</span>
       </div>
-      <div className="flex items-baseline gap-1 mb-2 min-h-[20px]">
+      <div className="flex items-baseline gap-1 min-h-[20px]">
         <span className={`text-[14px] font-bold tracking-tight font-display leading-none truncate ${
           showStateColor && p.id === 25 ? (
             csColor(readValues[25]) === "green" ? "text-emerald-400" :
@@ -1268,76 +1450,30 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
         </span>
         {p.unit && <span className="text-[9px] font-semibold text-[var(--text-secondary)] font-mono shrink-0">{p.unit}</span>}
       </div>
-      <button
-        onClick={() => { setFailedReads((prev) => ({ ...prev, [p.id]: false })); sendCommand("read", p.id); }}
-        disabled={!isActive || !!batchReadingId}
-        className={`mt-auto flex items-center justify-center gap-1 w-full py-[3px] rounded-md border text-[9px] font-semibold transition tracking-wider uppercase
-          ${(!isActive || !!batchReadingId)
-            ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
-            : "bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft-hover)] active:bg-[var(--accent-soft-hover)] cursor-pointer"
-          }`}
-      >
-        <HiOutlineArrowPath className="text-[9px]" />
-        Oku
-      </button>
     </div>
   );
 
   const renderTelemetry = () => (
     <>
       <SectionHeader icon={<TbActivity />} title="Canlı Telemetri" subtitle="Anlık şarj verileri ve cihaz durumu" />
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-[10px] tracking-widest uppercase font-bold text-emerald-400 font-mono">Live Stream</span>
-          <span className="text-[10px] text-[var(--accent)] font-medium animate-pulse ml-3 font-mono truncate"
-            style={{ visibility: (batchReadingId === "tele" && batchProgress) ? 'visible' : 'hidden' }}>
-            {(batchReadingId === "tele" && batchProgress) || " "}
-          </span>
-        </div>
-        <button
-          onClick={() => batchRead(TELEMETRY, "tele")}
-          disabled={!isActive || !!batchReadingId || !!bulkEditingId || bulkSaving}
-          className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition tracking-wide uppercase self-start sm:self-auto
-            ${(!isActive || !!batchReadingId || !!bulkEditingId || bulkSaving)
-              ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
-              : "bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft-hover)] cursor-pointer"
-            }`}
-        >
-          <HiOutlineArrowPath className={`text-[12px] ${batchReadingId === "tele" ? "animate-spin" : ""}`} />
-          {batchReadingId === "tele" ? "Okunuyor…" : "Tümünü Oku"}
-        </button>
+      <div className="flex items-center gap-2 mb-4">
+        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+        <span className="text-[10px] tracking-widest uppercase font-bold text-emerald-400 font-mono">Live Stream</span>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-        {TELEMETRY.map((p) => renderTelemetryCard(p, true))}
-      </div>
+      <TelemetryHero
+        power={V(23)} energy={V(24)} duration={V(22)} status={V(25) || "——"}
+        statusColor={csColor(readValues[25])} online={isActive} theme={theme}
+        icons={{ power: <BsLightningCharge />, energy: <BsBattery />, duration: <HiOutlineClock />, status: <TbAlertCircle /> }}
+      />
     </>
   );
 
   const renderMspTelemetry = () => (
     <>
       <SectionHeader icon={<HiOutlineSignal />} title="MSP Telemetri" subtitle="Faz voltajları, akımlar ve MSP output verileri" />
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-amber-400" />
-          <span className="text-[10px] tracking-widest uppercase font-bold text-amber-400 font-mono">Read-Only</span>
-          <span className="text-[10px] text-[var(--accent)] font-medium animate-pulse ml-3 font-mono truncate"
-            style={{ visibility: (batchReadingId === "msp" && batchProgress) ? 'visible' : 'hidden' }}>
-            {(batchReadingId === "msp" && batchProgress) || " "}
-          </span>
-        </div>
-        <button
-          onClick={() => batchRead(MSP_TELEMETRY, "msp")}
-          disabled={!isActive || !!batchReadingId || !!bulkEditingId || bulkSaving}
-          className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition tracking-wide uppercase self-start sm:self-auto
-            ${(!isActive || !!batchReadingId || !!bulkEditingId || bulkSaving)
-              ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
-              : "bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft-hover)] cursor-pointer"
-            }`}
-        >
-          <HiOutlineArrowPath className={`text-[12px] ${batchReadingId === "msp" ? "animate-spin" : ""}`} />
-          {batchReadingId === "msp" ? "Okunuyor…" : "Tümünü Oku"}
-        </button>
+      <div className="flex items-center gap-2 mb-4">
+        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+        <span className="text-[10px] tracking-widest uppercase font-bold text-amber-400 font-mono">Live Stream</span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
         {MSP_TELEMETRY.map((p) => renderTelemetryCard(p))}
@@ -1483,12 +1619,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       case "device-select": return <DeviceSelect token={token}
         isSuperadmin={currentUser?.role === "superadmin"}
         onSelect={(device) => { if (device?.mac) setMac(device.mac); }}
-        onConnect={(mac, device) => {
-          if (mac) setMac(mac);
-          setConnectedLabel(device?.location || device?.device_code || mac || "Cihaz");
-          setIsConnected(true);
-          setActiveSection("ocpp-wifi");
-        }} />;
+        onConnect={handleDeviceConnected} />;
       case "ocpp-wifi":  return renderOcppWifi();
       case "ui":         return renderUI();
       case "msp-config": return renderMspConfig();
@@ -1506,6 +1637,12 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       case "bulk-update": return currentUser?.role === "superadmin"
                            ? <BulkUpdate token={token} />
                            : renderOcppWifi();
+      case "bulk-param":  return (currentUser?.role === "superadmin" || currentUser?.role === "operator")
+                           ? <BulkParamUpdate token={token} />
+                           : renderOcppWifi();
+      case "device-status": return (currentUser?.role === "superadmin" || currentUser?.role === "operator")
+                           ? <DeviceStatusBoard token={token} currentUser={currentUser} onConnect={handleDeviceConnected} />
+                           : renderOcppWifi();
       case "device-mgmt": return currentUser?.role === "superadmin"
                            ? <DeviceManagement token={token} />
                            : renderOcppWifi();
@@ -1518,6 +1655,9 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       case "users":      return currentUser?.role === "superadmin"
                            ? <UserManagement token={token} currentUsername={currentUser?.username} />
                            : renderOcppWifi();
+      case "account":    return <AccountSettings token={token} currentUser={currentUser}
+                           onEmailUpdated={(email) => setCurrentUser((prev) => (prev ? { ...prev, email } : prev))}
+                           onLogout={onLogout} />;
       default:           return renderOcppWifi();
     }
   };
@@ -1587,7 +1727,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       <Sidebar
         sections={visibleSections}
         activeSection={activeSection}
-        onSectionChange={setActiveSection}
+        onSectionChange={navigateToSection}
         activePage={isAdmin ? "panel" : "dashboard"}
         onNavigate={onNavigate}
         onLogout={onLogout}
@@ -1596,6 +1736,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
         mobileOpen={sidebarMobileOpen}
         onCloseMobile={() => setSidebarMobileOpen(false)}
         currentUser={currentUser}
+        onOpenAccount={() => navigateToSection("account")}
       />
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -1610,11 +1751,6 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
             >
               <HiOutlineBars3 className="text-xl" />
             </button>
-
-            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-bold border tracking-wide shrink-0 ${badge.c}`}>
-              <span className={`w-[6px] h-[6px] rounded-full ${badge.d}`} />
-              {badge.t}
-            </div>
 
             {isConnected && (connectedLabel || mac) && (
               <span className="hidden md:inline text-[11px] text-[var(--text-muted)] font-mono tracking-tight truncate">
@@ -1635,6 +1771,12 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
             )}
 
             <div className="flex-1" />
+
+            {/* Durum rozeti — sağda, zarif/transparan */}
+            <div className={`inline-flex items-center gap-1.5 px-1 text-[10.5px] font-bold tracking-wide shrink-0 ${badge.tc}`}>
+              <span className={`w-[6px] h-[6px] rounded-full ${badge.d}`} />
+              {badge.t}
+            </div>
 
             {/* Masaüstünde form sağda — mobilde GİZLİ, aşağıda 2. satıra düşer */}
             <form onSubmit={handleSubmit} className="hidden sm:flex gap-2 items-center shrink-0">
@@ -1660,28 +1802,8 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                              px-3 py-1.5 rounded-lg text-[12px] font-mono outline-none placeholder:text-[var(--text-muted)]
                              focus:border-[var(--accent)] transition w-44" />
               )}
-              <button disabled={loading}
-                className={`px-4 py-1.5 rounded-lg text-[12px] font-bold transition cursor-pointer tracking-wide uppercase
-                  ${loading ? "bg-[var(--bg-subtle)] text-[var(--text-muted)]" : "bg-emerald-500 hover:bg-emerald-400 text-white shadow-sm shadow-emerald-500/30"}`}>
-                {loading ? "…" : "Bağlan"}
-              </button>
-              {isConnected && (
-                <button type="button" onClick={handleDisconnect}
-                  className="px-3 py-1.5 rounded-lg text-[12px] font-bold transition cursor-pointer tracking-wide uppercase
-                             bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/30">
-                  Kopar
-                </button>
-              )}
-              {isConnected && isActive && (
-                <button type="button" onClick={() => fireOneShot(20, "1", "ESP resetlendi ✓")}
-                  disabled={oneShotLoading[20]}
-                  title="ESP'yi resetle"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold transition tracking-wide uppercase shrink-0
-                             bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 disabled:opacity-50 cursor-pointer">
-                  <HiOutlineArrowPath className={`text-[12px] ${oneShotLoading[20] ? "animate-spin" : ""}`} />
-                  {oneShotLoading[20] ? "…" : "ESP Reset"}
-                </button>
-              )}
+              <ConnectSwitch />
+              <ConnectOptionsMenu />
             </form>
           </div>
 
@@ -1708,27 +1830,8 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                            px-3 py-2 rounded-lg text-[13px] font-mono outline-none placeholder:text-[var(--text-muted)]
                            focus:border-[var(--accent)] transition" />
             )}
-            <button disabled={loading}
-              className={`px-4 py-2 rounded-lg text-[12px] font-bold transition cursor-pointer tracking-wide uppercase shrink-0
-                ${loading ? "bg-[var(--bg-subtle)] text-[var(--text-muted)]" : "bg-emerald-500 active:bg-emerald-400 text-white shadow-sm shadow-emerald-500/30"}`}>
-              {loading ? "…" : "Bağlan"}
-            </button>
-            {isConnected && (
-              <button type="button" onClick={handleDisconnect}
-                className="px-3 py-2 rounded-lg text-[12px] font-bold transition cursor-pointer tracking-wide uppercase shrink-0
-                           bg-rose-500/10 active:bg-rose-500/20 text-rose-500 border border-rose-500/30">
-                Kopar
-              </button>
-            )}
-            {isConnected && isActive && (
-              <button type="button" onClick={() => fireOneShot(20, "1", "ESP resetlendi ✓")}
-                disabled={oneShotLoading[20]}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-bold transition tracking-wide uppercase shrink-0
-                           bg-amber-500/10 active:bg-amber-500/20 text-amber-500 border border-amber-500/30 disabled:opacity-50">
-                <HiOutlineArrowPath className={`text-[12px] ${oneShotLoading[20] ? "animate-spin" : ""}`} />
-                {oneShotLoading[20] ? "…" : "Reset"}
-              </button>
-            )}
+            <ConnectSwitch />
+            <ConnectOptionsMenu />
           </form>
 
           {/* MAC mobilde küçük altta — sadece bağlıyken göster */}
@@ -1756,20 +1859,27 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
           <div className="max-w-[1200px] mx-auto">
+            {currentUser && !currentUser.email && !emailBannerDismissed && (
+              <div className="mb-3 pl-3 pr-2 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center gap-2">
+                <HiOutlineExclamationTriangle className="text-[13px] text-amber-500 shrink-0" />
+                <span className="text-[11px] text-amber-500 font-medium truncate">
+                  Kayıtlı e-posta yok — şifre kurtarma için ekleyin.
+                </span>
+                <button onClick={() => navigateToSection("account")}
+                  className="shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-md border transition tracking-wide uppercase ml-auto
+                             bg-amber-500 hover:bg-amber-400 text-white border-amber-400 cursor-pointer">
+                  Ekle
+                </button>
+                <button onClick={() => setEmailBannerDismissed(true)} title="Kapat"
+                  className="shrink-0 p-1 rounded-md text-amber-500/70 hover:text-amber-500 hover:bg-amber-500/10 transition cursor-pointer">
+                  <HiOutlineXMark className="text-[13px]" />
+                </button>
+              </div>
+            )}
             <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-2xl p-5 sm:p-7 shadow-sm">
               {renderSection()}
             </div>
 
-            <div className="mt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-[10px] text-[var(--text-muted)] font-mono tracking-wide">
-              <span>
-                {isAdmin ? "ADMIN PANEL" : "DASHBOARD"}
-                <span className="mx-2 opacity-40">·</span>
-                bluetech EV charge controller
-              </span>
-              <span>
-                {isActive ? "● ESP active" : isConnected ? "◐ ESP waiting" : "○ no connection"}
-              </span>
-            </div>
           </div>
         </main>
       </div>
@@ -1805,6 +1915,39 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                 Tamam
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── "Cihaz Tanılama" — GSM/Hata/UART, üst bardaki (…) menüsünden her sekmeden açılabilir ── */}
+      {diagOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setDiagOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-md bg-[var(--bg-surface)] border border-[var(--border-subtle)]
+                       rounded-t-2xl sm:rounded-2xl p-5 max-h-[80vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-lg bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)] text-[16px] shrink-0">
+                  <HiOutlineWrenchScrewdriver />
+                </div>
+                <div>
+                  <h3 className="text-[14px] font-bold text-[var(--text-primary)] font-display tracking-tight leading-tight">Cihaz Tanılama</h3>
+                  <p className="text-[10px] text-[var(--text-muted)]">GSM sinyal, hata ve UART durumu</p>
+                </div>
+              </div>
+              <button onClick={() => setDiagOpen(false)}
+                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition cursor-pointer shrink-0">
+                <HiOutlineXMark className="text-[16px]" />
+              </button>
+            </div>
+            {isConnected ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {TELEMETRY.filter((p) => ![22, 23, 24, 25].includes(p.id)).map((p) => renderTelemetryCard(p, true))}
+              </div>
+            ) : (
+              <p className="text-[12px] text-[var(--text-muted)] text-center py-6">Önce bir cihaza bağlanın.</p>
+            )}
           </div>
         </div>
       )}

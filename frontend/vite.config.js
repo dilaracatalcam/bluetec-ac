@@ -10,10 +10,10 @@ export default defineConfig({
     react()
     , VitePWA({ // <-- PWA Ayarları Buradan Başlıyor
       registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      injectRegister: false,
       manifest: {
-        name: 'Charge Panel v2',
-        short_name: 'ChargeApp',
+        name: 'Bluetech Panel',
+        short_name: 'Bluetech Panel',
         description: 'EV Şarj İstasyonu Yönetim Paneli',
         theme_color: '#070e1a',
         background_color: '#070e1a',
@@ -39,8 +39,14 @@ export default defineConfig({
     port: 5173,
     allowedHosts: ["btcharge.services"],
     proxy: {
-      '/api':'http://localhost:8005'
+      '/api': process.env.VITE_API_PROXY_TARGET || 'http://localhost:8005'
     },
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.js'],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
   },
 })
 
