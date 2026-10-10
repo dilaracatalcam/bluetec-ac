@@ -127,8 +127,8 @@ function UploadCard({
       <div className="flex items-center gap-2.5">
         <span className="text-[18px] text-[var(--accent)] shrink-0">{icon}</span>
         <div className="min-w-0">
-          <h4 className="text-[13px] font-bold text-[var(--text-primary)]">{title}</h4>
-          <p className="text-[11px] text-[var(--text-muted)]">{description}</p>
+          <h4 className="text-[14px] font-bold text-[var(--text-primary)]">{title}</h4>
+          <p className="text-[12px] text-[var(--text-muted)]">{description}</p>
         </div>
       </div>
 
@@ -138,7 +138,7 @@ function UploadCard({
             value={company}
             onChange={(e) => setCompany(e.target.value)}
             className="w-full bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                       px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition"
+                       px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition"
           >
             <option value="">Şirket seçin…</option>
             {LOGO_COMPANIES.map((c) => (
@@ -146,14 +146,14 @@ function UploadCard({
             ))}
           </select>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-[var(--text-muted)] shrink-0">veya özel isim:</span>
+            <span className="text-[11px] text-[var(--text-muted)] shrink-0">veya özel isim:</span>
             <input
               type="text"
               value={customName}
               onChange={(e) => setCustomName(e.target.value)}
               placeholder="örn: dilara"
               className="flex-1 min-w-0 bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                         px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition
+                         px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition
                          placeholder:text-[var(--text-muted)]"
             />
           </div>
@@ -168,7 +168,7 @@ function UploadCard({
             onChange={(e) => setHwVersion(e.target.value)}
             placeholder="Hardware (örn: 21)"
             className="flex-1 min-w-0 bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                       px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition
+                       px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition
                        placeholder:text-[var(--text-muted)]"
           />
           <input
@@ -177,14 +177,14 @@ function UploadCard({
             onChange={(e) => setSwVersion(e.target.value)}
             placeholder="Software (örn: 11)"
             className="flex-1 min-w-0 bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                       px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition
+                       px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition
                        placeholder:text-[var(--text-muted)]"
           />
         </div>
       )}
 
       {preview && (
-        <span className="text-[10px] text-[var(--text-muted)]">
+        <span className="text-[11px] text-[var(--text-muted)]">
           Gönderilecek isim: <span className="font-mono text-[var(--text-secondary)]">{preview}</span>
         </span>
       )}
@@ -204,9 +204,9 @@ function UploadCard({
       >
         <HiOutlineCloudArrowUp className="text-[22px] text-[var(--text-muted)]" />
         {file ? (
-          <span className="text-[12px] font-semibold text-[var(--text-primary)] break-all">{file.name}</span>
+          <span className="text-[13px] font-semibold text-[var(--text-primary)] break-all">{file.name}</span>
         ) : (
-          <span className="text-[11px] text-[var(--text-muted)]">Dosyayı sürükle veya tıkla ({accept})</span>
+          <span className="text-[12px] text-[var(--text-muted)]">Dosyayı sürükle veya tıkla ({accept})</span>
         )}
         <input
           ref={inputRef}
@@ -218,12 +218,12 @@ function UploadCard({
       </div>
 
       {result && (
-        <div className={`flex items-start gap-1.5 text-[11px] font-medium px-2.5 py-1.5 rounded-md
+        <div className={`flex items-start gap-1.5 text-[12px] font-medium px-2.5 py-1.5 rounded-md
           ${result.ok
             ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/25"
             : "bg-rose-500/10 text-rose-400 border border-rose-500/25"
           }`}>
-          {result.ok ? <HiOutlineCheckCircle className="text-[13px] mt-[1px] shrink-0" /> : <HiOutlineExclamationCircle className="text-[13px] mt-[1px] shrink-0" />}
+          {result.ok ? <HiOutlineCheckCircle className="text-[14px] mt-[1px] shrink-0" /> : <HiOutlineExclamationCircle className="text-[14px] mt-[1px] shrink-0" />}
           <span className="break-all">{result.message}</span>
         </div>
       )}
@@ -232,23 +232,23 @@ function UploadCard({
         {file && !uploading && (
           <button
             onClick={reset}
-            className="p-1.5 rounded-md border border-[var(--border-subtle)] text-[var(--text-muted)]
+            className="p-1.5 rounded-lg border border-[var(--border-subtle)] text-[var(--text-muted)]
                        hover:text-[var(--text-primary)] hover:border-[var(--border-strong)] transition shrink-0"
             title="Vazgeç"
           >
-            <HiOutlineXMark className="text-[13px]" />
+            <HiOutlineXMark className="text-[14px]" />
           </button>
         )}
         <button
           onClick={upload}
           disabled={!file || uploading}
-          className={`flex-1 flex items-center justify-center gap-1.5 text-[12px] font-semibold py-2 rounded-md border transition
+          className={`flex-1 flex items-center justify-center gap-1.5 text-[13px] font-semibold py-2 rounded-lg border transition
             ${(!file || uploading)
               ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed"
               : "bg-[var(--accent)] text-white border-[var(--accent-border)] hover:opacity-90 cursor-pointer"
             }`}
         >
-          <HiOutlineArrowPath className={`text-[13px] ${uploading ? "animate-spin" : ""}`} />
+          <HiOutlineArrowPath className={`text-[14px] ${uploading ? "animate-spin" : ""}`} />
           {uploading ? "Gönderiliyor…" : "Sunucuya Gönder"}
         </button>
       </div>
@@ -331,28 +331,28 @@ function OtaConfigPanel({ token }) {
     <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-4 flex flex-col gap-3">
       <div className="flex items-center gap-2">
         <HiOutlineCog6Tooth className="text-[15px] text-[var(--accent)]" />
-        <h4 className="text-[13px] font-bold text-[var(--text-primary)]">OTA Config</h4>
+        <h4 className="text-[14px] font-bold text-[var(--text-primary)]">OTA Config</h4>
       </div>
 
       {loading ? (
-        <p className="text-[11px] text-[var(--text-muted)]">Yükleniyor…</p>
+        <p className="text-[12px] text-[var(--text-muted)]">Yükleniyor…</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
-              <HiOutlineKey className="text-[11px]" /> ota_key
+            <label className="text-[11px] text-[var(--text-muted)] flex items-center gap-1">
+              <HiOutlineKey className="text-[12px]" /> ota_key
             </label>
             <input
               type="text"
               value={otaKey}
               onChange={(e) => setOtaKey(e.target.value)}
               className="bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                         px-2.5 py-1.5 rounded-md text-[12px] font-mono outline-none focus:border-[var(--accent)] transition"
+                         px-2.5 py-1.5 rounded-md text-[13px] font-mono outline-none focus:border-[var(--accent)] transition"
             />
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--text-muted)]">test_mode</label>
+            <label className="text-[11px] text-[var(--text-muted)]">test_mode</label>
             <button
               onClick={() => setTestMode((v) => !v)}
               className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border transition w-fit
@@ -364,17 +364,17 @@ function OtaConfigPanel({ token }) {
               <div className={`relative w-8 h-[18px] rounded-full transition-colors duration-200 ${testMode ? "bg-amber-500/60" : "bg-slate-600/40"}`}>
                 <div className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow transition-all duration-200 ${testMode ? "left-[16px]" : "left-[2px]"}`} />
               </div>
-              <span className="text-[11px] font-semibold">{testMode ? "true" : "false"}</span>
+              <span className="text-[12px] font-semibold">{testMode ? "true" : "false"}</span>
             </button>
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--text-muted)]">esp_target_version</label>
+            <label className="text-[11px] text-[var(--text-muted)]">esp_target_version</label>
             <select
               value={espTarget}
               onChange={(e) => setEspTarget(e.target.value)}
               className="bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                         px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition"
+                         px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition"
             >
               <option value="latest">latest</option>
               {espVersions.map((v) => <option key={v} value={v}>{v}</option>)}
@@ -382,12 +382,12 @@ function OtaConfigPanel({ token }) {
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--text-muted)]">msp_target_version</label>
+            <label className="text-[11px] text-[var(--text-muted)]">msp_target_version</label>
             <select
               value={mspTarget}
               onChange={(e) => setMspTarget(e.target.value)}
               className="bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                         px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition"
+                         px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition"
             >
               <option value="latest">latest</option>
               {mspVersions.map((v) => <option key={v} value={v}>{v}</option>)}
@@ -397,12 +397,12 @@ function OtaConfigPanel({ token }) {
       )}
 
       {result && (
-        <div className={`flex items-start gap-1.5 text-[11px] font-medium px-2.5 py-1.5 rounded-md
+        <div className={`flex items-start gap-1.5 text-[12px] font-medium px-2.5 py-1.5 rounded-md
           ${result.ok
             ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/25"
             : "bg-rose-500/10 text-rose-400 border border-rose-500/25"
           }`}>
-          {result.ok ? <HiOutlineCheckCircle className="text-[13px] mt-[1px] shrink-0" /> : <HiOutlineExclamationCircle className="text-[13px] mt-[1px] shrink-0" />}
+          {result.ok ? <HiOutlineCheckCircle className="text-[14px] mt-[1px] shrink-0" /> : <HiOutlineExclamationCircle className="text-[14px] mt-[1px] shrink-0" />}
           <span>{result.message}</span>
         </div>
       )}
@@ -410,13 +410,13 @@ function OtaConfigPanel({ token }) {
       <button
         onClick={save}
         disabled={loading || saving}
-        className={`self-start flex items-center gap-1.5 text-[12px] font-semibold px-4 py-1.5 rounded-md border transition
+        className={`self-start flex items-center gap-1.5 text-[13px] font-semibold px-4 py-1.5 rounded-lg border transition
           ${(loading || saving)
             ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed"
             : "bg-[var(--accent)] text-white border-[var(--accent-border)] hover:opacity-90 cursor-pointer"
           }`}
       >
-        <HiOutlineArrowPath className={`text-[13px] ${saving ? "animate-spin" : ""}`} />
+        <HiOutlineArrowPath className={`text-[14px] ${saving ? "animate-spin" : ""}`} />
         {saving ? "Kaydediliyor…" : "Kaydet"}
       </button>
     </div>
@@ -470,7 +470,7 @@ function FileRow({ file, kind, onDelete, isDeleting }) {
   return (
     <li className="flex flex-col gap-1 px-3 py-2 rounded-lg bg-[var(--bg-sunken)] border border-[var(--border-subtle)]">
       <div className="flex items-start justify-between gap-2">
-        <span className="font-mono text-[12px] text-[var(--text-primary)] break-all leading-tight">{file.name}</span>
+        <span className="font-mono text-[13px] text-[var(--text-primary)] break-all leading-tight">{file.name}</span>
         {parsed && (
           <button
             onClick={() => onDelete(file, kind, parsed)}
@@ -478,11 +478,11 @@ function FileRow({ file, kind, onDelete, isDeleting }) {
             title="Sil"
             className="p-1 rounded-md border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 transition disabled:opacity-40 shrink-0"
           >
-            <HiOutlineTrash className={`text-[12px] ${isDeleting ? "animate-pulse" : ""}`} />
+            <HiOutlineTrash className={`text-[13px] ${isDeleting ? "animate-pulse" : ""}`} />
           </button>
         )}
       </div>
-      <span className="text-[10px] text-[var(--text-muted)]">{formatSize(file.size)} · {formatDate(file.modifyTime)}</span>
+      <span className="text-[11px] text-[var(--text-muted)]">{formatSize(file.size)} · {formatDate(file.modifyTime)}</span>
     </li>
   );
 }
@@ -574,22 +574,22 @@ function OtaFileList({ token, refreshKey }) {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <HiOutlineFolderOpen className="text-[15px] text-[var(--accent)]" />
-          <h4 className="text-[13px] font-bold text-[var(--text-primary)]">Sunucudaki Mevcut Dosyalar</h4>
+          <h4 className="text-[14px] font-bold text-[var(--text-primary)]">Sunucudaki Mevcut Dosyalar</h4>
         </div>
         <button
           onClick={load}
           disabled={loading}
-          className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border
+          className="flex items-center gap-1 text-[12px] font-semibold px-3 py-1.5 rounded-lg border
                      border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]
                      hover:border-[var(--border-strong)] transition shrink-0"
         >
-          <HiOutlineArrowPath className={`text-[12px] ${loading ? "animate-spin" : ""}`} />
+          <HiOutlineArrowPath className={`text-[13px] ${loading ? "animate-spin" : ""}`} />
           Yenile
         </button>
       </div>
 
       {error && (
-        <p className="text-[11px] text-rose-400 mb-2">{error}</p>
+        <p className="text-[12px] text-rose-400 mb-2">{error}</p>
       )}
 
       {data && (
@@ -597,12 +597,12 @@ function OtaFileList({ token, refreshKey }) {
           {/* Kategori + hardware dropdown'ları */}
           <div className="flex flex-col sm:flex-row gap-2 mb-3">
             <div className="flex items-center gap-1.5 flex-1 min-w-0">
-              <HiOutlineFunnel className="text-[12px] text-[var(--text-muted)] shrink-0" />
+              <HiOutlineFunnel className="text-[13px] text-[var(--text-muted)] shrink-0" />
               <select
                 value={category}
                 onChange={(e) => handleCategoryChange(e.target.value)}
                 className="flex-1 min-w-0 bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                           px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition"
+                           px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition"
               >
                 {CATEGORIES.map((c) => {
                   const count = { firmware: data.firmware, msp: data.msp, logo: data.logos, other: data.other }[c.value]?.length ?? 0;
@@ -616,7 +616,7 @@ function OtaFileList({ token, refreshKey }) {
                 value={hwFilter}
                 onChange={(e) => setHwFilter(e.target.value)}
                 className="bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                           px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition"
+                           px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition"
               >
                 <option value="">Tüm hardware'ler</option>
                 {availableHws.map((hw) => (
@@ -628,7 +628,7 @@ function OtaFileList({ token, refreshKey }) {
 
           {/* Dosya listesi */}
           {displayFiles.length === 0 ? (
-            <p className="text-[11px] text-[var(--text-muted)] italic px-1">Dosya yok</p>
+            <p className="text-[12px] text-[var(--text-muted)] italic px-1">Dosya yok</p>
           ) : (
             <ul className="flex flex-col gap-1.5">
               {displayFiles.map((f) => (
@@ -656,13 +656,6 @@ export default function OtaServerControl({ token }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="px-1">
-        <h3 className="text-[13px] font-bold text-[var(--text-primary)]">OTA Sunucu Kontrolü</h3>
-        <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-          Buradan yüklenen dosyalar ESP cihazına değil, şirketin OTA sunucusuna gönderilir.
-          ESP cihazları güncellemeyi kendi mekanizmasıyla oradan indirir.
-        </p>
-      </div>
 
       <OtaConfigPanel token={token} />
 

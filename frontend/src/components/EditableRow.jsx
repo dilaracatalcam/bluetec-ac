@@ -80,8 +80,8 @@ export default function EditableRow({
         return (
           <div className="flex flex-col gap-1 w-full max-w-[180px]">
             <select
-              className="w-full bg-slate-800/80 border border-slate-600/50 text-slate-100
-                         px-2 py-1 rounded-md text-[12px] outline-none
+              className="w-full bg-[var(--bg-surface)] border border-[var(--border-strong)] text-[var(--text-primary)]
+                         px-2 py-1 rounded-md text-[13px] outline-none
                          focus:border-sky-500/60 transition cursor-pointer"
               value={selectVal}
               onChange={(e) => {
@@ -95,16 +95,16 @@ export default function EditableRow({
                 }
               }}
             >
-              <option value="" className="bg-slate-900">Seçiniz…</option>
+              <option value="" className="bg-[var(--bg-surface)]">Seçiniz…</option>
               {options.map((o) => (
-                <option key={o.value} value={o.value} className="bg-slate-900">{o.label}</option>
+                <option key={o.value} value={o.value} className="bg-[var(--bg-surface)]">{o.label}</option>
               ))}
-              <option value="__custom__" className="bg-slate-900">+ Yeni Ekle</option>
+              <option value="__custom__" className="bg-[var(--bg-surface)]">+ Yeni Ekle</option>
             </select>
             {showCustomInput && (
               <input
-                className="w-full bg-slate-800/80 border border-slate-600/50 text-slate-100
-                           px-2 py-1 rounded-md text-[11px] outline-none
+                className="w-full bg-[var(--bg-surface)] border border-[var(--border-strong)] text-[var(--text-primary)]
+                           px-2 py-1 rounded-md text-[12px] outline-none
                            focus:border-sky-500/60 transition font-mono"
                 value={val}
                 onChange={(e) => fire(e.target.value)}
@@ -117,15 +117,15 @@ export default function EditableRow({
       }
       return (
         <select
-          className="w-full max-w-[180px] bg-slate-800/80 border border-slate-600/50 text-slate-100
-                     px-2 py-1 rounded-md text-[12px] outline-none
+          className="w-full max-w-[180px] bg-[var(--bg-surface)] border border-[var(--border-strong)] text-[var(--text-primary)]
+                     px-2 py-1 rounded-md text-[13px] outline-none
                      focus:border-sky-500/60 transition cursor-pointer"
           value={val}
           onChange={(e) => fire(e.target.value)}
         >
-          <option value="" className="bg-slate-900">Seçiniz…</option>
+          <option value="" className="bg-[var(--bg-surface)]">Seçiniz…</option>
           {options.map((o) => (
-            <option key={o.value} value={o.value} className="bg-slate-900">{o.label}</option>
+            <option key={o.value} value={o.value} className="bg-[var(--bg-surface)]">{o.label}</option>
           ))}
         </select>
       );
@@ -139,7 +139,7 @@ export default function EditableRow({
           <button
             type="button"
             onClick={() => colorRef.current?.click()}
-            className="w-7 h-7 rounded-md border border-slate-600/50 shrink-0 cursor-pointer transition hover:scale-105"
+            className="w-7 h-7 rounded-md border border-[var(--border-strong)] shrink-0 cursor-pointer transition hover:scale-105"
             style={{ backgroundColor: htmlColor }}
             title={htmlColor}
           />
@@ -152,7 +152,7 @@ export default function EditableRow({
             onChange={(e) => fire(htmlToEspHex(e.target.value))}
           />
           {/* Hex kodu göster */}
-          <span className="text-[11px] text-slate-400 font-mono">
+          <span className="text-[12px] text-[var(--text-secondary)] font-mono">
             {val || "—"}
           </span>
         </div>
@@ -162,8 +162,8 @@ export default function EditableRow({
     if (inputType === "phone") {
       return (
         <input
-          className="w-full max-w-[180px] bg-slate-800/80 border border-slate-600/50 text-slate-100
-                     px-2.5 py-1 rounded-md text-[12px] outline-none
+          className="w-full max-w-[180px] bg-[var(--bg-surface)] border border-[var(--border-strong)] text-[var(--text-primary)]
+                     px-2.5 py-1 rounded-md text-[13px] outline-none
                      focus:border-sky-500/60 transition"
           type="tel"
           value={val}
@@ -180,8 +180,8 @@ export default function EditableRow({
 
     return (
       <input
-        className="w-full max-w-[180px] bg-slate-800/80 border border-slate-600/50 text-slate-100
-                   px-2.5 py-1 rounded-md text-[12px] outline-none
+        className="w-full max-w-[180px] bg-[var(--bg-surface)] border border-[var(--border-strong)] text-[var(--text-primary)]
+                   px-2.5 py-1 rounded-md text-[13px] outline-none
                    focus:border-sky-500/60 transition"
         value={val}
         onChange={(e) => fire(e.target.value)}
@@ -203,25 +203,25 @@ export default function EditableRow({
   /* ── Renk önizleme (normal modda) ── */
   const colorPreview = inputType === "color" && value && value !== "——" && value !== "—" ? (
     <span
-      className="w-4 h-4 rounded-[3px] border border-slate-600/50 shrink-0 inline-block"
+      className="w-4 h-4 rounded-[3px] border border-[var(--border-strong)] shrink-0 inline-block"
       style={{ backgroundColor: espHexToHtml(value) }}
     />
   ) : null;
 
   return (
-    <div className={`flex items-center justify-between gap-2 py-[7px] min-h-[40px] ${!last ? "border-b border-slate-700/25" : ""}`}>
+    <div className={`flex items-center justify-between gap-2 py-2.5 min-h-[50px] ${!last ? "border-b border-[var(--border-subtle)]" : ""}`}>
       <div className="flex items-center gap-2 shrink-0">
-        {icon && <span className="text-[13px] text-slate-500">{icon}</span>}
-        <span className={`text-[12px] font-medium ${depDisabled ? "text-slate-600" : "text-slate-500"}`}>{label}</span>
+        {icon && <span className="text-[14px] text-[var(--text-muted)]">{icon}</span>}
+        <span className={`text-[14px] font-medium ${depDisabled ? "text-[var(--text-muted)]" : "text-[var(--text-secondary)]"}`}>{label}</span>
         {failed && (
-          <span className="flex items-center gap-1 text-[10px] text-amber-400 font-medium">
-            <HiOutlineExclamationCircle className="text-[11px]" />
+          <span className="flex items-center gap-1 text-[11px] text-amber-500 font-medium">
+            <HiOutlineExclamationCircle className="text-[12px]" />
             okunamadı
           </span>
         )}
         {setFailed && (
-          <span className="flex items-center gap-1 text-[10px] text-red-400 font-medium">
-            <HiOutlineExclamationCircle className="text-[11px]" />
+          <span className="flex items-center gap-1 text-[11px] text-red-500 font-medium">
+            <HiOutlineExclamationCircle className="text-[12px]" />
             kaydedilemedi
           </span>
         )}
@@ -229,8 +229,8 @@ export default function EditableRow({
 
       <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
         {depDisabled && !bulkEditing ? (
-          <span className="flex items-center gap-1.5 text-[11px] text-slate-600 italic">
-            <span className="text-red-400 text-[10px] font-bold">*</span>
+          <span className="flex items-center gap-1.5 text-[12px] text-[var(--text-muted)] italic">
+            <span className="text-red-500 text-[11px] font-bold">*</span>
             {depMessage || "Bu alana değer girilememektedir"}
           </span>
         ) : bulkEditing ? (
@@ -238,34 +238,34 @@ export default function EditableRow({
         ) : !editing ? (
           <>
             {colorPreview}
-            <span className="text-[12px] text-[var(--text-primary)] font-semibold break-all">
+            <span className="text-[14px] text-[var(--text-primary)] font-semibold break-all">
               {value || "—"}
             </span>
-            {setOk && <span className="text-emerald-400 text-[10px] font-bold">✓</span>}
+            {setOk && <span className="text-emerald-500 text-[11px] font-bold">✓</span>}
             <button
               onClick={() => onRead?.(id)}
               disabled={disabled}
               title="Güncel değeri oku"
-              className={`p-[4px] rounded-md border transition shrink-0
+              className={`p-1.5 rounded-lg border transition shrink-0
                 ${disabled
-                  ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
-                  : "bg-sky-600/20 text-sky-400 border-sky-500/30 hover:bg-sky-600/30 cursor-pointer"
+                  ? "bg-transparent text-[var(--text-muted)] border-[var(--border-subtle)] opacity-50 cursor-not-allowed"
+                  : "bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft-hover)] cursor-pointer"
                 }`}
             >
-              <HiOutlineArrowPath className="text-[12px]" />
+              <HiOutlineArrowPath className="text-[13px]" />
             </button>
             {!readOnly && (
               <button
                 onClick={startEdit}
                 disabled={disabled}
-                className={`flex items-center gap-1 text-[10px] font-semibold px-2.5 py-[3px] rounded-md border transition shrink-0
+                className={`flex items-center gap-1 text-[12px] font-semibold px-3 py-1.5 rounded-lg border transition shrink-0
                   ${disabled
-                    ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
-                    : "bg-amber-600/20 text-amber-400 border-amber-500/30 hover:bg-amber-600/30 cursor-pointer"
+                    ? "bg-transparent text-[var(--text-muted)] border-[var(--border-subtle)] opacity-50 cursor-not-allowed"
+                    : "bg-[var(--bg-surface)] text-[var(--text-secondary)] border-[var(--border-strong)] hover:border-[var(--accent)] hover:text-[var(--accent)] cursor-pointer"
                   }`}
               >
-                <HiOutlinePencilSquare className="text-[11px]" />
-                Edit
+                <HiOutlinePencilSquare className="text-[12px]" />
+                Düzenle
               </button>
             )}
           </>
@@ -274,24 +274,24 @@ export default function EditableRow({
             {renderInput(draft, handleChange, false)}
             <button onClick={read} disabled={disabled}
               title="Güncel değeri oku"
-              className={`p-[4px] rounded-md border transition shrink-0
+              className={`p-1.5 rounded-lg border transition shrink-0
                 ${disabled
-                  ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
-                  : "bg-emerald-600/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-600/30 cursor-pointer"
+                  ? "bg-transparent text-[var(--text-muted)] border-[var(--border-subtle)] opacity-50 cursor-not-allowed"
+                  : "bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft-hover)] cursor-pointer"
                 }`}>
-              <HiOutlineArrowPath className="text-[12px]" />
+              <HiOutlineArrowPath className="text-[13px]" />
             </button>
             <button onClick={cancel}
-              className="text-[10px] font-semibold px-2 py-[3px] rounded-md
-                         bg-slate-800/50 text-slate-500 border border-slate-600/30
-                         hover:text-slate-300 transition cursor-pointer shrink-0">
+              className="text-[12px] font-semibold px-2.5 py-1.5 rounded-lg
+                         bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border-subtle)]
+                         hover:text-[var(--text-primary)] transition cursor-pointer shrink-0">
               ✕
             </button>
             <button onClick={save} disabled={disabled}
-              className={`text-[10px] font-semibold px-2.5 py-[3px] rounded-md border transition shrink-0
+              className={`text-[12px] font-semibold px-3 py-1.5 rounded-lg border transition shrink-0
                 ${disabled
-                  ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
-                  : "bg-sky-600/80 text-white border-sky-500/50 hover:bg-sky-600 cursor-pointer"
+                  ? "bg-transparent text-[var(--text-muted)] border-[var(--border-subtle)] opacity-50 cursor-not-allowed"
+                  : "bg-[var(--accent)] text-white border-[var(--accent)] hover:brightness-110 cursor-pointer"
                 }`}>
               Kaydet
             </button>

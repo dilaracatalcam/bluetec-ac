@@ -23,14 +23,14 @@ export default function ResetPassword({ token, onDone }) {
 
   const [theme, setTheme] = useState(() => {
     if (typeof window === "undefined") return "dark";
-    try { return window.localStorage?.getItem("bluetech-theme") || "dark"; } catch { return "dark"; }
+    try { return window.localStorage?.getItem("bluetech-theme-v2") || "light"; } catch { return "light"; }
   });
 
   useEffect(() => {
     const root = document.documentElement;
     root.classList.remove("theme-dark", "theme-light");
     root.classList.add(theme === "dark" ? "theme-dark" : "theme-light");
-    try { window.localStorage?.setItem("bluetech-theme", theme); } catch {}
+    try { window.localStorage?.setItem("bluetech-theme-v2", theme); } catch {}
   }, [theme]);
 
   const handleSubmit = async (e) => {
@@ -72,7 +72,7 @@ export default function ResetPassword({ token, onDone }) {
   return (
     <div className="min-h-screen flex flex-col bg-[var(--bg-app)] text-[var(--text-primary)] font-body relative overflow-hidden">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
         :root.theme-dark {
           --bg-app: #0a0f18;
@@ -86,10 +86,10 @@ export default function ResetPassword({ token, onDone }) {
           --text-primary: #e2e8f0;
           --text-secondary: #94a3b8;
           --text-muted: #64748b;
-          --accent: #06b6d4;
-          --accent-soft: rgba(6, 182, 212, 0.10);
-          --accent-soft-hover: rgba(6, 182, 212, 0.18);
-          --accent-border: rgba(6, 182, 212, 0.28);
+          --accent: #3b82f6;
+          --accent-soft: rgba(59, 130, 246, 0.10);
+          --accent-soft-hover: rgba(59, 130, 246, 0.18);
+          --accent-border: rgba(59, 130, 246, 0.28);
         }
         :root.theme-light {
           --bg-app: #f5f7fb;
@@ -103,13 +103,15 @@ export default function ResetPassword({ token, onDone }) {
           --text-primary: #0f172a;
           --text-secondary: #475569;
           --text-muted: #94a3b8;
-          --accent: #0891b2;
-          --accent-soft: rgba(8, 145, 178, 0.08);
-          --accent-soft-hover: rgba(8, 145, 178, 0.14);
-          --accent-border: rgba(8, 145, 178, 0.28);
+          --accent: #2563eb;
+          --accent-soft: rgba(37, 99, 235, 0.08);
+          --accent-soft-hover: rgba(37, 99, 235, 0.14);
+          --accent-border: rgba(37, 99, 235, 0.28);
         }
-        .font-display { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; font-feature-settings: 'cv11','ss01'; }
-        .font-body    { font-family: 'Inter Tight', ui-sans-serif, system-ui, sans-serif; }
+        .font-display { font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif; }
+        /* Jakarta'nın kelime boşluğu dar — sıkı harf aralığıyla kelimeler yapışmasın */
+        .font-display.font-display { letter-spacing: -0.012em; word-spacing: 0.1em; }
+        .font-body    { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
         .font-mono    { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; }
 
         .theme-light input { color-scheme: light; }
@@ -149,7 +151,7 @@ export default function ResetPassword({ token, onDone }) {
               alt="Bluetech"
               className="h-5 w-auto"
             />
-            <span className="text-[9px] font-medium tracking-[0.15em] uppercase text-[var(--text-muted)]">
+            <span className="text-[10px] font-medium tracking-[0.15em] uppercase text-[var(--text-muted)]">
               EV Charge Panel
             </span>
           </div>
@@ -161,7 +163,7 @@ export default function ResetPassword({ token, onDone }) {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg
                      bg-[var(--bg-subtle)] border border-[var(--border-subtle)]
                      text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]
-                     transition text-[11px] font-semibold tracking-wide uppercase"
+                     transition text-[12px] font-semibold"
         >
           {theme === "dark" ? <HiOutlineSun className="text-[14px]" /> : <HiOutlineMoon className="text-[14px]" />}
           <span className="hidden sm:inline">{theme === "dark" ? "Light" : "Dark"}</span>
@@ -176,13 +178,13 @@ export default function ResetPassword({ token, onDone }) {
               <h1 className="text-[20px] sm:text-[22px] font-bold text-[var(--text-primary)] font-display tracking-tight leading-tight">
                 Yeni Şifre Belirle
               </h1>
-              <p className="text-[12px] text-[var(--text-muted)] mt-1.5">
+              <p className="text-[13px] text-[var(--text-muted)] mt-1.5">
                 Hesabınız için yeni bir şifre girin
               </p>
             </div>
 
             {error && (
-              <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[12px]">
+              <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[13px]">
                 <HiOutlineExclamationCircle className="text-[14px] shrink-0 mt-[1px]" />
                 <span className="font-medium leading-snug">{error}</span>
               </div>
@@ -190,15 +192,15 @@ export default function ResetPassword({ token, onDone }) {
 
             {done ? (
               <div className="flex flex-col items-center gap-3 py-2">
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[12px]">
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[13px]">
                   <HiOutlineCheckCircle className="text-[16px] shrink-0" />
                   <span className="font-medium leading-snug">Şifreniz değiştirildi. Şimdi yeni şifrenizle giriş yapabilirsiniz.</span>
                 </div>
                 <button
                   type="button"
                   onClick={onDone}
-                  className="w-full py-2.5 rounded-lg text-[13px] font-bold tracking-wide uppercase transition mt-2
-                             bg-[var(--accent)] hover:brightness-110 text-white shadow-md shadow-cyan-500/30 cursor-pointer"
+                  className="w-full py-2.5 rounded-lg text-[14px] font-bold transition mt-2
+                             bg-[var(--accent)] hover:brightness-110 text-white shadow-md shadow-blue-500/30 cursor-pointer"
                 >
                   Girişe Dön
                 </button>
@@ -206,10 +208,10 @@ export default function ResetPassword({ token, onDone }) {
             ) : (
               <div className="flex flex-col gap-3">
                 <div>
-                  <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
+                  <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
                     Yeni Şifre
                   </label>
-                  <p className="text-[10px] text-[var(--text-muted)] mb-1.5 ml-0.5">{PASSWORD_HINT}</p>
+                  <p className="text-[11px] text-[var(--text-muted)] mb-1.5 ml-0.5">{PASSWORD_HINT}</p>
                   <div className="relative">
                     <HiOutlineLockClosed className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-[15px] pointer-events-none" />
                     <input
@@ -220,7 +222,7 @@ export default function ResetPassword({ token, onDone }) {
                       autoComplete="new-password"
                       autoFocus
                       className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                 pl-10 pr-10 py-2.5 rounded-lg text-[13px] font-mono outline-none
+                                 pl-10 pr-10 py-2.5 rounded-lg text-[14px] font-mono outline-none
                                  placeholder:text-[var(--text-muted)] placeholder:font-sans
                                  focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
                     />
@@ -239,7 +241,7 @@ export default function ResetPassword({ token, onDone }) {
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
+                  <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
                     Yeni Şifre (Tekrar)
                   </label>
                   <div className="relative">
@@ -252,7 +254,7 @@ export default function ResetPassword({ token, onDone }) {
                       autoComplete="new-password"
                       onKeyDown={(e) => e.key === "Enter" && handleSubmit(e)}
                       className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                 pl-10 pr-3 py-2.5 rounded-lg text-[13px] font-mono outline-none
+                                 pl-10 pr-3 py-2.5 rounded-lg text-[14px] font-mono outline-none
                                  placeholder:text-[var(--text-muted)] placeholder:font-sans
                                  focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
                     />
@@ -262,10 +264,10 @@ export default function ResetPassword({ token, onDone }) {
                 <button
                   type="submit"
                   disabled={loading || !newPassword || !confirmPassword}
-                  className={`w-full py-2.5 rounded-lg text-[13px] font-bold tracking-wide uppercase transition mt-2
+                  className={`w-full py-2.5 rounded-lg text-[14px] font-bold transition mt-2
                     ${loading || !newPassword || !confirmPassword
                       ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border-subtle)] cursor-not-allowed"
-                      : "bg-[var(--accent)] hover:brightness-110 text-white shadow-md shadow-cyan-500/30 cursor-pointer"
+                      : "bg-[var(--accent)] hover:brightness-110 text-white shadow-md shadow-blue-500/30 cursor-pointer"
                     }`}
                 >
                   {loading ? (
@@ -279,7 +281,7 @@ export default function ResetPassword({ token, onDone }) {
             )}
           </div>
 
-          <div className="text-center mt-5 text-[10px] text-[var(--text-muted)] font-mono tracking-wide">
+          <div className="text-center mt-5 text-[11px] text-[var(--text-muted)] font-mono tracking-wide">
             © bluetech · EV Charge Controller
           </div>
         </form>

@@ -186,6 +186,12 @@ function initDeviceStatusPoll(deps) {
   // company -> { lastRequestedAt }
   const activeLoops = new Map();
 
+  // Genel Bakış için: tek bir şirket yerine TÜM cihazları dolaşan döngünün anahtarı.
+  // Şirket döngüleriyle aynı şerit sayısını (LANE_COUNT) kullanır — şirket başına
+  // ayrı döngü açıp köprüye 10×4 paralel bağlantı yüklememek için tek döngü.
+  const ALL_COMPANIES = "tümü";
+  const devicesFor = (company) => (company === ALL_COMPANIES ? getDevices({}) : getDevices({ company }));
+
   async function runCompanyLoop(company) {
     const isStillWatched = () => {
       const loop = activeLoops.get(company);
@@ -193,7 +199,7 @@ function initDeviceStatusPoll(deps) {
     };
 
     while (isStillWatched()) {
-      const devices = getDevices({ company });
+      const devices = devicesFor(company);
       if (devices.length === 0) { await sleep(5000); continue; }
 
       const queue = [...devices];
@@ -251,7 +257,7 @@ function initDeviceStatusPoll(deps) {
       .sort((a, b) => (a.location || "").localeCompare(b.location || "", "tr") || (a.mac || "").localeCompare(b.mac || ""));
   }
 
-  return { ensureWatching, getStatuses };
+  return { ensureWatching, getStatuses, ALL_COMPANIES };
 }
 
 module.exports = { initDeviceStatusPoll };

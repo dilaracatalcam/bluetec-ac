@@ -51,8 +51,8 @@ const BULK_PARAMS = [
   { id: 42, label: "Meter Seri No", type: "text" },
   { id: 43, label: "Meter Tipi", type: "text" },
   { id: 44, label: "Box Seri No", type: "text" },
-  { id: 69, label: "MSP Modu", type: "dropdown", options: [
-      { value: "0", label: "Üretim Modu" }, { value: "1", label: "Test Modu" },
+  { id: 69, label: "OCPP Sanal Mod", type: "dropdown", options: [
+      { value: "0", label: "Disable" }, { value: "1", label: "Soket Takılı" }, { value: "2", label: "Şarja Geç" },
     ]},
 ];
 
@@ -331,39 +331,23 @@ export default function BulkParamUpdate({ token }) {
 
   return (
     <div>
-      <div className="mb-5 pb-4 border-b border-[var(--border-subtle)]">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)] text-[18px] shrink-0">
-            <HiOutlinePencilSquare />
-          </div>
-          <div>
-            <h2 className="text-[17px] font-bold text-[var(--text-primary)] font-display tracking-tight leading-tight">
-              Toplu Parametre Güncelleme
-            </h2>
-            <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-              Seçtiğiniz cihazlara (tümüne ya da bir kısmına) tek bir parametreyi topluca gönderin — örn. logo.
-              İş sunucuda çalışır; sekmeyi kapatsanız/sayfayı değiştirseniz bile devam eder.
-            </p>
-          </div>
-        </div>
-      </div>
 
       {!job && (
         <>
           <div className="mb-4">
-            <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
+            <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
               Şirket
             </label>
             <select value={selectedCompany} onChange={(e) => setSelectedCompany(e.target.value)}
               className="w-full sm:w-1/2 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                         px-3 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
+                         px-3 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
               <option value="">Şirket seçin...</option>
               {companies.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
 
           <div className="mb-4">
-            <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
+            <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
               Parametreler — tek seferde birden fazla gönderilebilir
             </label>
             <div className="flex flex-col gap-3">
@@ -374,7 +358,7 @@ export default function BulkParamUpdate({ token }) {
                     <div className="flex items-start gap-2">
                       <select value={row.paramId} onChange={(e) => updateRow(row.key, { paramId: Number(e.target.value), value: "" })}
                         className="shrink-0 w-[150px] bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                   px-2 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
+                                   px-2 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
                         {BULK_PARAMS.map((p) => (
                           <option key={p.id} value={p.id} disabled={p.id !== row.paramId && usedParamIds.has(p.id)}>
                             {p.label}
@@ -386,14 +370,14 @@ export default function BulkParamUpdate({ token }) {
                         {rowParam.type === "logo" ? (
                           <select value={row.value} onChange={(e) => updateRow(row.key, { value: e.target.value })}
                             className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                       px-3 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
+                                       px-3 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
                             <option value="">Logo seçin...</option>
                             {logoOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                           </select>
                         ) : rowParam.type === "dropdown" ? (
                           <select value={row.value} onChange={(e) => updateRow(row.key, { value: e.target.value })}
                             className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                       px-3 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
+                                       px-3 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
                             <option value="">Değer seçin...</option>
                             {rowParam.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                           </select>
@@ -401,7 +385,7 @@ export default function BulkParamUpdate({ token }) {
                           <input type="text" value={row.value} onChange={(e) => updateRow(row.key, { value: e.target.value })}
                             placeholder={`${rowParam.label} için yeni değer`}
                             className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                       px-3 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition
+                                       px-3 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition
                                        placeholder:text-[var(--text-muted)]" />
                         )}
                       </div>
@@ -417,39 +401,39 @@ export default function BulkParamUpdate({ token }) {
                       <div className="mt-2 border border-dashed border-[var(--border-subtle)] rounded-lg p-3">
                         {showLogoUploadForRow !== row.key ? (
                           <button type="button" onClick={() => setShowLogoUploadForRow(row.key)}
-                            className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--accent)] hover:underline cursor-pointer">
-                            <HiOutlinePlus className="text-[13px]" /> Listede yok — yeni logo ekle
+                            className="flex items-center gap-1.5 text-[12px] font-semibold text-[var(--accent)] hover:underline cursor-pointer">
+                            <HiOutlinePlus className="text-[14px]" /> Listede yok — yeni logo ekle
                           </button>
                         ) : (
                           <div className="flex flex-col gap-2">
-                            <p className="text-[10px] text-[var(--text-muted)]">
+                            <p className="text-[11px] text-[var(--text-muted)]">
                               .c dosyası — OTA sunucusuna otomatik .bin'e çevrilerek yüklenir (OTA Sunucu Kontrolü'ndeki ile aynı işlem)
                             </p>
                             <input type="file" accept=".c"
                               onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
-                              className="text-[11px] text-[var(--text-primary)] file:mr-2 file:px-3 file:py-1.5 file:rounded-md file:border-0
-                                         file:bg-[var(--accent-soft)] file:text-[var(--accent)] file:text-[10px] file:font-bold file:cursor-pointer cursor-pointer" />
+                              className="text-[12px] text-[var(--text-primary)] file:mr-2 file:px-3 file:py-1.5 file:rounded-md file:border-0
+                                         file:bg-[var(--accent-soft)] file:text-[var(--accent)] file:text-[11px] file:font-bold file:cursor-pointer cursor-pointer" />
                             <input type="text" value={logoCustomName} onChange={(e) => setLogoCustomName(e.target.value)}
                               placeholder="logo ismi (örn: otopriz)"
                               className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                         px-3 py-1.5 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition
+                                         px-3 py-1.5 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition
                                          placeholder:text-[var(--text-muted)]" />
                             <div className="flex items-center gap-2">
                               <button type="button" onClick={() => uploadNewLogo(row.key)} disabled={!logoFile || !logoCustomName.trim() || logoUploading}
-                                className={`text-[11px] font-bold px-3 py-1.5 rounded-md border tracking-wide uppercase transition
+                                className={`text-[12px] font-bold px-3 py-1.5 rounded-md border transition
                                   ${!logoFile || !logoCustomName.trim() || logoUploading
                                     ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
-                                    : "bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400 cursor-pointer"}`}>
+                                    : "bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer"}`}>
                                 {logoUploading ? "Yükleniyor..." : "Yükle"}
                               </button>
                               <button type="button"
                                 onClick={() => { setShowLogoUploadForRow(null); setLogoFile(null); setLogoCustomName(""); setLogoUploadResult(null); }}
-                                className="text-[11px] font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition cursor-pointer">
+                                className="text-[12px] font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition cursor-pointer">
                                 Vazgeç
                               </button>
                             </div>
                             {logoUploadResult && (
-                              <p className={`text-[10px] font-medium ${logoUploadResult.ok ? "text-emerald-500" : "text-rose-500"}`}>
+                              <p className={`text-[11px] font-medium ${logoUploadResult.ok ? "text-emerald-500" : "text-rose-500"}`}>
                                 {logoUploadResult.message}
                               </p>
                             )}
@@ -463,8 +447,8 @@ export default function BulkParamUpdate({ token }) {
 
               {rows.length < BULK_PARAMS.length && (
                 <button onClick={addRow}
-                  className="self-start flex items-center gap-1.5 text-[11px] font-semibold text-[var(--accent)] hover:underline cursor-pointer">
-                  <HiOutlinePlus className="text-[13px]" /> Parametre Ekle
+                  className="self-start flex items-center gap-1.5 text-[12px] font-semibold text-[var(--accent)] hover:underline cursor-pointer">
+                  <HiOutlinePlus className="text-[14px]" /> Parametre Ekle
                 </button>
               )}
             </div>
@@ -473,28 +457,28 @@ export default function BulkParamUpdate({ token }) {
           {selectedCompany && (
             <div className="border border-[var(--border-subtle)] rounded-xl overflow-hidden mb-4">
               <div className="px-4 py-2 bg-[var(--bg-subtle)] border-b border-[var(--border-subtle)] flex items-center justify-between">
-                <span className="text-[10px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">
+                <span className="text-[11px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">
                   {selectedCompany} — {companyDevices.length} cihaz
                 </span>
                 {companyDevices.length > 0 && (
-                  <button onClick={selectAllInCompany} className="text-[10px] font-semibold text-[var(--accent)] hover:underline">
+                  <button onClick={selectAllInCompany} className="text-[11px] font-semibold text-[var(--accent)] hover:underline">
                     Tümünü Seç
                   </button>
                 )}
               </div>
               <div className="max-h-[280px] overflow-y-auto custom-scroll divide-y divide-[var(--border-subtle)]">
                 {loadingDevices ? (
-                  <div className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">Yükleniyor...</div>
+                  <div className="px-4 py-6 text-center text-[13px] text-[var(--text-muted)]">Yükleniyor...</div>
                 ) : companyDevices.length === 0 ? (
-                  <div className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">Bu şirkete ait cihaz yok</div>
+                  <div className="px-4 py-6 text-center text-[13px] text-[var(--text-muted)]">Bu şirkete ait cihaz yok</div>
                 ) : companyDevices.map((d) => (
                   <label key={d.id} className="flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-[var(--bg-hover)] transition">
                     <input type="checkbox" checked={!!selectedDevices[d.id]} onChange={() => toggleDevice(d)} className="cursor-pointer" />
                     <div className="min-w-0 flex-1">
-                      <div className="text-[12px] text-[var(--text-primary)] font-medium truncate">
+                      <div className="text-[13px] text-[var(--text-primary)] font-medium truncate">
                         {d.location || "—"} {d.device_code && <span className="text-[var(--text-muted)]">— {d.device_code}</span>}
                       </div>
-                      {d.mac && <div className="text-[10px] text-[var(--text-muted)] font-mono">{d.mac}</div>}
+                      {d.mac && <div className="text-[11px] text-[var(--text-muted)] font-mono">{d.mac}</div>}
                     </div>
                   </label>
                 ))}
@@ -504,17 +488,17 @@ export default function BulkParamUpdate({ token }) {
 
           <div className="border border-[var(--border-subtle)] rounded-xl overflow-hidden mb-5">
             <div className="px-4 py-2 bg-[var(--bg-subtle)] border-b border-[var(--border-subtle)] flex items-center justify-between">
-              <span className="text-[10px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">
+              <span className="text-[11px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">
                 Seçilen Cihazlar ({selectedList.length})
               </span>
               {selectedList.length > 0 && (
-                <button onClick={clearSelection} className="text-[10px] font-semibold text-rose-500 hover:underline">
+                <button onClick={clearSelection} className="text-[11px] font-semibold text-rose-500 hover:underline">
                   Tümünü Temizle
                 </button>
               )}
             </div>
             {selectedList.length === 0 ? (
-              <div className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">
+              <div className="px-4 py-6 text-center text-[13px] text-[var(--text-muted)]">
                 Henüz cihaz seçilmedi — yukarıdan şirket seçip cihaz işaretleyin
               </div>
             ) : (
@@ -522,10 +506,10 @@ export default function BulkParamUpdate({ token }) {
                 {selectedList.map((d) => (
                   <div key={d.id} className="flex items-center gap-3 px-4 py-2">
                     <div className="min-w-0 flex-1">
-                      <div className="text-[12px] text-[var(--text-primary)] font-medium truncate">
+                      <div className="text-[13px] text-[var(--text-primary)] font-medium truncate">
                         {d.location || d.device_code || `#${d.id}`}
                       </div>
-                      {d.mac && <div className="text-[10px] text-[var(--text-muted)] font-mono">{d.mac}</div>}
+                      {d.mac && <div className="text-[11px] text-[var(--text-muted)] font-mono">{d.mac}</div>}
                     </div>
                     <button onClick={() => removeSelected(d.id)} className="p-1 text-[var(--text-muted)] hover:text-rose-500 transition">
                       <HiOutlineXMark className="text-[14px]" />
@@ -542,10 +526,10 @@ export default function BulkParamUpdate({ token }) {
                 onChange={(e) => setAutoRetryEnabled(e.target.checked)}
                 className="mt-[2px] cursor-pointer" />
               <span className="min-w-0">
-                <span className="block text-[12px] font-medium text-[var(--text-primary)]">
+                <span className="block text-[13px] font-medium text-[var(--text-primary)]">
                   Başarısız cihazları otomatik tekrar dene
                 </span>
-                <span className="block text-[10px] text-[var(--text-muted)] leading-snug">
+                <span className="block text-[11px] text-[var(--text-muted)] leading-snug">
                   Alarm gibi çalışır: iş bitince hâlâ güncellenemeyen cihaz kaldıysa, aşağıdaki aralıkla
                   kendiliğinden yeniden dener — panelde kimse olmasa bile.
                 </span>
@@ -554,18 +538,18 @@ export default function BulkParamUpdate({ token }) {
             {autoRetryEnabled && (
               <div className="flex items-center gap-4 mt-3 pl-[26px] flex-wrap">
                 <div className="flex items-center gap-2">
-                  <label className="text-[10px] font-bold tracking-[0.1em] uppercase text-[var(--text-muted)]">Kaç dakikada bir</label>
+                  <label className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--text-muted)]">Kaç dakikada bir</label>
                   <input type="number" min={1} max={1440} value={autoRetryMinutes}
                     onChange={(e) => setAutoRetryMinutes(Math.max(1, Number(e.target.value) || 1))}
                     className="w-16 bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                               px-2 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition text-center" />
+                               px-2 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition text-center" />
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-[10px] font-bold tracking-[0.1em] uppercase text-[var(--text-muted)]">Kaç kere denesin</label>
+                  <label className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--text-muted)]">Kaç kere denesin</label>
                   <input type="number" min={1} max={20} value={autoRetryMax}
                     onChange={(e) => setAutoRetryMax(Math.max(1, Number(e.target.value) || 1))}
                     className="w-16 bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                               px-2 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition text-center" />
+                               px-2 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition text-center" />
                 </div>
               </div>
             )}
@@ -573,20 +557,20 @@ export default function BulkParamUpdate({ token }) {
 
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
-              <label className="text-[10px] font-bold tracking-[0.1em] uppercase text-[var(--text-muted)]">
+              <label className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--text-muted)]">
                 Paralel
               </label>
               <select value={workerCount} onChange={(e) => setWorkerCount(Number(e.target.value))}
                 className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                           px-2 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
+                           px-2 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
                 {[1, 2, 3, 4, 5, 6, 8].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
             <button onClick={startBulk} disabled={selectedList.length === 0 || !allRowsFilled || starting}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[12px] font-bold border transition tracking-wide uppercase
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-semibold border transition
                 ${selectedList.length === 0 || !allRowsFilled || starting
                   ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
-                  : "bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400 shadow-sm shadow-emerald-500/20 cursor-pointer"}`}>
+                  : "bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer"}`}>
               <HiOutlineBolt className="text-[14px]" />
               {starting ? "Başlatılıyor..." : `${selectedList.length} Cihaza Gönder`}
             </button>
@@ -596,7 +580,7 @@ export default function BulkParamUpdate({ token }) {
 
       {job && (
         <>
-          <div className="mb-3 px-3 py-2 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-muted)]">
+          <div className="mb-3 px-3 py-2 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[12px] text-[var(--text-muted)]">
             {(job.params || []).map((p, i) => (
               <span key={i}>
                 {i > 0 && " · "}
@@ -608,27 +592,27 @@ export default function BulkParamUpdate({ token }) {
           </div>
 
           {jobActionError && (
-            <div className="mb-3 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-500 font-medium">
+            <div className="mb-3 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[12px] text-rose-500 font-medium">
               {jobActionError}
             </div>
           )}
 
           {job.auto_retry_next_at && (
-            <div className="mb-3 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-500 font-medium flex items-center gap-1.5">
-              <HiOutlineClock className="text-[12px] shrink-0" />
+            <div className="mb-3 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[12px] text-amber-500 font-medium flex items-center gap-1.5">
+              <HiOutlineClock className="text-[13px] shrink-0" />
               Otomatik tekrar deneme {(job.auto_retry_used || 0) + 1}/{job.auto_retry_max}
               {" — "}{formatCountdown(new Date(job.auto_retry_next_at).getTime() - Date.now())} sonra başlayacak
             </div>
           )}
 
           <div className="flex items-center justify-between mb-4 px-3 py-2 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)]">
-            <div className="flex items-center gap-4 text-[11px] font-semibold flex-wrap">
+            <div className="flex items-center gap-4 text-[12px] font-semibold flex-wrap">
               <span className="text-emerald-500">✓ {counts.success || 0} başarılı</span>
               {(counts.unverified || 0) > 0 && <span className="text-amber-500">{counts.unverified} doğrulanamadı</span>}
               <span className="text-rose-500">✕ {counts.failed || 0} güncellenemedi</span>
               {running && (
                 <span className="text-amber-500 flex items-center gap-1">
-                  <HiOutlineClock className="text-[12px]" />
+                  <HiOutlineClock className="text-[13px]" />
                   {jobDevices.length - doneCount} devam ediyor
                 </span>
               )}
@@ -636,14 +620,14 @@ export default function BulkParamUpdate({ token }) {
             <div className="flex items-center gap-2 shrink-0">
               {canRetry && (
                 <button onClick={retryFailed}
-                  className="flex items-center gap-1.5 text-[10px] font-bold px-3 py-1.5 rounded-md border tracking-wide uppercase
+                  className="flex items-center gap-1.5 text-[11px] font-semibold px-3.5 py-2 rounded-lg border
                              bg-amber-500/10 text-amber-500 border-amber-500/30 hover:bg-amber-500/20 transition cursor-pointer">
-                  <HiOutlineArrowPath className="text-[11px]" />
+                  <HiOutlineArrowPath className="text-[12px]" />
                   {retryableCount} Tanesini Tekrar Dene
                 </button>
               )}
               <button onClick={allDone ? closeJob : stopBulk}
-                className="text-[10px] font-bold px-3 py-1.5 rounded-md border tracking-wide uppercase bg-rose-500/10 text-rose-500 border-rose-500/30 hover:bg-rose-500/20 transition cursor-pointer">
+                className="text-[11px] font-semibold px-3.5 py-2 rounded-lg border bg-rose-500/10 text-rose-500 border-rose-500/30 hover:bg-rose-500/20 transition cursor-pointer">
                 {allDone ? "Kapat" : "Durdur"}
               </button>
             </div>
@@ -658,20 +642,20 @@ export default function BulkParamUpdate({ token }) {
               return (
                 <div key={d.device_id} className="px-4 py-3">
                   <div className="flex items-center justify-between gap-3 mb-1">
-                    <span className="text-[12px] font-medium text-[var(--text-primary)] truncate">
+                    <span className="text-[13px] font-medium text-[var(--text-primary)] truncate">
                       {d.location || d.device_code || `#${d.device_id}`}
-                      {d.mac && <span className="text-[10px] text-[var(--text-muted)] font-mono ml-2">{d.mac}</span>}
+                      {d.mac && <span className="text-[11px] text-[var(--text-muted)] font-mono ml-2">{d.mac}</span>}
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {isGood && <HiOutlineCheckCircle className="text-emerald-500 text-[14px]" />}
                       {(isBad || isWarn) && <HiOutlineExclamationCircle className={`text-[14px] ${isBad ? "text-rose-500" : "text-amber-500"}`} />}
-                      {!isDone && <HiOutlineArrowPath className="text-amber-500 text-[13px] animate-spin" />}
-                      <span className={`text-[11px] font-bold ${PHASE_COLORS[d.phase] || "text-[var(--text-muted)]"}`}>
+                      {!isDone && <HiOutlineArrowPath className="text-amber-500 text-[14px] animate-spin" />}
+                      <span className={`text-[12px] font-bold ${PHASE_COLORS[d.phase] || "text-[var(--text-muted)]"}`}>
                         {PHASE_LABELS[d.phase] || d.phase}
                       </span>
                     </div>
                   </div>
-                  {d.message && <p className="text-[10px] text-[var(--text-muted)]">{d.message}</p>}
+                  {d.message && <p className="text-[11px] text-[var(--text-muted)]">{d.message}</p>}
                 </div>
               );
             })}

@@ -221,7 +221,7 @@ function DeviceTile({ d, tileKey, isOpen, onToggle, onConnectDevice, connecting,
             <span className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 ${meta.chip}`}>
               <Icon className={`text-[14px] ${d.state === "checking" ? "animate-spin" : ""}`} />
             </span>
-            <span className={`text-[12px] font-bold truncate flex-1 ${meta.text}`}>
+            <span className={`text-[13px] font-bold truncate flex-1 ${meta.text}`}>
               {(d.device_code || "Cihaz").trim()}
             </span>
             <button
@@ -235,18 +235,18 @@ function DeviceTile({ d, tileKey, isOpen, onToggle, onConnectDevice, connecting,
                          disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {connecting
-                ? <HiOutlineArrowPath className="text-[12px] animate-spin" />
-                : <TbPlugConnected className="text-[12px]" />}
+                ? <HiOutlineArrowPath className="text-[13px] animate-spin" />
+                : <TbPlugConnected className="text-[13px]" />}
             </button>
           </div>
-          <dl className="flex flex-col gap-1.5 text-[10.5px]">
+          <dl className="flex flex-col gap-1.5 text-[11.5px]">
             <div className="flex items-start justify-between gap-3">
               <dt className="text-[var(--text-muted)] font-medium shrink-0 pt-px">Konum</dt>
               <dd className={`font-semibold text-right break-words ${meta.text}`}>{d.location || "—"}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-[var(--text-muted)] font-medium shrink-0">MAC adresi</dt>
-              <dd className={`font-mono text-[10px] text-right truncate ${meta.text}`}>{d.mac || "—"}</dd>
+              <dd className={`font-mono text-[11px] text-right truncate ${meta.text}`}>{d.mac || "—"}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-[var(--text-muted)] font-medium shrink-0">Aktif mi</dt>
@@ -264,11 +264,11 @@ function DeviceTile({ d, tileKey, isOpen, onToggle, onConnectDevice, connecting,
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-[var(--text-muted)] font-medium shrink-0">Versiyon</dt>
-              <dd className={`font-mono text-[10px] font-bold ${meta.text}`}>{d.sw_version || "—"}</dd>
+              <dd className={`font-mono text-[11px] font-bold ${meta.text}`}>{d.sw_version || "—"}</dd>
             </div>
           </dl>
           {connectError && (
-            <p className="mt-2 text-[10px] font-semibold text-rose-500">{connectError}</p>
+            <p className="mt-2 text-[11px] font-semibold text-rose-500">{connectError}</p>
           )}
           <div
             style={{ left: pos.arrowLeft }}
@@ -309,17 +309,17 @@ function LocationCard({ site, devices, blocks, openKey, setOpenKey, onConnectDev
   return (
     <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated,transparent)] p-4 flex flex-col gap-3.5">
       <div className="flex items-center gap-2 min-w-0">
-        <span className="w-7 h-7 rounded-lg bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)] text-[13px] shrink-0">
+        <span className="w-7 h-7 rounded-lg bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)] text-[14px] shrink-0">
           <HiOutlineMapPin />
         </span>
-        <span className="text-[12.5px] font-bold text-[var(--text-primary)] truncate" title={site}>{site}</span>
+        <span className="text-[13.5px] font-bold text-[var(--text-primary)] truncate" title={site}>{site}</span>
       </div>
 
       {blocks ? (
         <div className="flex flex-col gap-3">
           {blocks.map((b) => (
             <div key={b.label}>
-              <div className="text-[9.5px] font-bold uppercase tracking-wide text-[var(--text-muted)] mb-1.5">{b.label}</div>
+              <div className="text-[10.5px] font-bold uppercase tracking-wide text-[var(--text-muted)] mb-1.5">{b.label}</div>
               <DeviceTileRow devices={b.devices} openKey={openKey} setOpenKey={setOpenKey}
                 onConnectDevice={onConnectDevice} connecting={connecting} connectError={connectError} />
             </div>
@@ -332,7 +332,7 @@ function LocationCard({ site, devices, blocks, openKey, setOpenKey, onConnectDev
 
       <div className="flex items-center gap-2.5 pt-3 border-t border-[var(--border-subtle)]">
         <SegmentedBar devices={devices} className="h-1 flex-1" />
-        <span className="shrink-0 text-[10px] font-bold text-[var(--text-muted)]">{devices.length} cihaz</span>
+        <span className="shrink-0 text-[11px] font-bold text-[var(--text-muted)]">{devices.length} cihaz</span>
       </div>
     </div>
   );
@@ -344,7 +344,9 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
     headers: { ...(opts.headers || {}), "Authorization": `Bearer ${token}` },
   }), [token]);
 
-  const isSuperadmin = currentUser?.role === "superadmin";
+  // admin da device-scope'ta superadmin gibi unrestricted (bkz. backend/device-scope.js) —
+  // şirket seçici ve ?company= sorgusu ikisi için de aynı şekilde çalışmalı.
+  const isSuperadmin = currentUser?.role === "superadmin" || currentUser?.role === "admin";
 
   const [companies, setCompanies] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState("");
@@ -447,30 +449,15 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
 
   return (
     <div>
-      <div className="mb-5 pb-4 border-b border-[var(--border-subtle)]">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)] text-[18px] shrink-0">
-            <HiOutlineViewColumns />
-          </div>
-          <div>
-            <h2 className="text-[17px] font-bold text-[var(--text-primary)] font-display tracking-tight leading-tight">
-              Toplu Okuma
-            </h2>
-            <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-              Bir şirkete ait tüm cihazların canlı durumu — sayfa açık kaldığı sürece arka planda tazelenir.
-            </p>
-          </div>
-        </div>
-      </div>
 
       {isSuperadmin && (
         <div className="mb-4">
-          <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
+          <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
             Şirket
           </label>
           <select value={selectedCompany} onChange={(e) => setSelectedCompany(e.target.value)}
             className="w-full sm:w-1/2 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                       px-3 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
+                       px-3 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
             <option value="">Şirket seçin...</option>
             {companies.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
@@ -478,15 +465,15 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
       )}
 
       {!ready ? (
-        <div className="px-4 py-10 text-center text-[12px] text-[var(--text-muted)]">
+        <div className="px-4 py-10 text-center text-[13px] text-[var(--text-muted)]">
           Görüntülemek için yukarıdan bir şirket seçin.
         </div>
       ) : loading && !hasLoadedOnce.current ? (
-        <div className="px-4 py-10 text-center text-[12px] text-[var(--text-muted)] flex items-center justify-center gap-2">
+        <div className="px-4 py-10 text-center text-[13px] text-[var(--text-muted)] flex items-center justify-center gap-2">
           <HiOutlineArrowPath className="animate-spin text-[14px]" /> Yükleniyor...
         </div>
       ) : total === 0 ? (
-        <div className="px-4 py-10 text-center text-[12px] text-[var(--text-muted)]">
+        <div className="px-4 py-10 text-center text-[13px] text-[var(--text-muted)]">
           Bu şirkete ait cihaz bulunamadı.
         </div>
       ) : (
@@ -494,11 +481,11 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
           <div className="mb-6 px-4 py-3.5 rounded-2xl bg-[var(--bg-subtle)] border border-[var(--border-subtle)]">
             <div className="flex items-center gap-2.5 flex-wrap mb-3">
               {STATE_ORDER.filter((s) => counts[s]).map((s) => (
-                <span key={s} className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold ${metaFor(s).chip}`}>
+                <span key={s} className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-bold ${metaFor(s).chip}`}>
                   <span className="tabular-nums">{counts[s]}</span> {metaFor(s).label}
                 </span>
               ))}
-              <span className="text-[11px] text-[var(--text-muted)] ml-auto font-semibold">Toplam {total} cihaz</span>
+              <span className="text-[12px] text-[var(--text-muted)] ml-auto font-semibold">Toplam {total} cihaz</span>
             </div>
             <SegmentedBar devices={devices} className="h-2" />
           </div>

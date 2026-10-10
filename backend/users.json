@@ -29,7 +29,8 @@
     "role": "admin",
     "company": null,
     "createdAt": "2026-06-29T14:47:29.879Z",
-    "email": "baris.yagiz@bluetechevc.com"
+    "email": "baris.yagiz@bluetechevc.com",
+    "allowedMacs": []
   },
   {
     "username": "ilkerakar",
@@ -168,5 +169,15 @@
     "allowedMacs": [],
     "email": null,
     "createdAt": "2026-09-14T12:35:48.314Z"
+  },
+  {
+    "username": "deneme_admin",
+    "fullName": "admin",
+    "passwordHash": "$2b$10$GS59TQWgutV4BcL1bJIVXOq0S9T52SJko8LuLMhOV9xGZDiBWfVVG",
+    "role": "admin",
+    "company": null,
+    "allowedMacs": [],
+    "email": null,
+    "createdAt": "2026-09-21T08:28:58.713Z"
   }
 ]

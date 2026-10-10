@@ -46,7 +46,7 @@ const BULK_PARAMS = {
   42: { label: "Meter Seri No" },
   43: { label: "Meter Tipi" },
   44: { label: "Box Seri No" },
-  69: { label: "MSP Modu" },
+  69: { label: "OCPP Sanal Mod" },
 };
 
 const ACTIVATE_WAITS = [60, 30, 30];

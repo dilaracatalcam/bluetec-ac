@@ -743,6 +743,11 @@ setInterval(async () => {
     }
     if (timedOut.length === 0) return;
 
+    // Deaktif etmeden önce cihazdaki açık log modlarını kapat (slot hâlâ aktifken)
+    for (const sessionId of timedOut) {
+        await stopDeviceLogs(sessionId).catch(() => {});
+    }
+
     const toHardRemove = [];
     try {
         const data = await readTarget();
@@ -808,7 +813,7 @@ const VAR_MAP = {
     msp_l3_volt: 58, msp_l3_cur: 59,
     msp_hw_ver: 60, msp_sw_ver: 61,
     scan_list: 62, logo_update: 63, logo_name: 64, active_logo: 65,
-    msp_mode: 69, // mqttCONF_MODE — 0: üretim modu, 1: test modu
+    msp_mode: 69, // OCPP sanal mod — 0: disable, 1: soket takılı, 2: şarja geç
 };
 
 const VALID_IDS = [
@@ -904,6 +909,41 @@ const deviceStatusPoll = initDeviceStatusPoll({
     readTarget, writeJsonRaw, findOrCreateSlot, deactivateThenActivateForSlot,
     removeSlot, readResponses, isPythonRunning, TARGET_PATH, touchSlot, withLock, getDevices,
 });
+
+// ── Cihaz Canlı Log Akışı — frame 3 28/29 (bkz. device-log-stream.js) ──
+const { initDeviceLogStream } = require('./device-log-stream');
+const deviceLog = initDeviceLogStream({ RESPONSES_PATH, readResponses });
+
+// Bağlantı kapanmadan/değişmeden HEMEN ÖNCE çağrılır: cihazda açık bırakılmış log
+// modlarını kapatır (frame 3 28 0 / frame 3 29 0). Bunsuz cihaz, panel bağlantısı
+// kesildikten sonra da log yayınlamaya devam ediyordu (slot silinene kadar da bu
+// satırlar panele akıyordu). Slot hâlâ target.json'da ve aktifken çağrılmalı.
+async function stopDeviceLogs(sessionId) {
+    const groups = deviceLog.activeGroups(sessionId);
+    if (groups.length === 0) return;
+    for (const group of groups) {
+        const frame = `frame 3 ${group} 0`;
+        let sent = false;
+        await withLock(TARGET_PATH, async () => {
+            const data = await readTarget();
+            const slot = data.requests.find((r) => r.session_id === sessionId && r.control === 'activate');
+            if (!slot) return;
+            slot.send_message = frame;
+            await writeJsonRaw(TARGET_PATH, data);
+            sent = true;
+        });
+        if (!sent) break;
+        console.log(`[LOG] ${sessionId}: ${frame} (bağlantı kapanırken otomatik)`);
+        // köprü frame'i okusun diye bekle, sonra temizle (bkz. /api/send-command)
+        await new Promise((r) => setTimeout(r, SLOT_CLEAR_MSG_INTERVAL));
+        await withLock(TARGET_PATH, async () => {
+            const data = await readTarget();
+            const slot = data.requests.find((r) => r.session_id === sessionId);
+            if (slot && slot.send_message === frame) { slot.send_message = ""; await writeJsonRaw(TARGET_PATH, data); }
+        });
+    }
+    deviceLog.clearModes(sessionId);
+}
 
 // =============================================
 //  ANA API ENDPOINT'LERİ — SESSION_ID BAZLI
@@ -1016,10 +1056,12 @@ app.post('/api/update-target', requireAuth(), async (req, res) => {
     }
 
     try {
+        await stopDeviceLogs(sessionId).catch(() => {}); // önceki cihazda log açık kalmasın
         await deactivateThenActivateForSlot(sessionId, targetMac);
         touchSlot(sessionId);
 
         console.log(`[CONNECT] ${sessionId} → ${targetMac}`);
+        deviceLog.drop(sessionId); // önceki cihazın log satırları yeni cihazınkilere karışmasın
 
         res.json({
             message: 'Başarılı',
@@ -1046,6 +1088,7 @@ app.post('/api/keepalive', requireAuth(), async (req, res) => {
 app.post('/api/disconnect', requireAuth(), async (req, res) => {
     const sessionId = req.sessionId;
     try {
+        await stopDeviceLogs(sessionId).catch(() => {});
         await removeSlot(sessionId);
         console.log(`[DISCONNECT] ${sessionId} bağlantı koparıldı`);
         res.json({ message: 'Bağlantı koparıldı' });
@@ -1122,6 +1165,77 @@ app.post('/api/send-command', requireAuth(), async (req, res) => {
         console.error('send-command hata:', e);
         res.status(500).json({ error: 'Komut gönderilemedi.' });
     }
+});
+
+// Log modu seç — frame 3 <28|29> <0-5>
+// 28: verbose grubu, 29: debug grubu; 0 kapatır. Satırlar responses.json'daki
+// message_response.data üzerinden akar, deviceLog bunları biriktirir.
+app.post('/api/log/command', requireAuth(), async (req, res) => {
+    const sessionId = req.sessionId;
+    const group = Number(req.body?.group);
+    const level = Number(req.body?.level);
+    if (!deviceLog.LOG_GROUPS.includes(group)) {
+        return res.status(400).json({ message: 'Geçersiz log grubu.' });
+    }
+    if (!Number.isInteger(level) || level < 0 || level > deviceLog.MAX_LEVEL) {
+        return res.status(400).json({ message: 'Geçersiz log seviyesi.' });
+    }
+    const frame = `frame 3 ${group} ${level}`;
+
+    try {
+        let notConnected = false, unauthorizedTarget = null;
+        await deviceLog.watch(sessionId);
+        await withLock(TARGET_PATH, async () => {
+            const data = await readTarget();
+            const slot = data.requests.find((r) => r.session_id === sessionId);
+            if (!slot) { notConnected = true; return; }
+            const cmdScope = scopeFor(req);
+            if (!cmdScope.unrestricted && !allowsMac(cmdScope, slot.target)) { unauthorizedTarget = slot.target; return; }
+            slot.send_message = frame;
+            await writeJsonRaw(TARGET_PATH, data);
+        });
+        if (notConnected) return res.status(400).json({ message: 'Önce bir cihaza bağlanmalısınız.' });
+        if (unauthorizedTarget) {
+            console.warn(`[AUTH] ${req.username} yetkisiz cihaza log komutu denedi: ${unauthorizedTarget}`);
+            return res.status(403).json({ message: 'Bu cihaza komut gönderme yetkiniz yok' });
+        }
+        touchSlot(sessionId);
+        deviceLog.setMode(sessionId, group, level);
+
+        // bkz. /api/send-command — sadece hâlâ bizim frame duruyorsa temizle
+        setTimeout(async () => {
+            try {
+                await withLock(TARGET_PATH, async () => {
+                    const d = await readTarget();
+                    const s = d.requests.find((r) => r.session_id === sessionId);
+                    if (s && s.send_message === frame) {
+                        s.send_message = "";
+                        await writeJsonRaw(TARGET_PATH, d);
+                    }
+                });
+            } catch {}
+        }, SLOT_CLEAR_MSG_INTERVAL);
+
+        console.log(`[LOG] ${sessionId}: ${frame}`);
+        res.json({ message: 'Komut gönderildi', frame });
+    } catch (e) {
+        console.error('log/command hata:', e);
+        res.status(500).json({ error: 'Komut gönderilemedi.' });
+    }
+});
+
+// Biriken log satırları — ?after=<id> ile sadece yeniler
+app.get('/api/log/lines', requireAuth(), async (req, res) => {
+    await deviceLog.watch(req.sessionId);
+    // Açık bir log akışını izlemek aktivite sayılır — yoksa kullanıcı komut göndermeden
+    // sadece logları izlerken 5 dakikada "inaktivite"den bağlantısı kesiliyordu.
+    if (deviceLog.activeGroups(req.sessionId).length > 0) touchSlot(req.sessionId);
+    res.json(deviceLog.read(req.sessionId, req.query.after));
+});
+
+app.post('/api/log/clear', requireAuth(), (req, res) => {
+    deviceLog.clear(req.sessionId);
+    res.json({ message: 'ok' });
 });
 
 // Status — bu session'un status'unu döner + başka kullanıcı deactivate ettiyse onu da bildir
@@ -1264,6 +1378,7 @@ app.get('/api/connections', requireAuth(['admin']), async (req, res) => {
 app.post('/api/connections/:sessionId/disconnect', requireAuth(), requireSuperadmin, async (req, res) => {
     const targetSessionId = req.params.sessionId;
     try {
+        await stopDeviceLogs(targetSessionId).catch(() => {});
         const data = await readTarget();
         const slot = data.requests.find((r) => r.session_id === targetSessionId && r.control === 'activate');
         if (!slot) return res.status(404).json({ error: 'Aktif bağlantı bulunamadı' });
@@ -1499,9 +1614,95 @@ app.get("/api/device-status", requireAuth(), (req, res) => {
   }
 });
 
+// ── Genel Bakış — kullanıcının kapsamındaki cihazların özeti ──
+// Her istek (sayfa 30sn'de bir çeker) arka plandaki durum taramasını canlı tutar
+// (bkz. device-status-poll.js ensureWatching) — sayfa kapanınca 45sn içinde durur.
+// Tarama cihazları sırayla dolaştığı için sayılar device_live_status'taki SON
+// OKUNAN değerlerdir; tam bir tur dakikalar sürer, bu yüzden lastStatusAt da döner.
+app.get("/api/overview", requireAuth(), async (req, res) => {
+  try {
+    const { getAllDeviceLiveStatus, listRecentJobs } = require("./db");
+    const scope = scopeFor(req);
+    const devices = visibleDevices(scope);
+    if (scope.unrestricted) deviceStatusPoll.ensureWatching(deviceStatusPoll.ALL_COMPANIES);
+    else if (scope.company) deviceStatusPoll.ensureWatching(scope.company);
+    const up = (m) => String(m || "").toUpperCase();
+    const liveByMac = new Map(getAllDeviceLiveStatus().map((r) => [up(r.mac), r]));
+
+    const states = {};       // state -> { state, label, count }
+    const companies = {};    // company -> { company, total, states: { state: adet } }
+    const versions = {};     // sürüm -> adet
+    const connTypes = {};    // bağlantı tipi -> adet
+    let lastStatusAt = null;
+
+    for (const d of devices) {
+      const live = liveByMac.get(up(d.mac));
+      const state = live?.state || "never";
+      const label = live?.label || "Hiç Okunmadı";
+      if (!states[state]) states[state] = { state, label, count: 0 };
+      states[state].count++;
+      if (live?.updated_at && (!lastStatusAt || live.updated_at > lastStatusAt)) lastStatusAt = live.updated_at;
+
+      const cname = d.company || "—";
+      if (!companies[cname]) companies[cname] = { company: cname, total: 0, states: {} };
+      companies[cname].total++;
+      companies[cname].states[state] = (companies[cname].states[state] || 0) + 1;
+
+      const ver = String(d.sw_version || "").trim().toLowerCase() || "bilinmiyor";
+      versions[ver] = (versions[ver] || 0) + 1;
+      const conn = String(d.connection || "").trim().toUpperCase() || "BİLİNMİYOR";
+      connTypes[conn] = (connTypes[conn] || 0) + 1;
+    }
+
+    const byCount = (a, b) => b.count - a.count;
+    const toList = (obj, key) => Object.entries(obj).map(([k, count]) => ({ [key]: k, count })).sort(byCount);
+
+    // Aktif bağlantılar — /api/connections ile aynı yetki (admin + superadmin)
+    let activeConnections = null;
+    if (req.userRole === "superadmin" || req.userRole === "admin") {
+      const target = await readTarget();
+      const users = readUsers();
+      const devByMac = new Map(devices.map((d) => [up(d.mac), d]));
+      activeConnections = target.requests
+        .filter((r) => r.target && r.control === "activate" && users.some((u) => u.username === r.session_id))
+        .map((r) => {
+          const u = users.find((x) => x.username === r.session_id);
+          const dev = devByMac.get(up(r.target));
+          return { fullName: u.fullName || u.username, device: dev?.location || dev?.device_code || r.target, company: dev?.company || null };
+        });
+    }
+
+    const recentJobs = BULK_JOB_ROLES.includes(req.userRole)
+      ? listRecentJobs({
+          createdBy: scope.unrestricted ? null : req.username,
+          includeOta: scope.unrestricted && OTA_BULK_JOB_ROLES.includes(req.userRole),
+        })
+      : [];
+
+    res.json({
+      totalDevices: devices.length,
+      totalCompanies: Object.keys(companies).length,
+      states: Object.values(states).sort(byCount),
+      lastStatusAt,
+      companies: Object.values(companies).sort((a, b) => b.total - a.total),
+      versions: toList(versions, "version"),
+      connTypes: toList(connTypes, "type"),
+      activeConnections,
+      recentJobs,
+    });
+  } catch (e) {
+    console.error("[OVERVIEW] özet alınamadı:", e.message);
+    res.status(500).json({ error: "Özet alınamadı" });
+  }
+});
+
+// Cihaz Yönetimi / Cihaz Kurulum — superadmin ve admin (device-scope'ta ikisi de
+// unrestricted); operator ve altı bu uçlara erişemez.
+const DEVICE_MGMT_ROLES = ["superadmin", "admin"];
+
 // Cihaz listesi export
 app.get("/api/devices/export", requireAuth(), async (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const devices = getDevices({});
     const { execSync } = require("child_process");
@@ -1522,7 +1723,7 @@ const deviceImportUpload = multer({
 });
 
 app.post("/api/devices/import", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
 
   deviceImportUpload.single("file")(req, res, async (err) => {
     if (err) return res.status(400).json({ error: "Dosya yüklenemedi: " + err.message });
@@ -1596,7 +1797,7 @@ app.get("/api/devices/:code", requireAuth(), (req, res) => {
 // Cihaz Yönetimi — sadece superadmin
 
 app.post("/api/devices", requireAuth(), async (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const { device_code, serial_no, mac, company, location, connection, logo, sw_version, msp_fw, msp_sw, hw_version, note, extra_fields } = req.body || {};
     if (!mac || !company) return res.status(400).json({ error: "MAC ve şirket zorunlu" });
@@ -1635,7 +1836,7 @@ app.post("/api/devices", requireAuth(), async (req, res) => {
 });
 
 app.delete("/api/devices/:id", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const { replaceAllDevices, getDevices } = require("./db");
     const existing = getDevices({});
@@ -1649,7 +1850,7 @@ app.delete("/api/devices/:id", requireAuth(), (req, res) => {
 });
 
 app.put("/api/devices/:id", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const { device_code, serial_no, mac, company, location, connection, logo, sw_version, msp_fw, msp_sw, hw_version, note, extra_fields } = req.body || {};
     if (!mac || !company) return res.status(400).json({ error: "MAC ve şirket zorunlu" });
@@ -1694,7 +1895,7 @@ app.put("/api/devices/:id", requireAuth(), (req, res) => {
 const BULK_EDITABLE_FIELDS = ["company", "location", "connection", "logo", "sw_version", "msp_fw", "msp_sw", "hw_version", "note"];
 
 app.post("/api/devices/bulk-update", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const { ids, field, isCustom, mode, value, find, replace } = req.body || {};
 
@@ -1754,10 +1955,10 @@ app.post("/api/devices/bulk-update", requireAuth(), (req, res) => {
 
 // =============================================
 //  Toplu Parametre — kalıcı, arka planda çalışan işler (bkz. bulk-jobs.js)
-//  superadmin (Panel) ve operator (kendi şirket hesabı, Dashboard) erişir —
-//  Toplu Güncelleme (firmware OTA) ile aynı ihtiyatla "admin" rolü dışarıda.
+//  superadmin/admin (Panel, device-scope zaten unrestricted) ve operator
+//  (kendi şirket hesabı, Dashboard) erişir.
 // =============================================
-const BULK_JOB_ROLES = ["superadmin", "operator"];
+const BULK_JOB_ROLES = ["superadmin", "admin", "operator"];
 
 app.post("/api/bulk-jobs", requireAuth(), (req, res) => {
   if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
@@ -1916,11 +2117,13 @@ app.post("/api/bulk-jobs/:id/retry", requireAuth(), (req, res) => {
 
 // =============================================
 //  Toplu Güncelleme (OTA firmware) — kalıcı, arka planda çalışan işler
-//  (bkz. ota-bulk-jobs.js). Sadece superadmin — BulkUpdate.jsx zaten
-//  sadece superadmin'e açık (Home.jsx'teki "bulk-update" case'i).
+//  (bkz. ota-bulk-jobs.js). superadmin ve admin — device-scope'ta ikisi de
+//  unrestricted, BulkUpdate.jsx da ikisine açık (Home.jsx'teki "bulk-update" case'i).
 // =============================================
+const OTA_BULK_JOB_ROLES = ["superadmin", "admin"];
+
 app.post("/api/ota-bulk-jobs", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!OTA_BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const { company, kind, verifyVersion, devices, workerCount, autoRetryMinutes, autoRetryMax } = req.body || {};
     if (kind !== "esp" && kind !== "msp") return res.status(400).json({ error: "Geçersiz güncelleme tipi" });
@@ -1953,7 +2156,7 @@ app.post("/api/ota-bulk-jobs", requireAuth(), (req, res) => {
 });
 
 app.get("/api/ota-bulk-jobs/:id", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!OTA_BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const job = otaBulkJobs.getJob(req.params.id);
     if (!job) return res.status(404).json({ error: "İş bulunamadı" });
@@ -1964,7 +2167,7 @@ app.get("/api/ota-bulk-jobs/:id", requireAuth(), (req, res) => {
 });
 
 app.get("/api/ota-bulk-jobs", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!OTA_BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const opts = { activeOnly: req.query.active === "1" };
     if (req.query.company) opts.company = req.query.company;
@@ -1975,7 +2178,7 @@ app.get("/api/ota-bulk-jobs", requireAuth(), (req, res) => {
 });
 
 app.post("/api/ota-bulk-jobs/:id/stop", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!OTA_BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const job = otaBulkJobs.getJob(req.params.id);
     if (!job) return res.status(404).json({ error: "İş bulunamadı" });
@@ -1987,7 +2190,7 @@ app.post("/api/ota-bulk-jobs/:id/stop", requireAuth(), (req, res) => {
 });
 
 app.post("/api/ota-bulk-jobs/:id/dismiss", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!OTA_BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const job = otaBulkJobs.getJob(req.params.id);
     if (!job) return res.status(404).json({ error: "İş bulunamadı" });
@@ -2004,7 +2207,7 @@ app.post("/api/ota-bulk-jobs/:id/dismiss", requireAuth(), (req, res) => {
 // device_code zaten job kaydının kendisinde duruyor (devices tablosuna
 // bağımlı değil), o yüzden yeniden çözümlemeye gerek yok.
 app.post("/api/ota-bulk-jobs/:id/retry", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!OTA_BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const oldJob = otaBulkJobs.getJob(req.params.id);
     if (!oldJob) return res.status(404).json({ error: "İş bulunamadı" });
@@ -2039,7 +2242,7 @@ app.get("/api/device-fields", requireAuth(), (req, res) => {
 });
 
 app.post("/api/device-fields", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const { label } = req.body || {};
     if (!label || !label.trim()) return res.status(400).json({ error: "Alan adı boş olamaz" });
@@ -2052,7 +2255,7 @@ app.post("/api/device-fields", requireAuth(), (req, res) => {
 });
 
 app.delete("/api/device-fields/:key", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     deleteCustomField(req.params.key);
     console.log(`[DEVICE-FIELDS] ${req.username} alanı sildi: ${req.params.key}`);
@@ -2066,7 +2269,7 @@ app.delete("/api/device-fields/:key", requireAuth(), (req, res) => {
 
 // Cihaz kurulum profilleri
 app.get("/api/device-profiles", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const profiles = JSON.parse(fs.readFileSync(path.join(__dirname, "device_profiles.json"), "utf-8"));
     res.json({ profiles });
@@ -2088,7 +2291,7 @@ function writeProfiles(profiles) {
 
 // ── Yeni şirket profili oluştur (KALICI) ── //
 app.post("/api/device-profiles", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const { label } = req.body || {};
     if (!label || !label.trim()) return res.status(400).json({ error: "Şirket adı boş olamaz" });
@@ -2112,7 +2315,7 @@ app.post("/api/device-profiles", requireAuth(), (req, res) => {
 
 // ── Bir şirket profiline KALICI yeni parametre ekle ── //
 app.post("/api/device-profiles/:company/params", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const { company } = req.params;
     const { id, label, value } = req.body || {};
@@ -2138,7 +2341,7 @@ app.post("/api/device-profiles/:company/params", requireAuth(), (req, res) => {
 
 // ── Bir şirket profilindeki parametreyi KALICI düzenle ── //
 app.put("/api/device-profiles/:company/params/:id", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const { company } = req.params;
     const idNum = parseInt(req.params.id, 10);
@@ -2162,7 +2365,7 @@ app.put("/api/device-profiles/:company/params/:id", requireAuth(), (req, res) =>
 
 // ── Bir şirket profilinden parametreyi KALICI sil ── //
 app.delete("/api/device-profiles/:company/params/:id", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const { company } = req.params;
     const idNum = parseInt(req.params.id, 10);

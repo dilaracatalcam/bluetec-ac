@@ -241,12 +241,12 @@ export default function Admin({ token, onNavigate, onLogout }) {
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
             <div className="flex items-center gap-3">
-              <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-bold border ${badge.c}`}>
+              <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[12px] font-bold border ${badge.c}`}>
                 <span className={`w-[6px] h-[6px] rounded-full ${badge.d}`} />
                 {badge.t}
               </span>
               {isConnected && mac && (
-                <span className="text-[11px] text-slate-600 font-mono">{mac}</span>
+                <span className="text-[12px] text-slate-600 font-mono">{mac}</span>
               )}
             </div>
             <div className="flex gap-2 items-center">
@@ -254,17 +254,17 @@ export default function Admin({ token, onNavigate, onLogout }) {
                 <input value={mac} onChange={(e) => setMac(e.target.value)}
                   placeholder="AA:BB:CC:DD:EE:FF" required
                   className="bg-[#0c1829] border border-slate-700/50 text-slate-200
-                             px-3 py-1.5 rounded-lg text-[12px] font-mono outline-none
+                             px-3 py-1.5 rounded-lg text-[13px] font-mono outline-none
                              focus:border-sky-500/50 transition w-48" />
                 <button disabled={loading}
-                  className={`px-4 py-1.5 rounded-lg text-[12px] font-bold transition cursor-pointer
+                  className={`px-4 py-1.5 rounded-lg text-[13px] font-bold transition cursor-pointer
                     ${loading ? "bg-slate-700 text-slate-500" : "bg-emerald-600 hover:bg-emerald-500 text-white"}`}>
                   {loading ? "…" : "Bağlan"}
                 </button>
               </form>
               {isConnected && (
                 <button onClick={handleDisconnect}
-                  className="px-3 py-1.5 rounded-lg text-[12px] font-bold transition cursor-pointer
+                  className="px-3 py-1.5 rounded-lg text-[13px] font-bold transition cursor-pointer
                              bg-red-600/80 hover:bg-red-500 text-white">
                   Kopar
                 </button>
@@ -273,7 +273,7 @@ export default function Admin({ token, onNavigate, onLogout }) {
           </div>
 
           {message && (
-            <div className="mb-4 px-3 py-2 rounded-lg bg-[#0c1829] border border-slate-700/30 text-[12px] text-slate-400">
+            <div className="mb-4 px-3 py-2 rounded-lg bg-[#0c1829] border border-slate-700/30 text-[13px] text-slate-400">
               {message}
             </div>
           )}
@@ -286,9 +286,9 @@ export default function Admin({ token, onNavigate, onLogout }) {
                 {ADMIN_MSP.map((p) =>
                   p.isInfo ? (
                     <div key={p.id} className="flex items-center gap-2 px-3 py-[6px] rounded-lg bg-slate-800/30 border border-slate-700/30">
-                      <span className="text-[13px] text-slate-500">{p.icon}</span>
-                      <span className="text-[11px] text-slate-500">{p.label}:</span>
-                      <span className="text-[11px] text-slate-200 font-semibold">{V(p.id)}</span>
+                      <span className="text-[14px] text-slate-500">{p.icon}</span>
+                      <span className="text-[12px] text-slate-500">{p.label}:</span>
+                      <span className="text-[12px] text-slate-200 font-semibold">{V(p.id)}</span>
                     </div>
                   ) : (
                     <ActionButton key={p.id} icon={p.icon} label={p.label}
@@ -315,52 +315,52 @@ export default function Admin({ token, onNavigate, onLogout }) {
 
               <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-700/25">
                 {(batchReadingId === "ota" && batchProgress) ? (
-                  <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">{batchProgress}</span>
+                  <span className="text-[12px] text-sky-400/80 font-medium animate-pulse">{batchProgress}</span>
                 ) : (bulkSaving && bulkProgress) ? (
-                  <span className="text-[11px] text-sky-400/80 font-medium animate-pulse">{bulkProgress}</span>
+                  <span className="text-[12px] text-sky-400/80 font-medium animate-pulse">{bulkProgress}</span>
                 ) : <span />}
 
                 <div className="flex items-center gap-2">
                   {bulkEditingId === "ota" ? (
                     <>
                       <button onClick={cancelBulkEdit}
-                        className="text-[10px] font-semibold px-2.5 py-[4px] rounded-md
+                        className="text-[11px] font-semibold px-2.5 py-[4px] rounded-md
                                    bg-slate-800/50 text-slate-500 border border-slate-600/30
                                    hover:text-slate-300 transition cursor-pointer">
                         İptal
                       </button>
                       <button onClick={() => batchSet(OTA, "ota")}
                         disabled={!isActive || bulkSaving}
-                        className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                        className={`flex items-center gap-1.5 text-[12px] font-semibold px-3 py-[5px] rounded-md border transition
                           ${(!isActive || bulkSaving)
                             ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
                             : "bg-emerald-600/80 text-white border-emerald-500/50 hover:bg-emerald-600 cursor-pointer"
                           }`}>
-                        <HiOutlinePencilSquare className={`text-[12px] ${bulkSaving ? "animate-spin" : ""}`} />
+                        <HiOutlinePencilSquare className={`text-[13px] ${bulkSaving ? "animate-spin" : ""}`} />
                         {bulkSaving ? "Kaydediliyor…" : "Tümünü Kaydet"}
                       </button>
                     </>
                   ) : (
                     <button onClick={() => startBulkEdit(OTA, "ota")}
                       disabled={!isActive || !!bulkEditingId || bulkSaving}
-                      className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                      className={`flex items-center gap-1.5 text-[12px] font-semibold px-3 py-[5px] rounded-md border transition
                         ${(!isActive || !!bulkEditingId || bulkSaving)
                           ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
                           : "bg-amber-600/20 text-amber-400 border-amber-500/30 hover:bg-amber-600/30 cursor-pointer"
                         }`}>
-                      <HiOutlinePencilSquare className="text-[12px]" />
+                      <HiOutlinePencilSquare className="text-[13px]" />
                       Toplu Edit
                     </button>
                   )}
 
                   <button onClick={() => batchRead(OTA, "ota")}
                     disabled={!isActive || !!batchReadingId || !!bulkEditingId}
-                    className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition
+                    className={`flex items-center gap-1.5 text-[12px] font-semibold px-3 py-[5px] rounded-md border transition
                       ${(!isActive || !!batchReadingId || !!bulkEditingId)
                         ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
                         : "bg-sky-600/20 text-sky-400 border-sky-500/30 hover:bg-sky-600/30 cursor-pointer"
                       }`}>
-                    <HiOutlineArrowPath className={`text-[12px] ${batchReadingId === "ota" ? "animate-spin" : ""}`} />
+                    <HiOutlineArrowPath className={`text-[13px] ${batchReadingId === "ota" ? "animate-spin" : ""}`} />
                     {batchReadingId === "ota" ? "Okunuyor…" : "Tümünü Oku"}
                   </button>
                 </div>

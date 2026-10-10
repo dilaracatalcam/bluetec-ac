@@ -527,7 +527,33 @@ function getDeviceLiveStatusForCompany(company) {
   return db.prepare(`SELECT * FROM device_live_status WHERE company = ? ORDER BY location, mac`).all(company);
 }
 
+// ── Genel Bakış — salt okunur özet sorguları ──
+function getAllDeviceLiveStatus() {
+  return db.prepare(`SELECT mac, state, label, updated_at FROM device_live_status`).all();
+}
+
+// Toplu Parametre + Toplu Güncelleme (OTA) işleri tek listede, en yeni üstte.
+// createdBy verilirse sadece o kullanıcının işleri; includeOta=false ise OTA işleri hariç.
+function listRecentJobs({ createdBy, includeOta = true, limit = 8 } = {}) {
+  const where = createdBy ? "WHERE j.created_by = @createdBy" : "";
+  const paramSql = `
+    SELECT 'param' AS type, j.id, j.company, j.param_label AS title, j.created_by, j.status, j.created_at,
+      (SELECT COUNT(*) FROM bulk_job_devices d WHERE d.job_id = j.id) AS total,
+      (SELECT COUNT(*) FROM bulk_job_devices d WHERE d.job_id = j.id AND d.phase = 'success') AS ok
+    FROM bulk_jobs j ${where}`;
+  const otaSql = `
+    SELECT 'ota' AS type, j.id, j.company, j.kind AS title, j.created_by, j.status, j.created_at,
+      (SELECT COUNT(*) FROM ota_bulk_job_devices d WHERE d.job_id = j.id) AS total,
+      (SELECT COUNT(*) FROM ota_bulk_job_devices d WHERE d.job_id = j.id AND d.phase IN ('success', 'uptodate')) AS ok
+    FROM ota_bulk_jobs j ${where}`;
+  const sql = (includeOta ? `${paramSql} UNION ALL ${otaSql}` : paramSql) + ` ORDER BY created_at DESC LIMIT @limit`;
+  const params = { limit };
+  if (createdBy) params.createdBy = createdBy;
+  return db.prepare(sql).all(params);
+}
+
 module.exports = {
+  getAllDeviceLiveStatus, listRecentJobs,
   getCompanies, getLocations, getDevices, getDeviceByCode, replaceAllDevices, updateDeviceVersion,
   getCustomFields, addCustomField, deleteCustomField,
   createBulkJob, updateBulkJobDevice, setBulkJobStatus, dismissBulkJob, getBulkJob, listBulkJobs,

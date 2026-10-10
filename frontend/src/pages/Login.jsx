@@ -65,14 +65,14 @@ export default function Login({ page, onLogin }) {
   // Tema — Home.jsx ile aynı localStorage anahtarı, aynı class sistemi
   const [theme, setTheme] = useState(() => {
     if (typeof window === "undefined") return "dark";
-    try { return window.localStorage?.getItem("bluetech-theme") || "dark"; } catch { return "dark"; }
+    try { return window.localStorage?.getItem("bluetech-theme-v2") || "light"; } catch { return "light"; }
   });
 
   useEffect(() => {
     const root = document.documentElement;
     root.classList.remove("theme-dark", "theme-light");
     root.classList.add(theme === "dark" ? "theme-dark" : "theme-light");
-    try { window.localStorage?.setItem("bluetech-theme", theme); } catch {}
+    try { window.localStorage?.setItem("bluetech-theme-v2", theme); } catch {}
   }, [theme]);
 
   const handleSubmit = async (e) => {
@@ -124,7 +124,7 @@ export default function Login({ page, onLogin }) {
     <div className="min-h-screen flex flex-col bg-[var(--bg-app)] text-[var(--text-primary)] font-body relative overflow-hidden">
       {/* Google Fonts + CSS Variables — Home.jsx ile aynı sistem */}
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
         :root.theme-dark {
           --bg-app: #0a0f18;
@@ -138,10 +138,10 @@ export default function Login({ page, onLogin }) {
           --text-primary: #e2e8f0;
           --text-secondary: #94a3b8;
           --text-muted: #64748b;
-          --accent: #06b6d4;
-          --accent-soft: rgba(6, 182, 212, 0.10);
-          --accent-soft-hover: rgba(6, 182, 212, 0.18);
-          --accent-border: rgba(6, 182, 212, 0.28);
+          --accent: #3b82f6;
+          --accent-soft: rgba(59, 130, 246, 0.10);
+          --accent-soft-hover: rgba(59, 130, 246, 0.18);
+          --accent-border: rgba(59, 130, 246, 0.28);
         }
         :root.theme-light {
           --bg-app: #f5f7fb;
@@ -155,13 +155,15 @@ export default function Login({ page, onLogin }) {
           --text-primary: #0f172a;
           --text-secondary: #475569;
           --text-muted: #94a3b8;
-          --accent: #0891b2;
-          --accent-soft: rgba(8, 145, 178, 0.08);
-          --accent-soft-hover: rgba(8, 145, 178, 0.14);
-          --accent-border: rgba(8, 145, 178, 0.28);
+          --accent: #2563eb;
+          --accent-soft: rgba(37, 99, 235, 0.08);
+          --accent-soft-hover: rgba(37, 99, 235, 0.14);
+          --accent-border: rgba(37, 99, 235, 0.28);
         }
-        .font-display { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; font-feature-settings: 'cv11','ss01'; }
-        .font-body    { font-family: 'Inter Tight', ui-sans-serif, system-ui, sans-serif; }
+        .font-display { font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif; }
+        /* Jakarta'nın kelime boşluğu dar — sıkı harf aralığıyla kelimeler yapışmasın */
+        .font-display.font-display { letter-spacing: -0.012em; word-spacing: 0.1em; }
+        .font-body    { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
         .font-mono    { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; }
 
         .theme-light input { color-scheme: light; }
@@ -205,7 +207,7 @@ export default function Login({ page, onLogin }) {
               alt="Bluetech"
               className="h-5 w-auto"
             />
-            <span className="text-[9px] font-medium tracking-[0.15em] uppercase text-[var(--text-muted)]">
+            <span className="text-[10px] font-medium tracking-[0.15em] uppercase text-[var(--text-muted)]">
               EV Charge Panel
             </span>
           </div>
@@ -217,7 +219,7 @@ export default function Login({ page, onLogin }) {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg
                      bg-[var(--bg-subtle)] border border-[var(--border-subtle)]
                      text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]
-                     transition text-[11px] font-semibold tracking-wide uppercase"
+                     transition text-[12px] font-semibold"
         >
           {theme === "dark" ? <HiOutlineSun className="text-[14px]" /> : <HiOutlineMoon className="text-[14px]" />}
           <span className="hidden sm:inline">{theme === "dark" ? "Light" : "Dark"}</span>
@@ -231,12 +233,12 @@ export default function Login({ page, onLogin }) {
 
           {/* Rol etiketi */}
           <div className="flex items-center justify-center mb-5">
-            <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[10px] font-bold tracking-[0.15em] uppercase
+            <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-bold tracking-[0.15em] uppercase
               ${isAdmin
                 ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
                 : "bg-[var(--accent-soft)] border-[var(--accent-border)] text-[var(--accent)]"
               }`}>
-              <HiOutlineShieldCheck className="text-[12px]" />
+              <HiOutlineShieldCheck className="text-[13px]" />
               {isAdmin ? "Admin Erişimi" : "Dashboard Erişimi"}
             </div>
           </div>
@@ -249,14 +251,14 @@ export default function Login({ page, onLogin }) {
               <h1 className="text-[20px] sm:text-[22px] font-bold text-[var(--text-primary)] font-display tracking-tight leading-tight">
                 {title}
               </h1>
-              <p className="text-[12px] text-[var(--text-muted)] mt-1.5">
+              <p className="text-[13px] text-[var(--text-muted)] mt-1.5">
                 {subtitle}
               </p>
             </div>
 
             {/* Hata kutusu */}
             {error && (
-              <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[12px]">
+              <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[13px]">
                 <HiOutlineExclamationCircle className="text-[14px] shrink-0 mt-[1px]" />
                 <span className="font-medium leading-snug">{error}</span>
               </div>
@@ -267,7 +269,7 @@ export default function Login({ page, onLogin }) {
               <div className="flex flex-col gap-3">
                 {/* Kullanıcı adı */}
                 <div>
-                  <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
+                  <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
                     Kullanıcı Adı
                   </label>
                   <div className="relative">
@@ -280,7 +282,7 @@ export default function Login({ page, onLogin }) {
                       placeholder="kullanici.adi"
                       autoComplete="username"
                       className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                 pl-10 pr-3 py-2.5 rounded-lg text-[13px] font-mono outline-none
+                                 pl-10 pr-3 py-2.5 rounded-lg text-[14px] font-mono outline-none
                                  placeholder:text-[var(--text-muted)] placeholder:font-sans
                                  focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
                     />
@@ -290,13 +292,13 @@ export default function Login({ page, onLogin }) {
                 {/* Şifre */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5 ml-0.5 mr-0.5">
-                    <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)]">
+                    <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)]">
                       Şifre
                     </label>
                     <button
                       type="button"
                       onClick={goToForgot}
-                      className="text-[10px] font-semibold text-[var(--text-muted)] hover:text-[var(--accent)] transition cursor-pointer"
+                      className="text-[11px] font-semibold text-[var(--text-muted)] hover:text-[var(--accent)] transition cursor-pointer"
                     >
                       Şifremi unuttum?
                     </button>
@@ -312,7 +314,7 @@ export default function Login({ page, onLogin }) {
                       autoComplete="current-password"
                       onKeyDown={(e) => e.key === "Enter" && handleSubmit(e)}
                       className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                 pl-10 pr-10 py-2.5 rounded-lg text-[13px] font-mono outline-none
+                                 pl-10 pr-10 py-2.5 rounded-lg text-[14px] font-mono outline-none
                                  placeholder:text-[var(--text-muted)] placeholder:font-sans
                                  focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
                     />
@@ -334,12 +336,12 @@ export default function Login({ page, onLogin }) {
                 <button
                   type="submit"
                   disabled={loading}
-                  className={`w-full py-2.5 rounded-lg text-[13px] font-bold tracking-wide uppercase transition mt-2
+                  className={`w-full py-2.5 rounded-lg text-[14px] font-bold transition mt-2
                     ${loading
                       ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border-subtle)] cursor-not-allowed"
                       : isAdmin
                         ? "bg-amber-500 hover:bg-amber-400 text-white shadow-md shadow-amber-500/30 cursor-pointer"
-                        : "bg-[var(--accent)] hover:brightness-110 text-white shadow-md shadow-cyan-500/30 cursor-pointer"
+                        : "bg-[var(--accent)] hover:brightness-110 text-white shadow-md shadow-blue-500/30 cursor-pointer"
                     }`}
                 >
                   {loading ? (
@@ -353,12 +355,12 @@ export default function Login({ page, onLogin }) {
             ) : (
               <div className="flex flex-col gap-3">
                 {forgotMessage ? (
-                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[12px]">
+                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[13px]">
                     <span className="font-medium leading-snug">{forgotMessage}</span>
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
+                    <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
                       Kullanıcı Adı
                     </label>
                     <div className="relative">
@@ -371,7 +373,7 @@ export default function Login({ page, onLogin }) {
                         autoComplete="username"
                         autoFocus
                         className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                   pl-10 pr-3 py-2.5 rounded-lg text-[13px] font-mono outline-none
+                                   pl-10 pr-3 py-2.5 rounded-lg text-[14px] font-mono outline-none
                                    placeholder:text-[var(--text-muted)] placeholder:font-sans
                                    focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
                       />
@@ -383,10 +385,10 @@ export default function Login({ page, onLogin }) {
                   <button
                     type="submit"
                     disabled={forgotLoading || !forgotUsername}
-                    className={`w-full py-2.5 rounded-lg text-[13px] font-bold tracking-wide uppercase transition mt-2
+                    className={`w-full py-2.5 rounded-lg text-[14px] font-bold transition mt-2
                       ${forgotLoading || !forgotUsername
                         ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border-subtle)] cursor-not-allowed"
-                        : "bg-[var(--accent)] hover:brightness-110 text-white shadow-md shadow-cyan-500/30 cursor-pointer"
+                        : "bg-[var(--accent)] hover:brightness-110 text-white shadow-md shadow-blue-500/30 cursor-pointer"
                       }`}
                   >
                     {forgotLoading ? (
@@ -401,7 +403,7 @@ export default function Login({ page, onLogin }) {
                 <button
                   type="button"
                   onClick={goToLogin}
-                  className="text-[11px] font-semibold text-[var(--text-muted)] hover:text-[var(--accent)] transition cursor-pointer text-center mt-1"
+                  className="text-[12px] font-semibold text-[var(--text-muted)] hover:text-[var(--accent)] transition cursor-pointer text-center mt-1"
                 >
                   ← Girişe dön
                 </button>
@@ -409,7 +411,7 @@ export default function Login({ page, onLogin }) {
             )}
 
             {/* Alt bilgi */}
-            <div className="mt-5 pt-4 border-t border-[var(--border-subtle)] flex items-center justify-between text-[10px] font-mono text-[var(--text-muted)] tracking-wide">
+            <div className="mt-5 pt-4 border-t border-[var(--border-subtle)] flex items-center justify-between text-[11px] font-mono text-[var(--text-muted)] tracking-wide">
               <span className="flex items-center gap-1.5">
                 <span className={`w-1.5 h-1.5 rounded-full ${isAdmin ? "bg-amber-400" : "bg-[var(--accent)]"}`} />
                 {isAdmin ? "admin.bluetech" : "dashboard.bluetech"}
@@ -419,7 +421,7 @@ export default function Login({ page, onLogin }) {
           </div>
 
           {/* Alt footer */}
-          <div className="text-center mt-5 text-[10px] text-[var(--text-muted)] font-mono tracking-wide">
+          <div className="text-center mt-5 text-[11px] text-[var(--text-muted)] font-mono tracking-wide">
             © bluetech · EV Charge Controller
           </div>
         </form>

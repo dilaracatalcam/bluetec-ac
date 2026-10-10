@@ -2,26 +2,26 @@ import { HiOutlineArrowPath, HiOutlineExclamationCircle } from "react-icons/hi2"
 
 export default function InfoRow({ icon, label, value = "—", valueColor, onRead, disabled = false, failed = false, last = false }) {
   const colorMap = {
-    green: "text-emerald-400",
-    red: "text-red-400",
-    yellow: "text-amber-400",
-    blue: "text-sky-400",
+    green: "text-emerald-500",
+    red: "text-red-500",
+    yellow: "text-amber-500",
+    blue: "text-[var(--accent)]",
   };
 
   return (
-    <div className={`flex items-center justify-between py-[7px] ${!last ? "border-b border-slate-700/25" : ""}`}>
+    <div className={`flex items-center justify-between py-2.5 min-h-[50px] ${!last ? "border-b border-[var(--border-subtle)]" : ""}`}>
       <div className="flex items-center gap-2 min-w-0">
-        {icon && <span className="text-[13px] text-slate-500">{icon}</span>}
-        <span className="text-[12px] text-slate-500 font-medium">{label}:</span>
+        {icon && <span className="text-[14px] text-[var(--text-muted)]">{icon}</span>}
+        <span className="text-[14px] text-[var(--text-secondary)] font-medium">{label}</span>
         {failed && (
-          <span className="flex items-center gap-1 text-[10px] text-amber-400 font-medium" title="Değer okunamadı">
-            <HiOutlineExclamationCircle className="text-[11px]" />
+          <span className="flex items-center gap-1 text-[11px] text-amber-500 font-medium" title="Değer okunamadı">
+            <HiOutlineExclamationCircle className="text-[12px]" />
             okunamadı
           </span>
         )}
       </div>
       <div className="flex items-center gap-2">
-        <span className={`text-[12px] font-semibold text-right break-all ${failed ? "text-amber-400/60" : (colorMap[valueColor] || "text-slate-200")}`}>
+        <span className={`text-[14px] font-semibold text-right break-all ${failed ? "text-amber-500/60" : (colorMap[valueColor] || "text-[var(--text-primary)]")}`}>
           {value || "—"}
         </span>
         {onRead && (
@@ -29,15 +29,15 @@ export default function InfoRow({ icon, label, value = "—", valueColor, onRead
             onClick={onRead}
             disabled={disabled}
             title="Güncel değeri oku"
-            className={`p-[4px] rounded-md border transition shrink-0
+            className={`p-1.5 rounded-lg border transition shrink-0
               ${disabled
-                ? "bg-slate-800/30 text-slate-600 border-slate-700/30 cursor-not-allowed"
+                ? "bg-transparent text-[var(--text-muted)] border-[var(--border-subtle)] opacity-50 cursor-not-allowed"
                 : failed
-                  ? "bg-amber-600/20 text-amber-400 border-amber-500/30 hover:bg-amber-600/30 cursor-pointer"
-                  : "bg-emerald-600/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-600/30 cursor-pointer"
+                  ? "bg-[var(--bg-surface)] text-[var(--text-secondary)] border-[var(--border-strong)] hover:border-[var(--accent)] hover:text-[var(--accent)] cursor-pointer"
+                  : "bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft-hover)] cursor-pointer"
               }`}
           >
-            <HiOutlineArrowPath className="text-[12px]" />
+            <HiOutlineArrowPath className="text-[13px]" />
           </button>
         )}
       </div>

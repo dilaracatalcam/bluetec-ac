@@ -261,49 +261,33 @@ export default function BulkUpdate({ token }) {
 
   return (
     <div>
-      <div className="mb-5 pb-4 border-b border-[var(--border-subtle)]">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)] text-[18px] shrink-0">
-            <HiOutlineArrowUpTray />
-          </div>
-          <div>
-            <h2 className="text-[17px] font-bold text-[var(--text-primary)] font-display tracking-tight leading-tight">
-              Toplu Güncelleme
-            </h2>
-            <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-              Seçtiğiniz cihazlara topluca firmware güncellemesi gönderin — şarj olan cihazlar otomatik atlanır.
-              İş sunucuda çalışır; panelde gezinseniz, sekmeyi kapatsanız bile devam eder.
-            </p>
-          </div>
-        </div>
-      </div>
 
       {!job && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
+              <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
                 Şirket
               </label>
               <select value={selectedCompany} onChange={(e) => setSelectedCompany(e.target.value)}
                 className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                           px-3 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
+                           px-3 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
                 <option value="">Şirket seçin...</option>
                 {companies.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
+              <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
                 Güncelleme Tipi (tüm seçim için ortak)
               </label>
               <div className="flex gap-2">
                 <button onClick={() => setOtaType("1")}
-                  className={`flex-1 text-[12px] font-bold py-2 rounded-lg border transition
+                  className={`flex-1 text-[13px] font-bold py-2 rounded-lg border transition
                     ${otaType === "1" ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "bg-[var(--bg-subtle)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-[var(--border-strong)]"}`}>
                   ESP
                 </button>
                 <button onClick={() => setOtaType("2")}
-                  className={`flex-1 text-[12px] font-bold py-2 rounded-lg border transition
+                  className={`flex-1 text-[13px] font-bold py-2 rounded-lg border transition
                     ${otaType === "2" ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "bg-[var(--bg-subtle)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-[var(--border-strong)]"}`}>
                   MSP
                 </button>
@@ -317,10 +301,10 @@ export default function BulkUpdate({ token }) {
                 onChange={(e) => setVerifyVersion(e.target.checked)}
                 className="mt-[2px] cursor-pointer" />
               <span className="min-w-0">
-                <span className="block text-[12px] font-medium text-[var(--text-primary)]">
+                <span className="block text-[13px] font-medium text-[var(--text-primary)]">
                   Sürüm doğrulaması yap
                 </span>
-                <span className="block text-[10px] text-[var(--text-muted)] leading-snug">
+                <span className="block text-[11px] text-[var(--text-muted)] leading-snug">
                   Açıkken, firmware yazıldıktan sonra cihazın yeni sürümü bildirmesi beklenir (20-30 dk sürebilir).
                   Sürümü kasten sabitlenmiş test cihazlarında kapalı bırakın — aksi halde çalışan güncelleme
                   "doğrulanamadı" görünür.
@@ -335,10 +319,10 @@ export default function BulkUpdate({ token }) {
                 onChange={(e) => setAutoRetryEnabled(e.target.checked)}
                 className="mt-[2px] cursor-pointer" />
               <span className="min-w-0">
-                <span className="block text-[12px] font-medium text-[var(--text-primary)]">
+                <span className="block text-[13px] font-medium text-[var(--text-primary)]">
                   Başarısız cihazları otomatik tekrar dene
                 </span>
-                <span className="block text-[10px] text-[var(--text-muted)] leading-snug">
+                <span className="block text-[11px] text-[var(--text-muted)] leading-snug">
                   Alarm gibi çalışır: iş bitince hâlâ güncellenemeyen cihaz kaldıysa, aşağıdaki aralıkla
                   kendiliğinden yeniden dener — panelde kimse olmasa bile.
                 </span>
@@ -347,25 +331,25 @@ export default function BulkUpdate({ token }) {
             {autoRetryEnabled && (
               <div className="flex items-center gap-4 mt-3 pl-[26px] flex-wrap">
                 <div className="flex items-center gap-2">
-                  <label className="text-[10px] font-bold tracking-[0.1em] uppercase text-[var(--text-muted)]">Kaç dakikada bir</label>
+                  <label className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--text-muted)]">Kaç dakikada bir</label>
                   <input type="number" min={1} max={1440} value={autoRetryMinutes}
                     onChange={(e) => setAutoRetryMinutes(Math.max(1, Number(e.target.value) || 1))}
                     className="w-16 bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                               px-2 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition text-center" />
+                               px-2 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition text-center" />
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-[10px] font-bold tracking-[0.1em] uppercase text-[var(--text-muted)]">Kaç kere denesin</label>
+                  <label className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--text-muted)]">Kaç kere denesin</label>
                   <input type="number" min={1} max={20} value={autoRetryMax}
                     onChange={(e) => setAutoRetryMax(Math.max(1, Number(e.target.value) || 1))}
                     className="w-16 bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                               px-2 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition text-center" />
+                               px-2 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition text-center" />
                 </div>
               </div>
             )}
           </div>
 
           <div className="mb-4">
-            <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
+            <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
               MAC Adresi ile Ekle
             </label>
             <div className="flex gap-2">
@@ -374,42 +358,42 @@ export default function BulkUpdate({ token }) {
                 onKeyDown={(e) => e.key === "Enter" && handleAddManualMac()}
                 placeholder="AA:BB:CC:DD:EE:FF"
                 className="flex-1 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                           px-3 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition font-mono
+                           px-3 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition font-mono
                            placeholder:text-[var(--text-muted)]" />
               <button onClick={handleAddManualMac}
-                className="text-[11px] font-bold px-4 py-2 rounded-lg border tracking-wide uppercase
+                className="text-[12px] font-semibold px-4 py-2 rounded-lg border
                            bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft-hover)] transition cursor-pointer shrink-0">
                 Ekle
               </button>
             </div>
-            {manualMacError && <p className="text-[11px] text-rose-500 font-medium mt-1.5">{manualMacError}</p>}
+            {manualMacError && <p className="text-[12px] text-rose-500 font-medium mt-1.5">{manualMacError}</p>}
           </div>
 
           {selectedCompany && (
             <div className="border border-[var(--border-subtle)] rounded-xl overflow-hidden mb-4">
               <div className="px-4 py-2 bg-[var(--bg-subtle)] border-b border-[var(--border-subtle)] flex items-center justify-between">
-                <span className="text-[10px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">
+                <span className="text-[11px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">
                   {selectedCompany} — {companyDevices.length} cihaz
                 </span>
                 {companyDevices.length > 0 && (
-                  <button onClick={selectAllInCompany} className="text-[10px] font-semibold text-[var(--accent)] hover:underline">
+                  <button onClick={selectAllInCompany} className="text-[11px] font-semibold text-[var(--accent)] hover:underline">
                     Tümünü Seç
                   </button>
                 )}
               </div>
               <div className="max-h-[280px] overflow-y-auto custom-scroll divide-y divide-[var(--border-subtle)]">
                 {loadingDevices ? (
-                  <div className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">Yükleniyor...</div>
+                  <div className="px-4 py-6 text-center text-[13px] text-[var(--text-muted)]">Yükleniyor...</div>
                 ) : companyDevices.length === 0 ? (
-                  <div className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">Bu şirkete ait cihaz yok</div>
+                  <div className="px-4 py-6 text-center text-[13px] text-[var(--text-muted)]">Bu şirkete ait cihaz yok</div>
                 ) : companyDevices.map((d) => (
                   <label key={d.id} className="flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-[var(--bg-hover)] transition">
                     <input type="checkbox" checked={!!selectedDevices[d.mac]} onChange={() => toggleDevice(d)} className="cursor-pointer" />
                     <div className="min-w-0 flex-1">
-                      <div className="text-[12px] text-[var(--text-primary)] font-medium truncate">
+                      <div className="text-[13px] text-[var(--text-primary)] font-medium truncate">
                         {d.location || "—"} {d.device_code && <span className="text-[var(--text-muted)]">— {d.device_code}</span>}
                       </div>
-                      <div className="text-[10px] text-[var(--text-muted)] font-mono">{d.mac}</div>
+                      <div className="text-[11px] text-[var(--text-muted)] font-mono">{d.mac}</div>
                     </div>
                   </label>
                 ))}
@@ -419,17 +403,17 @@ export default function BulkUpdate({ token }) {
 
           <div className="border border-[var(--border-subtle)] rounded-xl overflow-hidden mb-5">
             <div className="px-4 py-2 bg-[var(--bg-subtle)] border-b border-[var(--border-subtle)] flex items-center justify-between">
-              <span className="text-[10px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">
+              <span className="text-[11px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">
                 Seçilen Cihazlar ({selectedList.length})
               </span>
               {selectedList.length > 0 && (
-                <button onClick={clearSelection} className="text-[10px] font-semibold text-rose-500 hover:underline">
+                <button onClick={clearSelection} className="text-[11px] font-semibold text-rose-500 hover:underline">
                   Tümünü Temizle
                 </button>
               )}
             </div>
             {selectedList.length === 0 ? (
-              <div className="px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">
+              <div className="px-4 py-6 text-center text-[13px] text-[var(--text-muted)]">
                 Henüz cihaz seçilmedi — yukarıdan şirket seçip cihaz işaretleyin
               </div>
             ) : (
@@ -437,10 +421,10 @@ export default function BulkUpdate({ token }) {
                 {selectedList.map((d) => (
                   <div key={d.mac} className="flex items-center gap-3 px-4 py-2">
                     <div className="min-w-0 flex-1">
-                      <div className="text-[12px] text-[var(--text-primary)] font-medium truncate">
+                      <div className="text-[13px] text-[var(--text-primary)] font-medium truncate">
                         {d.location || "—"} <span className="text-[var(--text-muted)]">({d.company})</span>
                       </div>
-                      <div className="text-[10px] text-[var(--text-muted)] font-mono">{d.mac}</div>
+                      <div className="text-[11px] text-[var(--text-muted)] font-mono">{d.mac}</div>
                     </div>
                     <button onClick={() => removeSelected(d.mac)} className="p-1 text-[var(--text-muted)] hover:text-rose-500 transition">
                       <HiOutlineXMark className="text-[14px]" />
@@ -452,27 +436,27 @@ export default function BulkUpdate({ token }) {
           </div>
 
           {jobActionError && (
-            <div className="mb-4 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-500 font-medium">
+            <div className="mb-4 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[12px] text-rose-500 font-medium">
               {jobActionError}
             </div>
           )}
 
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
-              <label className="text-[10px] font-bold tracking-[0.1em] uppercase text-[var(--text-muted)]">
+              <label className="text-[11px] font-bold tracking-[0.1em] uppercase text-[var(--text-muted)]">
                 Paralel
               </label>
               <select value={workerCount} onChange={(e) => setWorkerCount(Number(e.target.value))}
                 className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                           px-2 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
+                           px-2 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
                 {[1, 2, 3, 4, 5, 6, 8].map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
           <button onClick={startBulkUpdate} disabled={selectedList.length === 0 || starting}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[12px] font-bold border transition tracking-wide uppercase
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-semibold border transition
               ${selectedList.length === 0 || starting
                 ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
-                : "bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400 shadow-sm shadow-emerald-500/20 cursor-pointer"}`}>
+                : "bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer"}`}>
             <HiOutlineBolt className="text-[14px]" />
             {starting ? "Başlatılıyor..." : `${selectedList.length} Cihazı Güncelle (${otaType === "1" ? "ESP" : "MSP"})`}
           </button>
@@ -482,28 +466,28 @@ export default function BulkUpdate({ token }) {
 
       {job && (
         <>
-          <div className="mb-3 px-3 py-2 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-muted)]">
+          <div className="mb-3 px-3 py-2 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[12px] text-[var(--text-muted)]">
             <b className="text-[var(--text-primary)]">{job.kind === "esp" ? "ESP" : "MSP"}</b> güncellemesi
             {job.created_by && <> — başlatan: <b>{job.created_by}</b></>}
             {job.worker_count > 1 && <> — <b>{job.worker_count}</b> paralel şerit</>}
           </div>
 
           {jobActionError && (
-            <div className="mb-3 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-500 font-medium">
+            <div className="mb-3 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[12px] text-rose-500 font-medium">
               {jobActionError}
             </div>
           )}
 
           {job.auto_retry_next_at && (
-            <div className="mb-3 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-500 font-medium flex items-center gap-1.5">
-              <HiOutlineClock className="text-[12px] shrink-0" />
+            <div className="mb-3 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[12px] text-amber-500 font-medium flex items-center gap-1.5">
+              <HiOutlineClock className="text-[13px] shrink-0" />
               Otomatik tekrar deneme {(job.auto_retry_used || 0) + 1}/{job.auto_retry_max}
               {" — "}{formatCountdown(new Date(job.auto_retry_next_at).getTime() - Date.now())} sonra başlayacak
             </div>
           )}
 
           <div className="flex items-center justify-between mb-4 px-3 py-2 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)]">
-            <div className="flex items-center gap-4 text-[11px] font-semibold flex-wrap">
+            <div className="flex items-center gap-4 text-[12px] font-semibold flex-wrap">
               <span className="text-emerald-500">✓ {counts.success || 0} başarılı</span>
               {(counts.uptodate || 0) > 0 && <span className="text-sky-500">{counts.uptodate} zaten güncel</span>}
               {(counts.unverified || 0) > 0 && <span className="text-amber-500">{counts.unverified} doğrulanamadı</span>}
@@ -511,7 +495,7 @@ export default function BulkUpdate({ token }) {
               <span className="text-rose-500">✕ {(counts.failed || 0) + (counts.skipped || 0)} başarısız/atlandı</span>
               {running && (
                 <span className="text-amber-500 flex items-center gap-1">
-                  <HiOutlineClock className="text-[12px]" />
+                  <HiOutlineClock className="text-[13px]" />
                   {jobDevices.length - doneCount} devam ediyor
                 </span>
               )}
@@ -519,14 +503,14 @@ export default function BulkUpdate({ token }) {
             <div className="flex items-center gap-2 shrink-0">
               {canRetry && (
                 <button onClick={retryFailed}
-                  className="flex items-center gap-1.5 text-[10px] font-bold px-3 py-1.5 rounded-md border tracking-wide uppercase
+                  className="flex items-center gap-1.5 text-[11px] font-semibold px-3.5 py-2 rounded-lg border
                              bg-amber-500/10 text-amber-500 border-amber-500/30 hover:bg-amber-500/20 transition cursor-pointer">
-                  <HiOutlineArrowPath className="text-[11px]" />
+                  <HiOutlineArrowPath className="text-[12px]" />
                   {retryableCount} Tanesini Tekrar Dene
                 </button>
               )}
               <button onClick={allDone ? closeJob : stopBulkUpdate}
-                className="text-[10px] font-bold px-3 py-1.5 rounded-md border tracking-wide uppercase bg-rose-500/10 text-rose-500 border-rose-500/30 hover:bg-rose-500/20 transition cursor-pointer">
+                className="text-[11px] font-semibold px-3.5 py-2 rounded-lg border bg-rose-500/10 text-rose-500 border-rose-500/30 hover:bg-rose-500/20 transition cursor-pointer">
                 {allDone ? "Kapat" : "Durdur"}
               </button>
             </div>
@@ -541,27 +525,27 @@ export default function BulkUpdate({ token }) {
                 <div key={d.mac} className="px-4 py-3">
                   <div className="flex items-center justify-between gap-3 mb-1">
                     <div className="min-w-0">
-                      <span className="text-[12px] font-medium text-[var(--text-primary)]">{d.location || d.mac}</span>
-                      <span className="text-[10px] text-[var(--text-muted)] font-mono ml-2">{d.mac}</span>
+                      <span className="text-[13px] font-medium text-[var(--text-primary)]">{d.location || d.mac}</span>
+                      <span className="text-[11px] text-[var(--text-muted)] font-mono ml-2">{d.mac}</span>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {isGood && <HiOutlineCheckCircle className="text-emerald-500 text-[14px]" />}
                       {isHard && !isGood && <HiOutlineExclamationCircle className="text-rose-500 text-[14px]" />}
                       {isWarn && <HiOutlineExclamationCircle className="text-amber-500 text-[14px]" />}
-                      {!isHard && !isWarn && <HiOutlineArrowPath className="text-amber-500 text-[13px] animate-spin" />}
-                      <span className={`text-[11px] font-bold ${PHASE_COLORS[d.phase] || "text-[var(--text-muted)]"}`}>
+                      {!isHard && !isWarn && <HiOutlineArrowPath className="text-amber-500 text-[14px] animate-spin" />}
+                      <span className={`text-[12px] font-bold ${PHASE_COLORS[d.phase] || "text-[var(--text-muted)]"}`}>
                         {PHASE_LABELS[d.phase] || d.phase}
                       </span>
                     </div>
                   </div>
-                  {d.message && <p className="text-[10px] text-[var(--text-muted)]">{d.message}</p>}
+                  {d.message && <p className="text-[11px] text-[var(--text-muted)]">{d.message}</p>}
                   {d.percent !== null && d.percent !== undefined && (
                     <div className="mt-1.5 flex items-center gap-2">
                       <div className="flex-1 h-1.5 rounded-full bg-[var(--bg-subtle)] overflow-hidden">
                         <div className={`h-full transition-all duration-500 ${isGood ? "bg-emerald-500" : "bg-amber-500"}`}
                           style={{ width: `${Math.max(0, Math.min(100, Number(d.percent) || 0))}%` }} />
                       </div>
-                      <span className="text-[10px] font-mono text-[var(--text-muted)] shrink-0 w-9 text-right">
+                      <span className="text-[11px] font-mono text-[var(--text-muted)] shrink-0 w-9 text-right">
                         %{d.percent}
                       </span>
                     </div>

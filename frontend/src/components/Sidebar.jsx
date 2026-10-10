@@ -1,4 +1,15 @@
+import { useState, useEffect } from "react";
+import { HiOutlineChevronDown, HiOutlineCpuChip, HiOutlineChartBar, HiOutlineRectangleStack, HiOutlineArrowUpTray, HiOutlineCog6Tooth } from "react-icons/hi2";
 import { HiOutlineArrowRightOnRectangle, HiOutlineSun, HiOutlineMoon, HiOutlineXMark, HiOutlineUserCircle } from "react-icons/hi2";
+
+// Grup başlıklarının ikonları — gruplar açılır/kapanır (akordeon) satırlar olarak çizilir
+const GROUP_ICONS = {
+  "Cihaz": <HiOutlineCpuChip />,
+  "İzleme": <HiOutlineChartBar />,
+  "Toplu İşlemler": <HiOutlineRectangleStack />,
+  "OTA": <HiOutlineArrowUpTray />,
+  "Yönetim": <HiOutlineCog6Tooth />,
+};
 
 /* ── Sidebar ──
    Masaüstünde sabit (260px), mobilde slide-in overlay.
@@ -24,6 +35,28 @@ export default function Sidebar({
     onSectionChange?.(key);
     onCloseMobile?.();
   };
+
+  // Bölümleri "group" alanına göre, ilk geçtikleri sırayla grupla
+  const groups = [];
+  for (const s of sections) {
+    const name = s.group || "";
+    let g = groups.find((x) => x.name === name);
+    if (!g) { g = { name, items: [] }; groups.push(g); }
+    g.items.push(s);
+  }
+
+  // Açık gruplar: aktif bölümün grubu her zaman açılır, diğerleri kullanıcı açana kadar kapalı
+  const activeGroup = sections.find((s) => s.key === activeSection)?.group || "";
+  const [openGroups, setOpenGroups] = useState(() => new Set([activeGroup]));
+  useEffect(() => {
+    if (!activeGroup) return;
+    setOpenGroups((prev) => (prev.has(activeGroup) ? prev : new Set(prev).add(activeGroup)));
+  }, [activeGroup]);
+  const toggleGroup = (name) => setOpenGroups((prev) => {
+    const next = new Set(prev);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    return next;
+  });
 
   return (
     <>
@@ -55,7 +88,7 @@ export default function Sidebar({
                 alt="Bluetech"
                 className="h-4 w-auto"
               />
-              <span className="text-[9px] font-medium tracking-[0.15em] uppercase text-[var(--text-muted)]">
+              <span className="text-[10px] font-medium tracking-[0.15em] uppercase text-[var(--text-muted)]">
                 EV Charge Panel
               </span>
             </div>
@@ -73,19 +106,19 @@ export default function Sidebar({
         <div className="px-3 pt-3 pb-2">
           <div className="relative p-[3px] rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)] flex">
             <div
-              className={`absolute top-[3px] bottom-[3px] rounded-md bg-[var(--accent)] shadow-sm shadow-cyan-500/20 transition-all duration-300 ease-out
+              className={`absolute top-[3px] bottom-[3px] rounded-md bg-[var(--accent)] shadow-sm shadow-blue-500/20 transition-all duration-300 ease-out
                 ${activePage === "dashboard" ? "left-[3px] right-[50%]" : "left-[50%] right-[3px]"}`}
             />
             <button
               onClick={() => onNavigate?.("dashboard")}
-              className={`relative flex-1 text-[11px] font-semibold py-1.5 rounded-md transition-colors z-10
+              className={`relative flex-1 text-[12px] font-semibold py-1.5 rounded-md transition-colors z-10
                 ${activePage === "dashboard" ? "text-white" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"}`}
             >
               Dashboard
             </button>
             <button
               onClick={() => onNavigate?.("panel")}
-              className={`relative flex-1 text-[11px] font-semibold py-1.5 rounded-md transition-colors z-10
+              className={`relative flex-1 text-[12px] font-semibold py-1.5 rounded-md transition-colors z-10
                 ${activePage === "panel" ? "text-white" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"}`}
             >
               Panel
@@ -95,11 +128,22 @@ export default function Sidebar({
 
         {/* Section List */}
         <nav className="flex-1 overflow-y-auto px-2 py-2 custom-scroll">
-          <div className="px-3 pb-2 pt-1 text-[9px] font-bold tracking-[0.2em] uppercase text-[var(--text-muted)]">
-            Bölümler
-          </div>
-          <ul className="space-y-0.5">
-            {sections.map((s) => {
+          {groups.map((g) => (
+          <div key={g.name} className="mb-0.5">
+          {g.name && (
+            <button
+              onClick={() => toggleGroup(g.name)}
+              aria-expanded={openGroups.has(g.name)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left transition-colors cursor-pointer
+                ${g.name === activeGroup ? "text-[var(--accent)]" : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"}`}
+            >
+              <span className="text-[16px] shrink-0">{GROUP_ICONS[g.name]}</span>
+              <span className="text-[13px] font-semibold flex-1 truncate">{g.name}</span>
+              <HiOutlineChevronDown className={`text-[13px] transition-transform ${openGroups.has(g.name) ? "rotate-180" : ""}`} />
+            </button>
+          )}
+          <ul className={`space-y-0.5 ${g.name ? "ml-[19px] pl-2 border-l border-[var(--border-subtle)] my-0.5" : ""} ${g.name && !openGroups.has(g.name) ? "hidden" : ""}`}>
+            {g.items.map((s) => {
               const isActive = activeSection === s.key;
               return (
                 <li key={s.key}>
@@ -112,17 +156,21 @@ export default function Sidebar({
                       }`}
                   >
                     {/* Active indicator bar */}
+                    {!g.name && (
                     <span
                       className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full transition-all
                         ${isActive ? "h-5 bg-[var(--accent)]" : "h-0 bg-transparent"}`}
                     />
-                    <span className={`text-[15px] shrink-0 transition-colors
-                      ${isActive ? "text-[var(--accent)]" : "text-[var(--text-muted)] group-hover:text-[var(--text-secondary)]"}`}>
+                    )}
+                    {!g.name && (
+                    <span className={`text-[16px] shrink-0 transition-colors
+                      ${isActive ? "text-[var(--accent)]" : "text-[var(--text-secondary)]"}`}>
                       {s.icon}
                     </span>
-                    <span className="text-[12px] font-medium flex-1 truncate">{s.label}</span>
+                    )}
+                    <span className={`text-[13px] flex-1 truncate ${g.name ? "font-medium" : "font-semibold"}`}>{s.label}</span>
                     {s.badge && (
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded tracking-wider
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded tracking-wider
                         ${isActive
                           ? "bg-[var(--accent)] text-white"
                           : "bg-[var(--bg-subtle)] text-[var(--text-muted)]"
@@ -135,23 +183,25 @@ export default function Sidebar({
               );
             })}
           </ul>
+          </div>
+          ))}
         </nav>
 
         {/* Current user info */}
         {currentUser && (
-          <div className="border-t border-[var(--border-subtle)] px-3 py-3">
+          <div className="lg:hidden border-t border-[var(--border-subtle)] px-3 py-3">
             <div className="flex items-center gap-2.5 px-2 py-1.5">
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[13px] font-bold shrink-0
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[14px] font-bold shrink-0
                 ${currentUser.role === "superadmin" ? "bg-violet-500/15 text-violet-400 border border-violet-500/30" :
                   currentUser.role === "admin"      ? "bg-amber-500/15 text-amber-500 border border-amber-500/30" :
                                                       "bg-sky-500/15 text-sky-500 border border-sky-500/30"}`}>
                 {(currentUser.fullName || currentUser.username || "?").charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-[12px] font-semibold text-[var(--text-primary)] truncate">
+                <div className="text-[13px] font-semibold text-[var(--text-primary)] truncate">
                   {currentUser.fullName || currentUser.username}
                 </div>
-                <div className="text-[9px] font-bold tracking-wider uppercase text-[var(--text-muted)] mt-0.5">
+                <div className="text-[10px] font-bold tracking-wider uppercase text-[var(--text-muted)] mt-0.5">
                   {currentUser.role === "superadmin" ? "Superadmin" :
                    currentUser.role === "admin" ? "Admin" : "Operator"}
                 </div>
@@ -160,12 +210,12 @@ export default function Sidebar({
           </div>
         )}
 
-        {/* Footer actions */}
-        <div className="border-t border-[var(--border-subtle)] px-3 py-3 space-y-1">
+        {/* Footer actions — masaüstünde üst bardaki kullanıcı menüsünde */}
+        <div className="lg:hidden border-t border-[var(--border-subtle)] px-3 py-3 space-y-1">
           {onOpenAccount && (
             <button
               onClick={onOpenAccount}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[12px] font-medium
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] font-medium
                          text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]
                          transition-colors"
             >
@@ -179,7 +229,7 @@ export default function Sidebar({
 
           <button
             onClick={onToggleTheme}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[12px] font-medium
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] font-medium
                        text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]
                        transition-colors"
           >
@@ -189,7 +239,7 @@ export default function Sidebar({
             <span className="flex-1 text-left">
               {theme === "dark" ? "Açık Tema" : "Koyu Tema"}
             </span>
-            <span className="text-[9px] font-bold tracking-wider text-[var(--text-muted)]">
+            <span className="text-[10px] font-bold tracking-wider text-[var(--text-muted)]">
               {theme === "dark" ? "LIGHT" : "DARK"}
             </span>
           </button>
@@ -197,7 +247,7 @@ export default function Sidebar({
           {onLogout && (
             <button
               onClick={onLogout}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[12px] font-medium
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] font-medium
                          text-[var(--text-secondary)] hover:bg-rose-500/10 hover:text-rose-400
                          transition-colors"
             >

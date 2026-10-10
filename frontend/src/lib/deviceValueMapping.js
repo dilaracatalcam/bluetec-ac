@@ -25,7 +25,7 @@ export function mapValue(id, raw) {
   if (id === 17) return v === "0" ? "Ürün Modu" : v === "1" ? "Test Modu" : v;
   if (id === 18) return v === "0" ? "Kablosuz" : v === "1" ? "Kablolu" : v;
   if (id === 19) return ({ "0": "Plug & Charge", "1": "RFID Charge", "2": "OCPP Charge" })[v] || v;
-  if (id === 69) return v === "0" ? "Üretim Modu" : v === "1" ? "Test Modu" : v;
+  if (id === 69) return ({ "0": "Disable", "1": "Soket Takılı", "2": "Şarja Geç" })[v] || v;
   if (id === 37) return ({ "NONE": "Bağlı Değil", "GSM": "GSM", "WiFi": "WiFi", "ETH": "Ethernet" })[v] || v;
   if (id === 38) return v === "0" ? "Deaktif" : v === "1" ? "Aktif" : v;
   if (id === 45) return v === "0" ? "Kopuk" : v === "1" ? "Bağlı" : v;

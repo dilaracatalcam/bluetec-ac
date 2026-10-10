@@ -147,16 +147,16 @@ function HudCard({ corner, icon, label, value, unit, accentChip, light }) {
       style={cardStyle}
     >
       {accentChip ? (
-        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-[3px] text-[10px] sm:text-[11px] font-bold ${accentChip}`}>
+        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-[3px] text-[11px] sm:text-[12px] font-bold ${accentChip}`}>
           {icon} <span className="truncate">{value || "——"}</span>
         </span>
       ) : (
         <>
           <div className={`flex items-baseline gap-1 ${light ? "text-[#0F172A]" : "text-white"}`}>
             <span className="text-[14px] sm:text-[16px] font-bold font-display tabular-nums leading-none">{value || "——"}</span>
-            {unit && <span className={`text-[9px] sm:text-[10px] font-semibold ${light ? "text-[#64748B]" : "text-white/60"}`}>{unit}</span>}
+            {unit && <span className={`text-[10px] sm:text-[11px] font-semibold ${light ? "text-[#64748B]" : "text-white/60"}`}>{unit}</span>}
           </div>
-          <div className={`flex items-center gap-1 mt-1 text-[9px] sm:text-[10px] font-semibold truncate ${light ? "text-[#64748B]" : "text-white/50"}`}>
+          <div className={`flex items-center gap-1 mt-1 text-[10px] sm:text-[11px] font-semibold truncate ${light ? "text-[#64748B]" : "text-white/50"}`}>
             {icon}{label}
           </div>
         </>

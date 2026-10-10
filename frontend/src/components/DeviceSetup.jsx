@@ -263,30 +263,15 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
 
   return (
     <div>
-      <div className="mb-5 pb-4 border-b border-[var(--border-subtle)]">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)] text-[18px] shrink-0">
-            <HiOutlineWrenchScrewdriver />
-          </div>
-          <div>
-            <h2 className="text-[17px] font-bold text-[var(--text-primary)] font-display tracking-tight leading-tight">
-              Cihaz Kurulum
-            </h2>
-            <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-              Şirket profili seçin, parametreleri düzenleyin ve toplu gönderin
-            </p>
-          </div>
-        </div>
-      </div>
 
       {loadError && (
-        <div className="mb-4 px-3 py-2 rounded-lg text-[12px] font-medium border bg-rose-500/10 border-rose-500/30 text-rose-500">
+        <div className="mb-4 px-3 py-2 rounded-lg text-[13px] font-medium border bg-rose-500/10 border-rose-500/30 text-rose-500">
           {loadError}
         </div>
       )}
 
       <div className="mb-5">
-        <label className="block text-[10px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
+        <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-2">
           Şirket Profili
         </label>
         <div className="flex flex-col sm:flex-row gap-2">
@@ -294,7 +279,7 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
             value={selectedProfile}
             onChange={(e) => handleProfileSelect(e.target.value)}
             className="w-full sm:w-72 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                       px-3 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer"
+                       px-3 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer"
           >
             <option value="">Şirket seçin...</option>
             {Object.entries(profiles).map(([key, p]) => (
@@ -303,10 +288,10 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
           </select>
           <button
             onClick={() => { setShowAddProfile((v) => !v); setProfileError(""); }}
-            className="flex items-center justify-center gap-1.5 text-[11px] font-bold px-3 py-2 rounded-lg border transition tracking-wide uppercase shrink-0
+            className="flex items-center justify-center gap-1.5 text-[12px] font-bold px-3 py-2 rounded-lg border transition shrink-0
                        bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft-hover)] cursor-pointer"
           >
-            <HiOutlinePlus className="text-[12px]" />
+            <HiOutlinePlus className="text-[13px]" />
             Yeni Şirket
           </button>
         </div>
@@ -314,25 +299,25 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
         {showAddProfile && (
           <div className="mt-2 p-3 bg-[var(--bg-sunken)] border border-[var(--border-subtle)] rounded-lg flex flex-col sm:flex-row gap-2 sm:items-center">
             {profileError && (
-              <div className="text-[11px] text-rose-500 font-medium sm:mr-1">{profileError}</div>
+              <div className="text-[12px] text-rose-500 font-medium sm:mr-1">{profileError}</div>
             )}
             <input type="text" value={newProfileLabel} onChange={(e) => setNewProfileLabel(e.target.value)}
               placeholder="Şirket adı (örn: Acrapol)"
               onKeyDown={(e) => { if (e.key === "Enter") handleAddProfile(); }}
               className="w-full sm:w-64 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                         px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition
+                         px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition
                          placeholder:text-[var(--text-muted)]" />
             <div className="flex gap-2">
               <button onClick={handleAddProfile} disabled={profileSaving}
-                className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-md border transition tracking-wide uppercase
-                           bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400 cursor-pointer disabled:opacity-50">
-                <HiOutlineCheckCircle className="text-[12px]" />
+                className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition
+                           bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer disabled:opacity-50">
+                <HiOutlineCheckCircle className="text-[13px]" />
                 {profileSaving ? "Ekleniyor…" : "Ekle"}
               </button>
               <button onClick={() => { setShowAddProfile(false); setNewProfileLabel(""); setProfileError(""); }}
-                className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-md border transition tracking-wide uppercase
+                className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-md border transition
                            bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] cursor-pointer">
-                <HiOutlineXMark className="text-[12px]" />
+                <HiOutlineXMark className="text-[13px]" />
                 Vazgeç
               </button>
             </div>
@@ -344,47 +329,47 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
         <>
           <div className="border border-[var(--border-subtle)] rounded-xl overflow-hidden mb-4">
             <div className="px-4 py-2 bg-[var(--bg-subtle)] border-b border-[var(--border-subtle)] flex items-center justify-between">
-              <span className="text-[10px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">
+              <span className="text-[11px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">
                 {profile.label} — {profile.params.filter(p => drafts[p.id] !== "").length} parametre
               </span>
               <button
                 onClick={() => { setShowAddParam((v) => !v); setParamError(""); }}
-                className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-md border transition tracking-wide uppercase
+                className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-md border transition
                            bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft-hover)] cursor-pointer"
               >
-                <HiOutlinePlus className="text-[11px]" />
+                <HiOutlinePlus className="text-[12px]" />
                 Yeni Parametre
               </button>
             </div>
 
             {showAddParam && (
               <div className="px-4 py-3 bg-[var(--bg-sunken)] border-b border-[var(--border-subtle)] flex flex-col gap-2">
-                <p className="text-[10px] text-[var(--text-muted)] italic">
+                <p className="text-[11px] text-[var(--text-muted)] italic">
                   Bu alan "{profile.label}" profiline kalıcı olarak eklenir — sen silene kadar burada kalır.
                 </p>
                 {paramError && (
-                  <div className="text-[11px] text-rose-500 font-medium">{paramError}</div>
+                  <div className="text-[12px] text-rose-500 font-medium">{paramError}</div>
                 )}
                 <div className="flex flex-col sm:flex-row gap-2">
                   <input type="number" value={newParamId} onChange={(e) => setNewParamId(e.target.value)}
                     placeholder="Parametre ID (örn: 45)"
                     className="w-full sm:w-36 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                               px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition font-mono
+                               px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition font-mono
                                placeholder:text-[var(--text-muted)]" />
                   <input type="text" value={newParamLabel} onChange={(e) => setNewParamLabel(e.target.value)}
                     placeholder="Etiket"
                     className="w-full sm:w-40 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                               px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition
+                               px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition
                                placeholder:text-[var(--text-muted)]" />
                   <input type="text" value={newParamValue} onChange={(e) => setNewParamValue(e.target.value)}
                     placeholder="Değer"
                     className="flex-1 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                               px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition font-mono
+                               px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition font-mono
                                placeholder:text-[var(--text-muted)]" />
                   <button onClick={handleAddParam} disabled={paramSaving}
-                    className={`flex items-center justify-center gap-1 text-[11px] font-bold px-3 py-1.5 rounded-md border transition tracking-wide uppercase shrink-0
-                      ${paramSaving ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400 cursor-pointer"}`}>
-                    <HiOutlinePlus className="text-[12px]" />
+                    className={`flex items-center justify-center gap-1 text-[13px] font-semibold px-3.5 py-2 rounded-lg border transition shrink-0
+                      ${paramSaving ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer"}`}>
+                    <HiOutlinePlus className="text-[13px]" />
                     {paramSaving ? "Ekleniyor..." : "Ekle"}
                   </button>
                 </div>
@@ -401,26 +386,26 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
                         <input type="text" value={editLabel} onChange={(e) => setEditLabel(e.target.value)}
                           placeholder="Etiket"
                           className="w-[140px] shrink-0 bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                     px-2 py-1 rounded-md text-[11px] outline-none focus:border-[var(--accent)] transition" />
+                                     px-2 py-1 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition" />
                         <input type="text" value={editValue} onChange={(e) => setEditValue(e.target.value)}
                           placeholder="Değer"
                           className="flex-1 bg-[var(--bg-sunken)] border border-[var(--accent)] text-[var(--text-primary)]
-                                     px-2.5 py-1.5 rounded-md text-[12px] outline-none font-mono" />
+                                     px-2.5 py-1.5 rounded-md text-[13px] outline-none font-mono" />
                         <button onClick={() => handleSaveEditParam(p.id)} disabled={paramSaving}
                           title="Kaydet"
                           className="p-1.5 rounded-md border bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30 transition cursor-pointer shrink-0">
-                          <HiOutlineCheckCircle className="text-[13px]" />
+                          <HiOutlineCheckCircle className="text-[14px]" />
                         </button>
                         <button onClick={cancelEditParam} title="Vazgeç"
-                          className="p-1.5 rounded-md border bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-primary)] transition cursor-pointer shrink-0">
-                          <HiOutlineXMark className="text-[13px]" />
+                          className="p-1.5 rounded-lg border bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-primary)] transition cursor-pointer shrink-0">
+                          <HiOutlineXMark className="text-[14px]" />
                         </button>
                       </>
                     ) : (
                       <>
                         <div className="w-[140px] shrink-0">
-                          <span className="text-[11px] text-[var(--text-muted)] font-medium">{p.label}</span>
-                          <span className="text-[9px] text-[var(--text-muted)] opacity-50 ml-1">#{p.id}</span>
+                          <span className="text-[12px] text-[var(--text-muted)] font-medium">{p.label}</span>
+                          <span className="text-[10px] text-[var(--text-muted)] opacity-50 ml-1">#{p.id}</span>
                         </div>
                         <input
                           type="text"
@@ -428,7 +413,7 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
                           onChange={(e) => setDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))}
                           placeholder={p.id === 2 ? "OCPP ID girin" : p.id === 44 ? "Seri no girin" : ""}
                           className={`flex-1 bg-[var(--bg-sunken)] border text-[var(--text-primary)]
-                                     px-2.5 py-1.5 rounded-md text-[12px] outline-none transition
+                                     px-2.5 py-1.5 rounded-md text-[13px] outline-none transition
                                      placeholder:text-[var(--text-muted)] font-mono
                                      ${results?.failed?.includes(p.label)
                                        ? "border-rose-500/50 bg-rose-500/5"
@@ -445,11 +430,11 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
                         )}
                         <button onClick={() => startEditParam(p)} title="Etiket/değer düzenle"
                           className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-soft)] transition cursor-pointer shrink-0">
-                          <HiOutlinePencilSquare className="text-[13px]" />
+                          <HiOutlinePencilSquare className="text-[14px]" />
                         </button>
                         <button onClick={() => handleDeleteParam(p)} title="Profilden kalıcı sil"
                           className="p-1 rounded-md text-[var(--text-muted)] hover:text-rose-500 hover:bg-rose-500/10 transition cursor-pointer shrink-0">
-                          <HiOutlineTrash className="text-[13px]" />
+                          <HiOutlineTrash className="text-[14px]" />
                         </button>
                       </>
                     )}
@@ -460,17 +445,17 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
           </div>
 
           {paramError && !showAddParam && (
-            <div className="mb-3 text-[11px] text-rose-500 font-medium">{paramError}</div>
+            <div className="mb-3 text-[12px] text-rose-500 font-medium">{paramError}</div>
           )}
 
           {progress && (
-            <div className="mb-3 text-[11px] text-[var(--accent)] font-medium font-mono animate-pulse">
+            <div className="mb-3 text-[12px] text-[var(--accent)] font-medium font-mono animate-pulse">
               {progress}
             </div>
           )}
 
           {results && (
-            <div className={`mb-4 px-3 py-2 rounded-lg text-[12px] font-medium border
+            <div className={`mb-4 px-3 py-2 rounded-lg text-[13px] font-medium border
               ${results.failed.length > 0
                 ? "bg-amber-500/10 border-amber-500/30 text-amber-500"
                 : "bg-emerald-500/10 border-emerald-500/30 text-emerald-500"}`}>
@@ -483,10 +468,10 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
             <button
               onClick={handleSend}
               disabled={!isActive || sending}
-              className={`flex items-center gap-2 px-5 py-2 rounded-lg text-[12px] font-bold border transition tracking-wide uppercase
+              className={`flex items-center gap-2 px-5 py-2 rounded-lg text-[13px] font-semibold border transition
                 ${(!isActive || sending)
                   ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
-                  : "bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400 shadow-sm shadow-emerald-500/20 cursor-pointer"}`}
+                  : "bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer"}`}
             >
               <HiOutlineArrowPath className={`text-[14px] ${sending ? "animate-spin" : ""}`} />
               {sending ? "Gönderiliyor..." : "Toplu Gönder"}
@@ -496,7 +481,7 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
               <button
                 onClick={handleRetryFailed}
                 disabled={!isActive || sending}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[12px] font-bold border transition tracking-wide uppercase
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold border transition
                   ${(!isActive || sending)
                     ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
                     : "bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border-amber-500/30 cursor-pointer"}`}
@@ -509,7 +494,7 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
             <button
               onClick={handleReset}
               disabled={!isActive || resetLoading}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[12px] font-bold border transition tracking-wide uppercase
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold border transition
                 ${(!isActive || resetLoading)
                   ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
                   : "bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border-rose-500/30 cursor-pointer"}`}
@@ -519,7 +504,7 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
             </button>
 
             {resetResult && (
-              <span className={`text-[11px] font-medium font-mono ${resetResult.includes("resetlendi") ? "text-emerald-400" : "text-rose-400"}`}>
+              <span className={`text-[12px] font-medium font-mono ${resetResult.includes("resetlendi") ? "text-emerald-400" : "text-rose-400"}`}>
                 {resetResult}
               </span>
             )}
@@ -530,7 +515,7 @@ export default function DeviceSetup({ token, isActive, sendCommand, setReadValue
       {!profile && !loadError && (
         <div className="text-center py-12 text-[var(--text-muted)]">
           <HiOutlineWrenchScrewdriver className="text-[32px] mx-auto mb-2 opacity-40" />
-          <p className="text-[12px]">Başlamak için bir şirket profili seçin</p>
+          <p className="text-[13px]">Başlamak için bir şirket profili seçin</p>
         </div>
       )}
     </div>

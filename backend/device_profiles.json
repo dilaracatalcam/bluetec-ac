@@ -65,7 +65,7 @@
       {
         "id": 3,
         "label": "QR Kod",
-        "value": ""
+        "value": "ezhub.org/"
       },
       {
         "id": 4,
@@ -121,6 +121,16 @@
         "id": 64,
         "label": "Logo Adi",
         "value": "sepas_logo"
+      },
+      {
+        "id": 36,
+        "label": "renk",
+        "value": "0x4DB748"
+      },
+      {
+        "id": 63,
+        "label": "logo uptade activate",
+        "value": "1"
       }
     ]
   },
@@ -236,6 +246,16 @@
         "id": 44,
         "label": "Box Seri No",
         "value": ""
+      },
+      {
+        "id": 63,
+        "label": "logo activate",
+        "value": "1"
+      },
+      {
+        "id": 64,
+        "label": "logo ismi",
+        "value": "celikler_logo"
       }
     ]
   },

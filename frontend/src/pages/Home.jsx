@@ -17,6 +17,8 @@ import AccountSettings from "../components/AccountSettings.jsx";
 import OtaServerControl from "../components/OtaServerControl.jsx";
 import DeviceVersions from "../components/DeviceVersions.jsx";
 import OtaServerLogs from "../components/OtaServerLogs.jsx";
+import DeviceLogs from "../components/DeviceLogs.jsx";
+import Overview from "../components/Overview.jsx";
 import { mapValue, csColor } from "../lib/deviceValueMapping.js";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
@@ -32,6 +34,7 @@ import {
   HiOutlineWrenchScrewdriver, HiOutlineServerStack,
   HiOutlineFingerPrint, HiOutlineCircleStack, HiOutlineBars3,
   HiOutlineSignal, HiOutlineUsers, HiOutlineDocumentMagnifyingGlass, HiOutlineUserCircle,
+  HiOutlineSquares2X2, HiOutlineSun, HiOutlineMoon, HiOutlineArrowRightOnRectangle,
   HiOutlineViewColumns, HiOutlineChevronDown, HiOutlineEllipsisVertical, HiOutlineXMark
 } from "react-icons/hi2";
 import { TbPlugConnected, TbBrandApple, TbBrandGooglePlay, TbGauge, TbColorSwatch, TbTargetArrow, TbActivity, TbAlertCircle, TbTemperature, TbDroplet, TbEngine } from "react-icons/tb";
@@ -104,10 +107,11 @@ const MSP_CONFIG_ADMIN = [
       { value: "0", label: "Kablosuz" },
       { value: "1", label: "Kablolu" },
     ]},
-  { id: 69, icon: <HiOutlineCommandLine />,    label: "MSP Modu",
+  { id: 69, icon: <HiOutlineCommandLine />,    label: "OCPP Sanal Mod",
     type: "dropdown", options: [
-      { value: "0", label: "Üretim Modu" },
-      { value: "1", label: "Test Modu" },
+      { value: "0", label: "Disable" },
+      { value: "1", label: "Soket Takılı" },
+      { value: "2", label: "Şarja Geç" },
     ]},
 ];
 
@@ -208,30 +212,40 @@ const OCPP_CREDS = [
   { id: 44, icon: <HiOutlineTag />,                 label: "Box Seri No" },
 ];
 
-/* ── Section tanımları — sidebar için ── */
+/* ── Section tanımları — sidebar için ──
+   group: sidebar'da hangi başlık altında görüneceği (sıra, ilk geçtiği yere göre). */
 const SECTIONS = [
-  { key: "device-select", label: "Cihaz Seç", icon: <HiOutlineCpuChip /> },
-  { key: "ocpp-wifi",    label: "OCPP & WiFi",       icon: <HiOutlineGlobeAlt /> },
-  { key: "ui",           label: "Bağlantı & UI",     icon: <TbPlugConnected /> },
-  { key: "msp-config",   label: "MSP Konfigürasyon", icon: <HiOutlineCog6Tooth /> },
-  { key: "esp-ctrl",     label: "ESP Kontrol",       icon: <HiOutlineCpuChip /> },
-  { key: "telemetry",    label: "Canlı Telemetri",   icon: <TbActivity />, badge: "LIVE" },
-  { key: "msp-tele",     label: "MSP Telemetri",     icon: <HiOutlineSignal /> },
-  { key: "ocpp-creds",   label: "OCPP Credentials",  icon: <HiOutlineIdentification /> },
-  { key: "ota",          label: "OTA Güncelleme",    icon: <HiOutlineArrowUpTray />, superadminOnly: true, adminOnly: true },
-  { key: "connections",  label: "Aktif Bağlantılar", icon: <HiOutlineSignal />, adminOnly: true },
-  { key: "users",        label: "Kullanıcı Yönetimi", icon: <HiOutlineUsers />, superadminOnly: true, adminOnly: true },
-  { key: "device-mgmt",  label: "Cihaz Yönetimi",    icon: <HiOutlineCpuChip />, superadminOnly: true, adminOnly: true },
-  { key: "device-setup", label: "Cihaz Kurulum",    icon: <HiOutlineWrenchScrewdriver />, superadminOnly: true, adminOnly: true },
-  { key: "bulk-update",  label: "Toplu Güncelleme", icon: <HiOutlineArrowUpTray />, superadminOnly: true, adminOnly: true },
-  // superadmin panelden, operator (şirket hesabı) kendi dashboard'undan erişir —
-  // "admin" rolü kasıtlı dışarıda (Toplu Güncelleme/firmware ile aynı ihtiyat).
-  { key: "bulk-param",   label: "Toplu Parametre",  icon: <HiOutlinePencilSquare />, roles: ["superadmin", "operator"] },
-  { key: "device-status", label: "Toplu Okuma",     icon: <HiOutlineViewColumns />, roles: ["superadmin", "operator"] },
-  { key: "ota-server",   label: "OTA Sunucu Kontrolü", icon: <HiOutlineServerStack />, superadminOnly: true, adminOnly: true },
-  { key: "device-versions", label: "Cihaz Versiyonları", icon: <HiOutlineDocumentMagnifyingGlass />, superadminOnly: true, adminOnly: true },
-  { key: "account",      label: "Hesap Yönetimi",   icon: <HiOutlineUserCircle /> },
+  { group: "", key: "overview", label: "Genel Bakış", icon: <HiOutlineSquares2X2 /> },
+
+  { group: "Cihaz", key: "device-select", title: "Cihaz Seç", desc: "Bağlanmak istediğiniz cihazı seçin", label: "Cihaz Seç", icon: <HiOutlineCpuChip /> },
+  { group: "Cihaz", key: "ocpp-wifi", title: "OCPP & WiFi Ayarları", desc: "OCPP endpoint ve kablosuz ağ konfigürasyonu",    label: "OCPP & WiFi",       icon: <HiOutlineGlobeAlt /> },
+  { group: "Cihaz", key: "ui", title: "Bağlantı & UI Ayarları", desc: "İstasyon görünümü ve haberleşme tercihleri",           label: "Bağlantı & UI",     icon: <TbPlugConnected /> },
+  { group: "Cihaz", key: "msp-config", title: "MSP Konfigürasyon", desc: "Cihaz modu, ölçüm ayarları ve reset",   label: "MSP Konfigürasyon", icon: <HiOutlineCog6Tooth /> },
+  { group: "Cihaz", key: "esp-ctrl", title: "ESP Kontrol", desc: "Anlık cihaz kontrolü ve ağ bağlantı durumu",     label: "ESP Kontrol",       icon: <HiOutlineCpuChip /> },
+  { group: "Cihaz", key: "ocpp-creds", title: "OCPP Credentials", desc: "Şarj noktası kimlik ve seri bilgileri",   label: "OCPP Credentials",  icon: <HiOutlineIdentification /> },
+  { group: "Cihaz", key: "device-setup", title: "Cihaz Kurulum", desc: "Şirket profili seçin, parametreleri düzenleyin ve toplu gönderin", label: "Cihaz Kurulum",    icon: <HiOutlineWrenchScrewdriver />, adminOnly: true },
+
+  { group: "İzleme", key: "telemetry", title: "Canlı Telemetri", desc: "Anlık şarj verileri ve cihaz durumu",    label: "Canlı Telemetri",   icon: <TbActivity />, badge: "LIVE" },
+  { group: "İzleme", key: "msp-tele", title: "MSP Telemetri", desc: "Faz voltajları, akımlar ve MSP çıkış verileri",     label: "MSP Telemetri",     icon: <HiOutlineSignal /> },
+  { group: "İzleme", key: "logs", title: "Cihaz Logları", desc: "Verbose ve debug log akışını açın, canlı izleyin",         label: "Loglar",            icon: <HiOutlineCommandLine /> },
+  { group: "İzleme", key: "connections", title: "Aktif Bağlantılar", desc: "Şu anda hangi kullanıcı hangi şarj cihazına bağlı",  label: "Aktif Bağlantılar", icon: <HiOutlineSignal />, adminOnly: true },
+
+  // superadmin/admin panelden, operator (şirket hesabı) kendi dashboard'undan erişir.
+  { group: "Toplu İşlemler", key: "device-status", title: "Toplu Okuma", desc: "Bir şirkete ait tüm cihazların canlı durumu", label: "Toplu Okuma",     icon: <HiOutlineViewColumns />, roles: ["superadmin", "admin", "operator"] },
+  { group: "Toplu İşlemler", key: "bulk-param", title: "Toplu Parametre Güncelleme", desc: "Seçtiğiniz cihazlara tek bir parametreyi topluca gönderin. İş sunucuda çalışır; sayfayı kapatsanız da devam eder.",   label: "Toplu Parametre",  icon: <HiOutlinePencilSquare />, roles: ["superadmin", "admin", "operator"] },
+  { group: "Toplu İşlemler", key: "bulk-update", title: "Toplu Güncelleme", desc: "Seçtiğiniz cihazlara topluca firmware gönderin; şarj olan cihazlar atlanır. İş sunucuda çalışır; sayfayı kapatsanız da devam eder.",  label: "Toplu Güncelleme", icon: <HiOutlineArrowUpTray />, adminOnly: true },
+
+  { group: "OTA", key: "ota", title: "OTA Güncelleme", desc: "Firmware güncelleme, key yönetimi ve ESP reset",          label: "OTA Güncelleme",    icon: <HiOutlineArrowUpTray />, superadminOnly: true, adminOnly: true },
+  { group: "OTA", key: "ota-server", title: "OTA Sunucu Kontrolü", desc: "Yüklenen dosyalar cihaza değil, şirketin OTA sunucusuna gönderilir; cihazlar güncellemeyi oradan indirir.",   label: "OTA Sunucu Kontrolü", icon: <HiOutlineServerStack />, superadminOnly: true, adminOnly: true },
+  { group: "OTA", key: "device-versions", title: "Cihaz Versiyonları", desc: "OTA sunucusundaki cihaz sürüm durumları", label: "Cihaz Versiyonları", icon: <HiOutlineDocumentMagnifyingGlass />, superadminOnly: true, adminOnly: true },
+
+  { group: "Yönetim", key: "device-mgmt", title: "Cihaz Yönetimi", desc: "Cihazları görüntüle, ekle ve sil",  label: "Cihaz Yönetimi",    icon: <HiOutlineCpuChip />, adminOnly: true },
+  { group: "Yönetim", key: "users", title: "Kullanıcı Yönetimi", desc: "Kullanıcı ekle, cihaz yetkisi ata, şifre değiştir",        label: "Kullanıcı Yönetimi", icon: <HiOutlineUsers />, superadminOnly: true, adminOnly: true },
+  { group: "Yönetim", key: "account", title: "Hesap Yönetimi", desc: "E-posta, kullanıcı adı ve şifrenizi buradan yönetin",      label: "Hesap Yönetimi",   icon: <HiOutlineUserCircle /> },
 ];
+
+// Kendi kartlarını çizen bölümler — dış beyaz kart olmadan, doğrudan zemine oturur
+const BARE_SECTIONS = ["overview", "logs", "ota-server"];
 
 /* ── Main ── */
 export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
@@ -297,7 +311,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   /* ── Sidebar / UI state ── */
   const [theme, setTheme] = useState(() => {
     if (typeof window === "undefined") return "dark";
-    try { return window.localStorage?.getItem("bluetech-theme") || "dark"; } catch { return "dark"; }
+    try { return window.localStorage?.getItem("bluetech-theme-v2") || "light"; } catch { return "light"; }
   });
   // Sol menüdeki bölüm geçişleri URL hash'ine (#bölüm-anahtarı) yazılır —
   // böylece tarayıcının geri/ileri tuşları bölümler arasında gezinebiliyor.
@@ -310,7 +324,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       return h || null;
     } catch { return null; }
   };
-  const [activeSection, setActiveSectionState] = useState(() => readSectionFromHash() || "device-select");
+  const [activeSection, setActiveSectionState] = useState(() => readSectionFromHash() || "overview");
   const navigateToSection = (key) => {
     setActiveSectionState(key);
     try {
@@ -318,14 +332,27 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     } catch {}
   };
   useEffect(() => {
+    // Geri tuşu panelin dışına değil, panel içinde Genel Bakış'a dönsün diye
+    // geçmişin tabanına #overview girişi konur: hash'siz açılışta mevcut giriş
+    // #overview yapılır; doğrudan bir bölüm adresiyle açılışta (yer imi vb.)
+    // o bölümün ALTINA #overview eklenir. state işareti, sayfa yenilemede
+    // (F5) aynı girişlerin tekrar tekrar eklenmesini önler.
+    try {
+      if (!window.history.state?.btPanel) {
+        const h = readSectionFromHash();
+        window.history.replaceState({ btPanel: true }, "", "#overview");
+        if (h && h !== "overview") window.history.pushState({ btPanel: true }, "", "#" + h);
+      }
+    } catch {}
     const onHashChange = () => {
-      const key = readSectionFromHash();
-      if (key) setActiveSectionState(key);
+      // Hash'siz bir girişe dönüldüyse (eski geçmiş kaydı) Genel Bakış'ı göster
+      setActiveSectionState(readSectionFromHash() || "overview");
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [diagOpen, setDiagOpen] = useState(false);
   const [emailBannerDismissed, setEmailBannerDismissed] = useState(false);
   const [connectMenuOpen, setConnectMenuOpen] = useState(false);
@@ -387,7 +414,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     const root = document.documentElement;
     root.classList.remove("theme-dark", "theme-light");
     root.classList.add(theme === "dark" ? "theme-dark" : "theme-light");
-    try { window.localStorage?.setItem("bluetech-theme", theme); } catch {}
+    try { window.localStorage?.setItem("bluetech-theme-v2", theme); } catch {}
   }, [theme]);
 
   const visibleSections = useMemo(
@@ -403,7 +430,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   // Dashboard/Panel arası geçişte, o an açık olan bölüm artık sidebar'da görünmüyorsa
   // (örn. Panel'e özel bir sayfadaydık, Dashboard'a geçtik) güvenli bir varsayılana dön
   useEffect(() => {
-    if (activeSection === "device-select") return; // bu her zaman görünür, dokunma
+    if (activeSection === "device-select" || activeSection === "overview") return; // bunlar her zaman görünür, dokunma
     const stillVisible = visibleSections.some((s) => s.key === activeSection);
     if (!stillVisible) {
       // Otomatik düşme — kullanıcının kendi geçmiş girdisi değil, bu yüzden
@@ -854,6 +881,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       if (!batchReadingIdRef.current) {
         for (const p of params) {
           if (cancelled) return;
+          if (batchReadingIdRef.current) break;
           await readOneValue(p, { keepStale: true });
         }
       }
@@ -864,6 +892,20 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     return () => { cancelled = true; clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, activeSection]);
+
+  // MSP Telemetri kartlarındaki tek değişken "Oku" butonu. Otomatik yenileme
+  // döngüsü aynı anda çalışıp cevap yuvasını ezmesin diye okuma süresince
+  // batchReadingId işaretleniyor (döngü bunu görüp o turu bırakıyor).
+  const readSingleTelemetry = async (p) => {
+    if (!isActive || batchReadingIdRef.current) return;
+    const marker = `single-${p.id}`;
+    batchReadingIdRef.current = marker;
+    setBatchReadingId(marker);
+    const ok = await readOneValue(p, { keepStale: true });
+    setFailedReads((prev) => ({ ...prev, [p.id]: !ok }));
+    batchReadingIdRef.current = null;
+    setBatchReadingId(null);
+  };
 
   const [bulkEditingId, setBulkEditingId] = useState(null);
   const [bulkDrafts, setBulkDrafts] = useState({});
@@ -1005,7 +1047,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       (bulkSaving && bulkProgress && bulkEditingId === panelId) ? bulkProgress : "";
     return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-4 mt-3 border-t border-[var(--border-subtle)]">
-      <span className="text-[11px] text-[var(--accent)] font-medium animate-pulse font-mono min-h-[16px] truncate"
+      <span className="text-[12px] text-[var(--accent)] font-medium animate-pulse font-mono min-h-[16px] truncate"
         style={{ visibility: progressMsg ? 'visible' : 'hidden' }}>
         {progressMsg || " "}
       </span>
@@ -1014,43 +1056,43 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
         {showBulk && (bulkEditingId === panelId ? (
           <>
             <button onClick={cancelBulkEdit}
-              className="text-[10px] font-semibold px-2.5 py-[5px] rounded-md
+              className="text-[11px] font-semibold px-2.5 py-[5px] rounded-lg
                          bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border-subtle)]
-                         hover:text-[var(--text-primary)] transition cursor-pointer tracking-wide uppercase">
+                         hover:text-[var(--text-primary)] transition cursor-pointer">
               İptal
             </button>
             <button onClick={() => batchSet(params, panelId)}
               disabled={!isActive || bulkSaving}
-              className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition tracking-wide uppercase
+              className={`flex items-center gap-1.5 text-[12px] font-semibold px-3 py-[5px] rounded-md border transition
                 ${(!isActive || bulkSaving)
                   ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
-                  : "bg-emerald-500 text-white border-emerald-400 hover:bg-emerald-400 shadow-sm shadow-emerald-500/30 cursor-pointer"
+                  : "bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer"
                 }`}>
-              <HiOutlinePencilSquare className={`text-[12px] ${bulkSaving ? "animate-spin" : ""}`} />
+              <HiOutlinePencilSquare className={`text-[13px] ${bulkSaving ? "animate-spin" : ""}`} />
               {bulkSaving ? "Kaydediliyor…" : "Tümünü Kaydet"}
             </button>
           </>
         ) : (
           <button onClick={() => startBulkEdit(params, panelId)}
             disabled={!isActive || !!bulkEditingId || !!batchReadingId || bulkSaving}
-            className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition tracking-wide uppercase
+            className={`flex items-center gap-1.5 text-[12px] font-semibold px-3 py-[5px] rounded-md border transition
               ${(!isActive || !!bulkEditingId || !!batchReadingId || bulkSaving)
                 ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
                 : "bg-amber-500/10 text-amber-500 border-amber-500/30 hover:bg-amber-500/20 cursor-pointer"
               }`}>
-            <HiOutlinePencilSquare className="text-[12px]" />
+            <HiOutlinePencilSquare className="text-[13px]" />
             Toplu Edit
           </button>
         ))}
 
         <button onClick={() => batchRead(params, panelId)}
           disabled={!isActive || !!batchReadingId || !!bulkEditingId || bulkSaving}
-          className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-[5px] rounded-md border transition tracking-wide uppercase
+          className={`flex items-center gap-1.5 text-[12px] font-semibold px-3 py-[5px] rounded-md border transition
             ${(!isActive || !!batchReadingId || !!bulkEditingId || bulkSaving)
               ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
               : "bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft-hover)] cursor-pointer"
             }`}>
-          <HiOutlineArrowPath className={`text-[12px] ${batchReadingId === panelId ? "animate-spin" : ""}`} />
+          <HiOutlineArrowPath className={`text-[13px] ${batchReadingId === panelId ? "animate-spin" : ""}`} />
           {batchReadingId === panelId ? "Okunuyor…" : "Tümünü Oku"}
         </button>
       </div>
@@ -1058,21 +1100,8 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     );
   };
 
-  const SectionHeader = ({ icon, title, subtitle }) => (
-    <div className="mb-5 pb-4 border-b border-[var(--border-subtle)]">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)] text-[18px] shrink-0">
-          {icon}
-        </div>
-        <div className="min-w-0">
-          <h2 className="text-[17px] font-bold text-[var(--text-primary)] font-display tracking-tight leading-tight">
-            {title}
-          </h2>
-          {subtitle && <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{subtitle}</p>}
-        </div>
-      </div>
-    </div>
-  );
+  // Bölüm başlığı artık kartın dışında, sayfa düzeyinde çiziliyor (bkz. SECTIONS'taki title/desc)
+  const SectionHeader = () => null;
 
   const renderOcppWifi = () => (
     <>
@@ -1146,11 +1175,11 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                 <div key={p.id} className="flex flex-col gap-1.5 w-full px-3.5 py-2.5 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)]">
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] text-[var(--text-muted)] shrink-0">{p.icon}</span>
-                    <span className="text-[12px] text-[var(--text-secondary)] font-medium flex-1 text-left">{p.label}</span>
+                    <span className="text-[13px] text-[var(--text-secondary)] font-medium flex-1 text-left">{p.label}</span>
                     <button
                       disabled={!isActive || isLoading}
                       onClick={() => fireOneShot(p.id, p.sendValue || "1", p.successMsg)}
-                      className={`text-[10px] font-bold px-3 py-[4px] rounded-md border transition tracking-wide uppercase
+                      className={`text-[11px] font-bold px-3 py-[4px] rounded-md border transition
                         ${(!isActive || isLoading)
                           ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
                           : "bg-rose-500/10 text-rose-500 border-rose-500/30 hover:bg-rose-500/20 cursor-pointer"
@@ -1160,7 +1189,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                     </button>
                   </div>
                   {okMsg && (
-                    <span className={`text-[10px] font-medium pl-6 font-mono ${isFail ? "text-rose-400" : "text-emerald-400"}`}>
+                    <span className={`text-[11px] font-medium pl-6 font-mono ${isFail ? "text-rose-400" : "text-emerald-400"}`}>
                       {okMsg}
                     </span>
                   )}
@@ -1188,7 +1217,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
         {/* MSP HW/SW Version — set + read, sadece admin */}
         {isAdmin && (
           <div className="mt-5 pt-4 border-t border-[var(--border-subtle)]">
-            <div className="text-[10px] font-bold tracking-[0.2em] uppercase text-[var(--text-muted)] mb-2 px-1">
+            <div className="text-[11px] font-bold tracking-[0.2em] uppercase text-[var(--text-muted)] mb-2 px-1">
               Donanım & Yazılım
             </div>
             <div className="px-1">
@@ -1211,10 +1240,10 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   };
 
   const renderEspCtrl = () => {
-    const isPlugAndCharge = String(readValues[19] ?? "") === "0";
+    const isRfidCharge = String(readValues[19] ?? "") === "1";
     const visibleEspCtrl = ESP_CTRL.filter((p) => {
       if (p.id === 19 && !isAdmin) return false; // ESP Modu sadece Panel'de (Dashboard'da gizli)
-      if ((p.id === 66 || p.id === 67) && !isPlugAndCharge) return false; // sadece "Plug & Charge" iken
+      if ((p.id === 66 || p.id === 67) && !isRfidCharge) return false; // sadece "RFID Charge" iken
       return true;
     });
 
@@ -1233,8 +1262,8 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
               <div key={p.id} className="flex flex-col gap-1 px-3.5 py-2.5 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)]">
                 <div className="flex items-center gap-2">
                   <span className="text-[14px] text-[var(--text-muted)]">{p.icon}</span>
-                  <span className="text-[12px] text-[var(--text-muted)]">{p.label}:</span>
-                  <span className="text-[12px] text-[var(--text-primary)] font-semibold flex-1 font-mono">{V(p.id)}</span>
+                  <span className="text-[13px] text-[var(--text-muted)]">{p.label}:</span>
+                  <span className="text-[13px] text-[var(--text-primary)] font-semibold flex-1 font-mono">{V(p.id)}</span>
                   {p.isReadable && (
                     <button
                       onClick={() => fireRead(p.id)}
@@ -1245,12 +1274,12 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                           : "bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft-hover)] cursor-pointer"
                         }`}
                     >
-                      <HiOutlineArrowPath className={`text-[11px] ${isRdLoading ? "animate-spin" : ""}`} />
+                      <HiOutlineArrowPath className={`text-[12px] ${isRdLoading ? "animate-spin" : ""}`} />
                     </button>
                   )}
                 </div>
                 {rdFb && (
-                  <span className={`text-[10px] font-medium pl-6 font-mono ${rdFail ? "text-rose-400" : "text-emerald-400"}`}>
+                  <span className={`text-[11px] font-medium pl-6 font-mono ${rdFail ? "text-rose-400" : "text-emerald-400"}`}>
                     {rdFb}
                   </span>
                 )}
@@ -1278,8 +1307,8 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                     "hover:bg-[var(--bg-hover)] cursor-pointer bg-[var(--bg-subtle)] border-[var(--border-subtle)]"}`}
               >
                 <span className="text-[14px] text-[var(--text-muted)] shrink-0">{p.icon}</span>
-                <span className="text-[12px] text-[var(--text-secondary)] font-medium flex-1 text-left">{p.label}</span>
-                <span className={`text-[9px] font-bold mr-1 tracking-wider uppercase ${isOn ? "text-emerald-400" : "text-[var(--text-muted)]"}`}>
+                <span className="text-[13px] text-[var(--text-secondary)] font-medium flex-1 text-left">{p.label}</span>
+                <span className={`text-[10px] font-bold mr-1 tracking-wider uppercase ${isOn ? "text-emerald-400" : "text-[var(--text-muted)]"}`}>
                   {isOn ? lblOn : lblOff}
                 </span>
                 <div className={`relative w-9 h-[20px] rounded-full transition-colors duration-200
@@ -1299,11 +1328,11 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
               <div key={p.id} className="flex flex-col gap-1.5 w-full px-3.5 py-2.5 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)]">
                 <div className="flex items-center gap-2">
                   <span className="text-[14px] text-[var(--text-muted)] shrink-0">{p.icon}</span>
-                  <span className="text-[12px] text-[var(--text-secondary)] font-medium flex-1 text-left">{p.label}</span>
+                  <span className="text-[13px] text-[var(--text-secondary)] font-medium flex-1 text-left">{p.label}</span>
                   <button
                     disabled={!isActive || isLoading}
                     onClick={() => fireOneShot(p.id, p.sendValue || "1", p.successMsg)}
-                    className={`text-[10px] font-bold px-3 py-[4px] rounded-md border transition tracking-wide uppercase
+                    className={`text-[11px] font-bold px-3 py-[4px] rounded-md border transition
                       ${(!isActive || isLoading)
                         ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
                         : "bg-rose-500/10 text-rose-500 border-rose-500/30 hover:bg-rose-500/20 cursor-pointer"
@@ -1313,7 +1342,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                   </button>
                 </div>
                 {okMsg && (
-                  <span className={`text-[10px] font-medium pl-6 font-mono ${isFail ? "text-rose-400" : "text-emerald-400"}`}>
+                  <span className={`text-[11px] font-medium pl-6 font-mono ${isFail ? "text-rose-400" : "text-emerald-400"}`}>
                     {okMsg}
                   </span>
                 )}
@@ -1349,8 +1378,8 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       <div className="flex flex-col gap-1 mt-3 px-3.5 py-2.5 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)]">
         <div className="flex items-center gap-2">
           <TbActivity className="text-[14px] text-[var(--text-muted)]" />
-          <span className="text-[12px] text-[var(--text-muted)]">Şarj Durumu:</span>
-          <span className={`text-[12px] font-bold flex-1 font-mono ${
+          <span className="text-[13px] text-[var(--text-muted)]">Şarj Durumu:</span>
+          <span className={`text-[13px] font-bold flex-1 font-mono ${
             csColor(readValues[25]) === "green" ? "text-emerald-400" :
             csColor(readValues[25]) === "yellow" ? "text-amber-400" :
             csColor(readValues[25]) === "blue" ? "text-[var(--accent)]" : "text-[var(--text-secondary)]"
@@ -1364,11 +1393,11 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                 : "bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft-hover)] cursor-pointer"
               }`}
           >
-            <HiOutlineArrowPath className={`text-[11px] ${readLoading[25] ? "animate-spin" : ""}`} />
+            <HiOutlineArrowPath className={`text-[12px] ${readLoading[25] ? "animate-spin" : ""}`} />
           </button>
         </div>
         {readFeedback[25] && (
-          <span className={`text-[10px] font-medium pl-6 font-mono ${readFeedback[25].includes("✕") ? "text-rose-400" : "text-emerald-400"}`}>
+          <span className={`text-[11px] font-medium pl-6 font-mono ${readFeedback[25].includes("✕") ? "text-rose-400" : "text-emerald-400"}`}>
             {readFeedback[25]}
           </span>
         )}
@@ -1394,7 +1423,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     >
       <span className={`absolute top-[3px] w-[22px] h-[22px] rounded-full bg-white shadow transition-all duration-200 flex items-center justify-center
         ${isConnected ? "left-[23px]" : "left-[3px]"}`}>
-        {loading && <HiOutlineArrowPath className="text-[11px] text-[var(--text-muted)] animate-spin" />}
+        {loading && <HiOutlineArrowPath className="text-[12px] text-[var(--text-muted)] animate-spin" />}
       </span>
     </button>
   );
@@ -1413,17 +1442,17 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
           <button type="button"
             onClick={() => { setConnectMenuOpen(false); handleEspReset(); }}
             disabled={!isConnected || !isActive || oneShotLoading[20]}
-            className="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-semibold text-amber-500 hover:bg-amber-500/10
+            className="w-full flex items-center gap-2 px-3 py-2 text-[13px] font-semibold text-amber-500 hover:bg-amber-500/10
                        disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition text-left">
-            <HiOutlineArrowPath className={`text-[13px] ${oneShotLoading[20] ? "animate-spin" : ""}`} />
+            <HiOutlineArrowPath className={`text-[14px] ${oneShotLoading[20] ? "animate-spin" : ""}`} />
             {oneShotLoading[20] ? "Resetleniyor…" : "ESP Reset"}
           </button>
           <button type="button"
             onClick={() => { setConnectMenuOpen(false); setDiagOpen(true); }}
             disabled={!isConnected}
-            className="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]
+            className="w-full flex items-center gap-2 px-3 py-2 text-[13px] font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]
                        disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition text-left">
-            <HiOutlineWrenchScrewdriver className="text-[13px]" />
+            <HiOutlineWrenchScrewdriver className="text-[14px]" />
             Cihaz Tanılama
           </button>
         </div>
@@ -1431,12 +1460,23 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     </div>
   );
 
-  const renderTelemetryCard = (p, showStateColor = false) => (
+  const renderTelemetryCard = (p, showStateColor = false, withRead = false) => (
     <div key={p.id} className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] rounded-lg px-2.5 py-2.5 flex flex-col hover:border-[var(--accent-border)] transition-colors">
       <div className="flex items-center gap-1 mb-1.5 min-h-[14px]">
-        {p.icon && <span className="text-[11px] text-[var(--text-secondary)] shrink-0">{p.icon}</span>}
-        <span className="text-[9px] text-[var(--text-secondary)] font-semibold tracking-wide uppercase truncate">{p.label}</span>
-        <span className="text-[8px] text-amber-400 ml-auto font-mono shrink-0" style={{ visibility: failedReads[p.id] ? 'visible' : 'hidden' }}>!</span>
+        {p.icon && <span className="text-[12px] text-[var(--text-secondary)] shrink-0">{p.icon}</span>}
+        <span className="text-[10px] text-[var(--text-secondary)] font-semibold tracking-wide uppercase truncate">{p.label}</span>
+        <span className="text-[9px] text-amber-400 ml-auto font-mono shrink-0" style={{ visibility: failedReads[p.id] ? 'visible' : 'hidden' }}>!</span>
+        {withRead && (
+          <button type="button" title="Oku"
+            disabled={!isActive || !!batchReadingId}
+            onClick={() => readSingleTelemetry(p)}
+            className={`shrink-0 p-0.5 rounded text-[13px] transition
+              ${(!isActive || !!batchReadingId)
+                ? "text-[var(--text-muted)] opacity-50 cursor-not-allowed"
+                : "text-[var(--text-secondary)] hover:text-[var(--accent)] hover:bg-[var(--bg-hover)] cursor-pointer"}`}>
+            <HiOutlineArrowPath className={batchReadingId === `single-${p.id}` ? "animate-spin" : ""} />
+          </button>
+        )}
       </div>
       <div className="flex items-baseline gap-1 min-h-[20px]">
         <span className={`text-[14px] font-bold tracking-tight font-display leading-none truncate ${
@@ -1448,7 +1488,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
         }`}>
           {V(p.id) || "——"}
         </span>
-        {p.unit && <span className="text-[9px] font-semibold text-[var(--text-secondary)] font-mono shrink-0">{p.unit}</span>}
+        {p.unit && <span className="text-[10px] font-semibold text-[var(--text-secondary)] font-mono shrink-0">{p.unit}</span>}
       </div>
     </div>
   );
@@ -1458,7 +1498,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       <SectionHeader icon={<TbActivity />} title="Canlı Telemetri" subtitle="Anlık şarj verileri ve cihaz durumu" />
       <div className="flex items-center gap-2 mb-4">
         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-        <span className="text-[10px] tracking-widest uppercase font-bold text-emerald-400 font-mono">Live Stream</span>
+        <span className="text-[11px] tracking-widest uppercase font-bold text-emerald-400 font-mono">Live Stream</span>
       </div>
       <TelemetryHero
         power={V(23)} energy={V(24)} duration={V(22)} status={V(25) || "——"}
@@ -1473,10 +1513,10 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       <SectionHeader icon={<HiOutlineSignal />} title="MSP Telemetri" subtitle="Faz voltajları, akımlar ve MSP output verileri" />
       <div className="flex items-center gap-2 mb-4">
         <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-        <span className="text-[10px] tracking-widest uppercase font-bold text-amber-400 font-mono">Live Stream</span>
+        <span className="text-[11px] tracking-widest uppercase font-bold text-amber-400 font-mono">Live Stream</span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-        {MSP_TELEMETRY.map((p) => renderTelemetryCard(p))}
+        {MSP_TELEMETRY.map((p) => renderTelemetryCard(p, false, true))}
       </div>
     </>
   );
@@ -1528,12 +1568,12 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] text-[var(--text-muted)]">{p.icon}</span>
-                    <span className="text-[12px] text-[var(--text-secondary)] font-medium">{p.label}</span>
+                    <span className="text-[13px] text-[var(--text-secondary)] font-medium">{p.label}</span>
                   </div>
                   <button
                     disabled={!isActive || isLoading}
                     onClick={() => fireOneShot(p.id, p.sendValue || "1", p.successMsg)}
-                    className={`text-[10px] font-bold px-3 py-[4px] rounded-md border transition shrink-0 tracking-wide uppercase
+                    className={`text-[11px] font-bold px-3 py-[4px] rounded-md border transition shrink-0
                       ${(!isActive || isLoading)
                         ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
                         : `${btnColor} cursor-pointer`
@@ -1543,7 +1583,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                   </button>
                 </div>
                 {okMsg && (
-                  <span className={`text-[10px] font-medium pl-6 font-mono ${isFail ? "text-rose-400" : "text-emerald-400"}`}>
+                  <span className={`text-[11px] font-medium pl-6 font-mono ${isFail ? "text-rose-400" : "text-emerald-400"}`}>
                     {okMsg}
                   </span>
                 )}
@@ -1578,10 +1618,10 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="text-[14px] text-[var(--text-muted)]"><HiOutlineTag /></span>
-                  <span className="text-[12px] text-[var(--text-muted)]">Aktif Logo:</span>
-                  <span className="text-[12px] text-[var(--text-primary)] font-semibold font-mono">{V(65)}</span>
+                  <span className="text-[13px] text-[var(--text-muted)]">Aktif Logo:</span>
+                  <span className="text-[13px] text-[var(--text-primary)] font-semibold font-mono">{V(65)}</span>
                   {failedReads[65] && (
-                    <span className="text-[10px] text-amber-400 font-medium">okunamadı</span>
+                    <span className="text-[11px] text-amber-400 font-medium">okunamadı</span>
                   )}
                 </div>
                 <button
@@ -1594,11 +1634,11 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                     }`}
                   title="Aktif logoyu oku"
                 >
-                  <HiOutlineArrowPath className={`text-[11px] ${isRdLoading ? "animate-spin" : ""}`} />
+                  <HiOutlineArrowPath className={`text-[12px] ${isRdLoading ? "animate-spin" : ""}`} />
                 </button>
               </div>
               {rdFb && (
-                <span className={`text-[10px] font-medium pl-6 font-mono ${rdFail ? "text-rose-400" : "text-emerald-400"}`}>
+                <span className={`text-[11px] font-medium pl-6 font-mono ${rdFail ? "text-rose-400" : "text-emerald-400"}`}>
                   {rdFb}
                 </span>
               )}
@@ -1614,8 +1654,12 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     </>
   );
 
+  const activeMeta = SECTIONS.find((x) => x.key === activeSection);
+
   const renderSection = () => {
     switch (activeSection) {
+      case "overview": return <Overview token={token} currentUser={currentUser} onNavigate={navigateToSection}
+        canOpen={(key) => visibleSections.some((s) => s.key === key)} />;
       case "device-select": return <DeviceSelect token={token}
         isSuperadmin={currentUser?.role === "superadmin"}
         onSelect={(device) => { if (device?.mac) setMac(device.mac); }}
@@ -1627,23 +1671,24 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       case "telemetry":  return renderTelemetry();
       case "msp-tele":   return renderMspTelemetry();
       case "ocpp-creds": return renderOcppCreds();
+      case "logs":       return <DeviceLogs token={token} isConnected={isConnected} isActive={isActive} mac={mac} />;
       case "ota":        return currentUser?.role === "superadmin" ? renderOTA() : renderOcppWifi();
       case "connections": return isAdmin
                            ? <Connections token={token} isSuperadmin={currentUser?.role === "superadmin"} />
                            : renderOcppWifi();
-      case "device-setup": return currentUser?.role === "superadmin"
+      case "device-setup": return (currentUser?.role === "superadmin" || currentUser?.role === "admin")
                            ? <DeviceSetup token={token} isActive={isActive} sendCommand={sendCommand} setReadValues={setReadValues} />
                            : renderOcppWifi();
-      case "bulk-update": return currentUser?.role === "superadmin"
+      case "bulk-update": return (currentUser?.role === "superadmin" || currentUser?.role === "admin")
                            ? <BulkUpdate token={token} />
                            : renderOcppWifi();
-      case "bulk-param":  return (currentUser?.role === "superadmin" || currentUser?.role === "operator")
+      case "bulk-param":  return (currentUser?.role === "superadmin" || currentUser?.role === "admin" || currentUser?.role === "operator")
                            ? <BulkParamUpdate token={token} />
                            : renderOcppWifi();
-      case "device-status": return (currentUser?.role === "superadmin" || currentUser?.role === "operator")
+      case "device-status": return (currentUser?.role === "superadmin" || currentUser?.role === "admin" || currentUser?.role === "operator")
                            ? <DeviceStatusBoard token={token} currentUser={currentUser} onConnect={handleDeviceConnected} />
                            : renderOcppWifi();
-      case "device-mgmt": return currentUser?.role === "superadmin"
+      case "device-mgmt": return (currentUser?.role === "superadmin" || currentUser?.role === "admin")
                            ? <DeviceManagement token={token} />
                            : renderOcppWifi();
       case "ota-server": return currentUser?.role === "superadmin"
@@ -1665,7 +1710,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   return (
     <div className="min-h-screen flex bg-[var(--bg-app)] text-[var(--text-primary)] font-body">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
         :root.theme-dark {
           --bg-app: #0a0f18;
@@ -1679,27 +1724,29 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
           --text-primary: #e2e8f0;
           --text-secondary: #94a3b8;
           --text-muted: #64748b;
-          --accent: #06b6d4;
-          --accent-soft: rgba(6, 182, 212, 0.10);
-          --accent-soft-hover: rgba(6, 182, 212, 0.18);
-          --accent-border: rgba(6, 182, 212, 0.28);
+          --bg-input: #0b1220;
+          --accent: #3b82f6;
+          --accent-soft: rgba(59, 130, 246, 0.10);
+          --accent-soft-hover: rgba(59, 130, 246, 0.18);
+          --accent-border: rgba(59, 130, 246, 0.28);
         }
         :root.theme-light {
-          --bg-app: #f5f7fb;
+          --bg-app: #f4f6fa;
           --bg-sidebar: #ffffff;
           --bg-surface: #ffffff;
-          --bg-subtle: #f1f5f9;
-          --bg-sunken: #e2e8f0;
-          --bg-hover: #e6edf5;
+          --bg-subtle: #f8fafc;
+          --bg-sunken: #f1f5f9;
+          --bg-hover: #eef2f7;
           --border-subtle: rgba(15, 23, 42, 0.10);
           --border-strong: rgba(15, 23, 42, 0.20);
           --text-primary: #0b1220;
           --text-secondary: #1e293b;
           --text-muted: #475569;
-          --accent: #0891b2;
-          --accent-soft: rgba(8, 145, 178, 0.10);
-          --accent-soft-hover: rgba(8, 145, 178, 0.18);
-          --accent-border: rgba(8, 145, 178, 0.35);
+          --bg-input: #ffffff;
+          --accent: #2563eb;
+          --accent-soft: rgba(37, 99, 235, 0.10);
+          --accent-soft-hover: rgba(37, 99, 235, 0.18);
+          --accent-border: rgba(37, 99, 235, 0.35);
         }
         /* iOS PWA safe area — status bar yüksekliği */
         @supports (padding: max(0px)) {
@@ -1709,8 +1756,10 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
           .safe-right  { padding-right: max(1rem, env(safe-area-inset-right)); }
         }
 
-        .font-display { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; font-feature-settings: 'cv11','ss01'; }
-        .font-body    { font-family: 'Inter Tight', ui-sans-serif, system-ui, sans-serif; }
+        .font-display { font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif; }
+        /* Jakarta'nın kelime boşluğu dar — sıkı harf aralığıyla kelimeler yapışmasın */
+        .font-display.font-display { letter-spacing: -0.012em; word-spacing: 0.1em; }
+        .font-body    { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
         .font-mono    { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; }
 
         .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -1719,6 +1768,23 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
           background: var(--border-strong); border-radius: 3px;
         }
         .custom-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        /* Giriş kutuları her sayfada aynı: beyaz zemin, ince kenarlık, odakta vurgu halkası.
+           (.theme-x main ... seçicisi tek tek sayfalardaki sınıfları ezer.) */
+        main input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=color]),
+        main select, main textarea {
+          background-color: var(--bg-input);
+          border: 1px solid var(--border-strong);
+          border-radius: 8px;
+          transition: border-color .15s, box-shadow .15s;
+        }
+        main input:not([type=checkbox]):not([type=radio]):focus, main select:focus, main textarea:focus {
+          border-color: var(--accent);
+          box-shadow: 0 0 0 3px var(--accent-soft-hover);
+          outline: none;
+        }
+        main input::placeholder, main textarea::placeholder { color: var(--text-muted); opacity: .75; }
+        .theme-light .app-bg { background: linear-gradient(180deg, #f7f9fc 0%, #eef2f8 100%); }
 
         .theme-light input, .theme-light select { color-scheme: light; }
         .theme-dark input, .theme-dark select { color-scheme: dark; }
@@ -1739,9 +1805,9 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
         onOpenAccount={() => navigateToSection("account")}
       />
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 app-bg">
         {/* Top Connection Bar — mobilde 2 satır, masaüstünde tek satır */}
-        <header className="sticky top-0 z-20 bg-[var(--bg-app)]/95 backdrop-blur-md border-b border-[var(--border-subtle)] safe-top">
+        <header className="sticky top-0 z-20 bg-[var(--bg-sidebar)]/95 backdrop-blur-md border-b border-[var(--border-subtle)] safe-top">
           {/* ── 1. Satır: Hamburger + Status Badge ── */}
           <div className="flex items-center gap-3 px-4 sm:px-6 min-h-[52px] sm:min-h-[60px]">
             <button
@@ -1753,7 +1819,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
             </button>
 
             {isConnected && (connectedLabel || mac) && (
-              <span className="hidden md:inline text-[11px] text-[var(--text-muted)] font-mono tracking-tight truncate">
+              <span className="hidden md:inline text-[12px] text-[var(--text-muted)] font-mono tracking-tight truncate">
                 {connectedLabel || mac}
               </span>
             )}
@@ -1761,7 +1827,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
             {/* Aynı MAC'e bağlı diğer kullanıcılar badge'i */}
             {isConnected && otherUsersOnSameMac.length > 0 && (
               <div
-                className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border tracking-wide
+                className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border tracking-wide
                            bg-amber-500/10 border-amber-500/30 text-amber-500 cursor-help shrink-0"
                 title={"Aynı cihaza bağlı: " + otherUsersOnSameMac.map((u) => u.fullName || u.username).join(", ")}
               >
@@ -1770,10 +1836,17 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
               </div>
             )}
 
-            <div className="flex-1" />
+            {/* Mesaj — masaüstünde satırın içinde, her zaman alan kaplar (layout shift önle) */}
+            <div className="flex-1 min-w-0" aria-live="polite">
+              {message && (
+                <div className="hidden sm:block max-w-full w-fit px-3 py-1.5 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[13px] text-[var(--text-secondary)] font-mono truncate">
+                  {message}
+                </div>
+              )}
+            </div>
 
             {/* Durum rozeti — sağda, zarif/transparan */}
-            <div className={`inline-flex items-center gap-1.5 px-1 text-[10.5px] font-bold tracking-wide shrink-0 ${badge.tc}`}>
+            <div className={`inline-flex items-center gap-1.5 px-1 text-[11.5px] font-bold tracking-wide shrink-0 ${badge.tc}`}>
               <span className={`w-[6px] h-[6px] rounded-full ${badge.d}`} />
               {badge.t}
             </div>
@@ -1783,7 +1856,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
               {isOperator ? (
                 <select value={selectedDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)} required
                   className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                             px-3 py-1.5 rounded-lg text-[12px] outline-none
+                             px-3 py-1.5 rounded-lg text-[13px] outline-none
                              focus:border-[var(--accent)] transition w-56 cursor-pointer">
                   <option value="">
                     {myDevices.length === 0 ? "Atanmış cihaz yok" : "Cihaz seçin…"}
@@ -1799,12 +1872,54 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                 <input value={mac} onChange={(e) => setMac(e.target.value)}
                   placeholder="AA:BB:CC:DD:EE:FF" required
                   className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                             px-3 py-1.5 rounded-lg text-[12px] font-mono outline-none placeholder:text-[var(--text-muted)]
+                             px-3 py-1.5 rounded-lg text-[13px] font-mono outline-none placeholder:text-[var(--text-muted)]
                              focus:border-[var(--accent)] transition w-44" />
               )}
               <ConnectSwitch />
               <ConnectOptionsMenu />
             </form>
+
+            {/* Kullanıcı menüsü — Hesap / Tema / Çıkış */}
+            {currentUser && (
+              <div className="hidden lg:block relative pl-4 ml-1 border-l border-[var(--border-subtle)] shrink-0">
+                <button onClick={() => setUserMenuOpen((o) => !o)}
+                  className="flex items-center gap-2.5 cursor-pointer group">
+                  <span className="w-9 h-9 rounded-full bg-[var(--accent)] text-white flex items-center justify-center text-[13px] font-bold">
+                    {(currentUser.fullName || currentUser.username || "?").charAt(0).toUpperCase()}
+                  </span>
+                  <span className="flex flex-col items-start leading-tight">
+                    <span className="text-[13px] font-semibold text-[var(--text-primary)] max-w-[160px] truncate">
+                      {currentUser.fullName || currentUser.username}
+                    </span>
+                    <span className="text-[11px] text-[var(--text-muted)]">
+                      {currentUser.role === "superadmin" ? "Superadmin" : currentUser.role === "admin" ? "Admin" : "Operatör"}
+                    </span>
+                  </span>
+                  <HiOutlineChevronDown className={`text-[13px] text-[var(--text-muted)] transition-transform ${userMenuOpen ? "rotate-180" : ""}`} />
+                </button>
+                {userMenuOpen && (
+                  <>
+                    <button aria-label="Menüyü kapat" onClick={() => setUserMenuOpen(false)} className="fixed inset-0 z-30 cursor-default" />
+                    <div className="absolute right-0 top-full mt-2 z-40 w-52 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-xl py-1.5">
+                      <button onClick={() => { setUserMenuOpen(false); navigateToSection("account"); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer">
+                        <HiOutlineUserCircle className="text-[16px]" /> Hesap Yönetimi
+                      </button>
+                      <button onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] cursor-pointer">
+                        {theme === "dark" ? <HiOutlineSun className="text-[16px]" /> : <HiOutlineMoon className="text-[16px]" />}
+                        {theme === "dark" ? "Açık Tema" : "Koyu Tema"}
+                      </button>
+                      <div className="my-1.5 border-t border-[var(--border-subtle)]" />
+                      <button onClick={() => { setUserMenuOpen(false); onLogout?.(); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] font-medium text-rose-500 hover:bg-rose-500/10 cursor-pointer">
+                        <HiOutlineArrowRightOnRectangle className="text-[16px]" /> Çıkış Yap
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           {/* ── 2. Satır: Mobilde MAC input + butonlar ── */}
@@ -1812,7 +1927,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
             {isOperator ? (
               <select value={selectedDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)} required
                 className="flex-1 min-w-0 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                           px-3 py-2 rounded-lg text-[13px] outline-none
+                           px-3 py-2 rounded-lg text-[14px] outline-none
                            focus:border-[var(--accent)] transition">
                 <option value="">
                   {myDevices.length === 0 ? "Atanmış cihaz yok" : "Cihaz seçin…"}
@@ -1827,7 +1942,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
               <input value={mac} onChange={(e) => setMac(e.target.value)}
                 placeholder="AA:BB:CC:DD:EE:FF" required
                 className="flex-1 min-w-0 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                           px-3 py-2 rounded-lg text-[13px] font-mono outline-none placeholder:text-[var(--text-muted)]
+                           px-3 py-2 rounded-lg text-[14px] font-mono outline-none placeholder:text-[var(--text-muted)]
                            focus:border-[var(--accent)] transition" />
             )}
             <ConnectSwitch />
@@ -1836,7 +1951,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
 
           {/* MAC mobilde küçük altta — sadece bağlıyken göster */}
           {isConnected && (connectedLabel || mac) && (
-            <div className="md:hidden px-4 pb-2 text-[10px] text-[var(--text-muted)] font-mono tracking-tight">
+            <div className="md:hidden px-4 pb-2 text-[11px] text-[var(--text-muted)] font-mono tracking-tight">
               {connectedLabel || mac}
               {otherUsersOnSameMac.length > 0 && (
                 <span className="ml-2 text-amber-500 font-bold">
@@ -1846,39 +1961,46 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
             </div>
           )}
 
-          {/* Mesaj — her zaman alan kapla (layout shift önle) */}
-          {/* Mobilde alan kaplamasın diye sm:min-h kullan, mobil tasarımda ekstra padding rahatsız etmesin */}
-          <div className="px-4 sm:px-6 pb-2 min-h-0 sm:min-h-[44px]" aria-live="polite">
-            <div className={`w-full px-3 py-1.5 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[12px] text-[var(--text-secondary)] font-mono transition-opacity duration-200
-              ${message ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-              style={{ visibility: message ? 'visible' : 'hidden' }}>
-              {message || " "}
+          {/* Mesaj — mobilde altta ayrı satır */}
+          {message && (
+            <div className="sm:hidden px-4 pb-2" aria-live="polite">
+              <div className="w-full px-3 py-1.5 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[13px] text-[var(--text-secondary)] font-mono">
+                {message}
+              </div>
             </div>
-          </div>
+          )}
         </header>
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
           <div className="max-w-[1200px] mx-auto">
             {currentUser && !currentUser.email && !emailBannerDismissed && (
               <div className="mb-3 pl-3 pr-2 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center gap-2">
-                <HiOutlineExclamationTriangle className="text-[13px] text-amber-500 shrink-0" />
-                <span className="text-[11px] text-amber-500 font-medium truncate">
+                <HiOutlineExclamationTriangle className="text-[14px] text-amber-500 shrink-0" />
+                <span className="text-[12px] text-amber-500 font-medium truncate">
                   Kayıtlı e-posta yok — şifre kurtarma için ekleyin.
                 </span>
                 <button onClick={() => navigateToSection("account")}
-                  className="shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-md border transition tracking-wide uppercase ml-auto
+                  className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-md border transition ml-auto
                              bg-amber-500 hover:bg-amber-400 text-white border-amber-400 cursor-pointer">
                   Ekle
                 </button>
                 <button onClick={() => setEmailBannerDismissed(true)} title="Kapat"
                   className="shrink-0 p-1 rounded-md text-amber-500/70 hover:text-amber-500 hover:bg-amber-500/10 transition cursor-pointer">
-                  <HiOutlineXMark className="text-[13px]" />
+                  <HiOutlineXMark className="text-[14px]" />
                 </button>
               </div>
             )}
-            <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-2xl p-5 sm:p-7 shadow-sm">
+            {activeMeta && activeSection !== "overview" && (
+              <div className="mb-5">
+                <h1 className="text-[26px] font-bold font-display tracking-tight text-[var(--text-primary)]">{activeMeta.title || activeMeta.label}</h1>
+                {activeMeta.desc && <p className="text-[14px] text-[var(--text-muted)] mt-0.5 max-w-[820px]">{activeMeta.desc}</p>}
+              </div>
+            )}
+            {BARE_SECTIONS.includes(activeSection) ? renderSection() : (
+            <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-5 sm:p-6 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
               {renderSection()}
             </div>
+            )}
 
           </div>
         </main>
@@ -1896,20 +2018,20 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                 Bağlantı Kapatıldı
               </h3>
             </div>
-            <p className="text-[13px] text-[var(--text-secondary)] mb-2 leading-relaxed">
+            <p className="text-[14px] text-[var(--text-secondary)] mb-2 leading-relaxed">
               Bu şarj cihazına bağlantınız
               {" "}
               <span className="font-bold text-[var(--text-primary)]">{deactivatedByModal}</span>
               {" "}
               tarafından deaktif edildi.
             </p>
-            <p className="text-[11px] text-[var(--text-muted)] mb-5 leading-relaxed">
+            <p className="text-[12px] text-[var(--text-muted)] mb-5 leading-relaxed">
               Tekrar bağlanmak isterseniz üstteki "BAĞLAN" butonuna tıklayabilirsiniz.
             </p>
             <div className="flex justify-end">
               <button
                 onClick={ackDeactivatedBy}
-                className="px-5 py-2 rounded-lg text-[13px] font-bold transition cursor-pointer tracking-wide uppercase
+                className="px-5 py-2 rounded-lg text-[14px] font-semibold transition cursor-pointer
                            bg-rose-500 hover:bg-rose-400 text-white border border-rose-400 shadow-sm shadow-rose-500/30"
               >
                 Tamam
@@ -1933,7 +2055,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                 </div>
                 <div>
                   <h3 className="text-[14px] font-bold text-[var(--text-primary)] font-display tracking-tight leading-tight">Cihaz Tanılama</h3>
-                  <p className="text-[10px] text-[var(--text-muted)]">GSM sinyal, hata ve UART durumu</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">GSM sinyal, hata ve UART durumu</p>
                 </div>
               </div>
               <button onClick={() => setDiagOpen(false)}
@@ -1946,7 +2068,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                 {TELEMETRY.filter((p) => ![22, 23, 24, 25].includes(p.id)).map((p) => renderTelemetryCard(p, true))}
               </div>
             ) : (
-              <p className="text-[12px] text-[var(--text-muted)] text-center py-6">Önce bir cihaza bağlanın.</p>
+              <p className="text-[13px] text-[var(--text-muted)] text-center py-6">Önce bir cihaza bağlanın.</p>
             )}
           </div>
         </div>

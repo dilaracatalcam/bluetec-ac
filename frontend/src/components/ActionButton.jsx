@@ -1,24 +1,24 @@
 export default function ActionButton({ icon, label, badge = "Kapalı", color = "red", disabled = true, onClick }) {
   const badgeColors = {
-    green: "bg-emerald-500/20 text-emerald-400",
-    red: "bg-red-500/20 text-red-400",
-    yellow: "bg-amber-500/20 text-amber-400",
-    blue: "bg-sky-500/20 text-sky-400",
+    green: "bg-emerald-500/20 text-emerald-500",
+    red: "bg-red-500/20 text-red-500",
+    yellow: "bg-amber-500/20 text-amber-500",
+    blue: "bg-sky-500/20 text-[var(--accent)]",
   };
 
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`flex items-center gap-2 w-full px-3 py-[7px] rounded-lg
-        bg-slate-800/30 border border-slate-700/30
+      className={`flex items-center gap-2 w-full px-3.5 py-2.5 rounded-lg
+        bg-[var(--bg-subtle)] border border-[var(--border-subtle)]
         transition-all duration-150
-        ${disabled ? "opacity-50 cursor-not-allowed" : "hover:bg-slate-800/60 cursor-pointer"}
+        ${disabled ? "opacity-50 cursor-not-allowed" : "hover:bg-[var(--bg-hover)] cursor-pointer"}
       `}
     >
-      {icon && <span className="text-[13px] text-slate-400 shrink-0">{icon}</span>}
-      <span className="text-[11px] text-slate-400 font-medium flex-1 text-left">{label}</span>
-      <span className={`text-[10px] font-bold px-2 py-[2px] rounded-full ${badgeColors[color] || badgeColors.red}`}>
+      {icon && <span className="text-[14px] text-[var(--text-secondary)] shrink-0">{icon}</span>}
+      <span className="text-[13px] text-[var(--text-secondary)] font-medium flex-1 text-left">{label}</span>
+      <span className={`text-[11px] font-bold px-2 py-[2px] rounded-full ${badgeColors[color] || badgeColors.red}`}>
         {badge}
       </span>
     </button>

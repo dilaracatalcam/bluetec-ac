@@ -61,11 +61,15 @@ describe("mapValue", () => {
     expect(mapValue(16, "1")).toBe("AC Meter");
   });
 
-  it("id 17 ve 69 — üretim/test modu", () => {
+  it("id 17 — ürün/test modu", () => {
     expect(mapValue(17, "0")).toBe("Ürün Modu");
     expect(mapValue(17, "1")).toBe("Test Modu");
-    expect(mapValue(69, "0")).toBe("Üretim Modu");
-    expect(mapValue(69, "1")).toBe("Test Modu");
+  });
+
+  it("id 69 — OCPP sanal mod", () => {
+    expect(mapValue(69, "0")).toBe("Disable");
+    expect(mapValue(69, "1")).toBe("Soket Takılı");
+    expect(mapValue(69, "2")).toBe("Şarja Geç");
   });
 
   it("id 18 — kablosuz/kablolu", () => {

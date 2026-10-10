@@ -54,13 +54,13 @@ export default function OtaServerLogs({ token }) {
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <HiOutlineCommandLine className="text-[15px] text-[var(--accent)]" />
-          <h4 className="text-[13px] font-bold text-[var(--text-primary)]">OTA Sunucu Logları</h4>
+          <h4 className="text-[14px] font-bold text-[var(--text-primary)]">OTA Sunucu Logları</h4>
           {totalLines > 0 && (
-            <span className="text-[10px] text-[var(--text-muted)]">(son {lines.length} / bilinen {totalLines} satır — en yeni üstte)</span>
+            <span className="text-[11px] text-[var(--text-muted)]">(son {lines.length} / bilinen {totalLines} satır — en yeni üstte)</span>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)] cursor-pointer select-none">
+          <label className="flex items-center gap-1.5 text-[12px] text-[var(--text-muted)] cursor-pointer select-none">
             <input
               type="checkbox"
               checked={autoRefresh}
@@ -72,19 +72,19 @@ export default function OtaServerLogs({ token }) {
           <button
             onClick={load}
             disabled={loading}
-            className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-md border
+            className="flex items-center gap-1 text-[12px] font-semibold px-3 py-1.5 rounded-lg border
                        border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]
                        hover:border-[var(--border-strong)] transition"
           >
-            <HiOutlineArrowPath className={`text-[12px] ${loading ? "animate-spin" : ""}`} />
+            <HiOutlineArrowPath className={`text-[13px] ${loading ? "animate-spin" : ""}`} />
             Yenile
           </button>
         </div>
       </div>
 
-      {error && <p className="text-[11px] text-rose-400 mb-2">{error}</p>}
+      {error && <p className="text-[12px] text-rose-400 mb-2">{error}</p>}
 
-      <div className="bg-[#0a0f1a] rounded-lg p-3 max-h-[400px] overflow-y-auto overflow-x-auto custom-scroll font-mono text-[11px] leading-relaxed">
+      <div className="bg-[#0a0f1a] rounded-lg p-3 max-h-[400px] overflow-y-auto overflow-x-auto custom-scroll font-mono text-[12px] leading-relaxed">
         {displayLines.length === 0 && !loading ? (
           <p className="text-[var(--text-muted)] italic">Log satırı yok</p>
         ) : (
@@ -95,7 +95,7 @@ export default function OtaServerLogs({ token }) {
       </div>
 
       {fetchedAt && (
-        <p className="text-[10px] text-[var(--text-muted)] mt-2">
+        <p className="text-[11px] text-[var(--text-muted)] mt-2">
           Son çekilme: {new Date(fetchedAt).toLocaleTimeString("tr-TR")}
         </p>
       )}

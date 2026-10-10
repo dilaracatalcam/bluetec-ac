@@ -19,7 +19,7 @@ export default function AccountSettings({ token, currentUser, onEmailUpdated, on
   });
 
   const inputCls = `w-full bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                    px-2.5 py-1.5 rounded-md text-[12px] outline-none
+                    px-2.5 py-1.5 rounded-md text-[13px] outline-none
                     focus:border-[var(--accent)] transition placeholder:text-[var(--text-muted)]`;
 
   const hasEmail = !!currentUser?.email;
@@ -121,41 +121,26 @@ export default function AccountSettings({ token, currentUser, onEmailUpdated, on
 
   return (
     <div>
-      <div className="mb-5 pb-4 border-b border-[var(--border-subtle)]">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)] text-[18px] shrink-0">
-            <HiOutlineUserCircle />
-          </div>
-          <div>
-            <h2 className="text-[17px] font-bold text-[var(--text-primary)] font-display tracking-tight leading-tight">
-              Hesap Yönetimi
-            </h2>
-            <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-              @{currentUser?.username} — e-posta, kullanıcı adı ve şifrenizi buradan yönetin
-            </p>
-          </div>
-        </div>
-      </div>
 
       <div className="flex flex-col gap-6 max-w-md">
         {/* ── E-posta ── */}
         <form onSubmit={handleSaveEmail}>
           <div className="flex items-center gap-2 mb-2">
             <HiOutlineEnvelope className="text-[14px] text-[var(--accent)]" />
-            <label className="text-[11px] font-bold tracking-wide uppercase text-[var(--text-secondary)]">E-posta</label>
+            <label className="text-[12px] font-bold tracking-wide uppercase text-[var(--text-secondary)]">E-posta</label>
           </div>
-          <p className="text-[10px] text-[var(--text-muted)] mb-2">
+          <p className="text-[11px] text-[var(--text-muted)] mb-2">
             Şifrenizi unutursanız sıfırlama linki bu adrese gönderilir.
           </p>
 
           {emailError && (
-            <div className="mb-2 px-2.5 py-1.5 rounded-md bg-rose-500/10 border border-rose-500/30 text-rose-500 text-[11px] font-medium flex items-center gap-1.5">
-              <HiOutlineExclamationCircle className="text-[12px] shrink-0" />{emailError}
+            <div className="mb-2 px-2.5 py-1.5 rounded-md bg-rose-500/10 border border-rose-500/30 text-rose-500 text-[12px] font-medium flex items-center gap-1.5">
+              <HiOutlineExclamationCircle className="text-[13px] shrink-0" />{emailError}
             </div>
           )}
           {emailSaved && (
-            <div className="mb-2 px-2.5 py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-[11px] font-medium flex items-center gap-1.5">
-              <HiOutlineCheckCircle className="text-[12px] shrink-0" />E-posta kaydedildi
+            <div className="mb-2 px-2.5 py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-[12px] font-medium flex items-center gap-1.5">
+              <HiOutlineCheckCircle className="text-[13px] shrink-0" />E-posta kaydedildi
             </div>
           )}
 
@@ -166,9 +151,9 @@ export default function AccountSettings({ token, currentUser, onEmailUpdated, on
               <input type="password" value={emailCurrentPassword} onChange={(e) => setEmailCurrentPassword(e.target.value)}
                 placeholder="Onaylamak için mevcut şifreniz" autoComplete="current-password" className={inputCls} />
               <button type="submit" disabled={emailSaving}
-                className={`shrink-0 flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-md border transition tracking-wide uppercase
-                  ${emailSaving ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400 cursor-pointer"}`}>
-                <HiOutlineCheck className="text-[12px]" />
+                className={`shrink-0 flex items-center gap-1.5 text-[13px] font-semibold px-3.5 py-2 rounded-lg border transition
+                  ${emailSaving ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer"}`}>
+                <HiOutlineCheck className="text-[13px]" />
                 {emailSaving ? "Kaydediliyor…" : "Kaydet"}
               </button>
             </div>
@@ -179,21 +164,21 @@ export default function AccountSettings({ token, currentUser, onEmailUpdated, on
         <form onSubmit={handleChangeUsername} className="pt-6 border-t border-[var(--border-subtle)]">
           <div className="flex items-center gap-2 mb-2">
             <HiOutlineIdentification className="text-[14px] text-[var(--accent)]" />
-            <label className="text-[11px] font-bold tracking-wide uppercase text-[var(--text-secondary)]">Kullanıcı Adı</label>
+            <label className="text-[12px] font-bold tracking-wide uppercase text-[var(--text-secondary)]">Kullanıcı Adı</label>
           </div>
-          <p className="text-[10px] text-[var(--text-muted)] mb-2">
+          <p className="text-[11px] text-[var(--text-muted)] mb-2">
             Şu an: <span className="font-mono text-[var(--text-secondary)]">@{currentUser?.username}</span>.
             Değiştirirseniz aktif cihaz bağlantınız/oturumunuz sonlanır, yeni kullanıcı adınızla tekrar giriş yapmanız gerekir.
           </p>
 
           {usernameError && (
-            <div className="mb-2 px-2.5 py-1.5 rounded-md bg-rose-500/10 border border-rose-500/30 text-rose-500 text-[11px] font-medium flex items-center gap-1.5">
-              <HiOutlineExclamationCircle className="text-[12px] shrink-0" />{usernameError}
+            <div className="mb-2 px-2.5 py-1.5 rounded-md bg-rose-500/10 border border-rose-500/30 text-rose-500 text-[12px] font-medium flex items-center gap-1.5">
+              <HiOutlineExclamationCircle className="text-[13px] shrink-0" />{usernameError}
             </div>
           )}
           {usernameDone && (
-            <div className="mb-2 px-2.5 py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-[11px] font-medium flex items-center gap-1.5">
-              <HiOutlineCheckCircle className="text-[12px] shrink-0" />Kullanıcı adı değiştirildi, çıkış yapılıyor…
+            <div className="mb-2 px-2.5 py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-[12px] font-medium flex items-center gap-1.5">
+              <HiOutlineCheckCircle className="text-[13px] shrink-0" />Kullanıcı adı değiştirildi, çıkış yapılıyor…
             </div>
           )}
 
@@ -204,9 +189,9 @@ export default function AccountSettings({ token, currentUser, onEmailUpdated, on
               <input type="password" value={usernameCurrentPassword} onChange={(e) => setUsernameCurrentPassword(e.target.value)}
                 placeholder="Onaylamak için mevcut şifreniz" autoComplete="current-password" disabled={usernameDone} className={inputCls} />
               <button type="submit" disabled={usernameSaving || usernameDone}
-                className={`shrink-0 flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-md border transition tracking-wide uppercase
+                className={`shrink-0 flex items-center gap-1.5 text-[13px] font-semibold px-3.5 py-2 rounded-lg border transition
                   ${(usernameSaving || usernameDone) ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-amber-500 hover:bg-amber-400 text-white border-amber-400 cursor-pointer"}`}>
-                <HiOutlineCheck className="text-[12px]" />
+                <HiOutlineCheck className="text-[13px]" />
                 {usernameSaving ? "Kaydediliyor…" : "Değiştir"}
               </button>
             </div>
@@ -217,34 +202,34 @@ export default function AccountSettings({ token, currentUser, onEmailUpdated, on
         <div className="pt-6 border-t border-[var(--border-subtle)]">
           <div className="flex items-center gap-2 mb-2">
             <HiOutlineKey className="text-[14px] text-[var(--accent)]" />
-            <label className="text-[11px] font-bold tracking-wide uppercase text-[var(--text-secondary)]">Şifre Değiştir</label>
+            <label className="text-[12px] font-bold tracking-wide uppercase text-[var(--text-secondary)]">Şifre Değiştir</label>
           </div>
 
           {!hasEmail ? (
-            <p className="text-[11px] text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-md px-2.5 py-2">
+            <p className="text-[12px] text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-md px-2.5 py-2">
               Şifrenizi değiştirmeden önce yukarıdan bir e-posta adresi kaydedin — aksi halde yeni şifrenizi unutursanız hesabınıza kimse ulaşamaz.
             </p>
           ) : (
             <form onSubmit={handleChangePassword} className="flex flex-col gap-2">
               {pwError && (
-                <div className="px-2.5 py-1.5 rounded-md bg-rose-500/10 border border-rose-500/30 text-rose-500 text-[11px] font-medium flex items-center gap-1.5">
-                  <HiOutlineExclamationCircle className="text-[12px] shrink-0" />{pwError}
+                <div className="px-2.5 py-1.5 rounded-md bg-rose-500/10 border border-rose-500/30 text-rose-500 text-[12px] font-medium flex items-center gap-1.5">
+                  <HiOutlineExclamationCircle className="text-[13px] shrink-0" />{pwError}
                 </div>
               )}
               {pwSaved && (
-                <div className="px-2.5 py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-[11px] font-medium flex items-center gap-1.5">
-                  <HiOutlineCheckCircle className="text-[12px] shrink-0" />Şifre değiştirildi
+                <div className="px-2.5 py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-[12px] font-medium flex items-center gap-1.5">
+                  <HiOutlineCheckCircle className="text-[13px] shrink-0" />Şifre değiştirildi
                 </div>
               )}
               <input type="password" value={oldPassword} onChange={(e) => setOldPassword(e.target.value)}
                 placeholder="Mevcut şifre" autoComplete="current-password" className={inputCls} />
-              <p className="text-[10px] text-[var(--text-muted)] -mt-1">{PASSWORD_HINT}</p>
+              <p className="text-[11px] text-[var(--text-muted)] -mt-1">{PASSWORD_HINT}</p>
               <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="Yeni şifre" autoComplete="new-password" className={inputCls} />
               <button type="submit" disabled={pwSaving}
-                className={`self-end flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-md border transition tracking-wide uppercase
-                  ${pwSaving ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400 cursor-pointer"}`}>
-                <HiOutlineCheck className="text-[12px]" />
+                className={`self-end flex items-center gap-1.5 text-[13px] font-semibold px-3.5 py-2 rounded-lg border transition
+                  ${pwSaving ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer"}`}>
+                <HiOutlineCheck className="text-[13px]" />
                 {pwSaving ? "Kaydediliyor…" : "Şifreyi Değiştir"}
               </button>
             </form>

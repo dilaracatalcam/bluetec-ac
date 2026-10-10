@@ -27,12 +27,12 @@ const BULK_FIELD_LABELS = {
 function Field({ label, value, onChange, placeholder, required = false, mono = false, list }) {
   return (
     <div>
-      <label className="block text-[10px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">
+      <label className="block text-[11px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">
         {label}{required && <span className="text-rose-400 ml-1">*</span>}
       </label>
       <input type="text" value={value} onChange={onChange} placeholder={placeholder} list={list}
         className={`w-full bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                   px-2.5 py-1.5 rounded-md text-[12px] outline-none
+                   px-2.5 py-1.5 rounded-md text-[13px] outline-none
                    focus:border-[var(--accent)] transition placeholder:text-[var(--text-muted)]
                    ${mono ? "font-mono" : ""}`} />
     </div>
@@ -353,22 +353,16 @@ export default function DeviceManagement({ token }) {
 
   return (
     <>
-      <div className="mb-5 pb-4 border-b border-[var(--border-subtle)]">
+      <div className="mb-4 flex justify-end">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)] text-[18px] shrink-0">
-              <HiOutlineCpuChip />
-            </div>
-            <div>
-              <h2 className="text-[17px] font-bold text-[var(--text-primary)] font-display tracking-tight leading-tight">Cihaz Yönetimi</h2>
-              <p className="text-[11px] text-[var(--text-muted)] mt-0.5">Cihazları görüntüle, ekle ve sil</p>
-            </div>
+            
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button onClick={() => { setFieldManagerError(""); setNewFieldLabel(""); setShowFieldManager(true); }}
-              className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-md border transition tracking-wide uppercase
+              className="flex items-center gap-1.5 text-[12px] font-bold px-3 py-1.5 rounded-md border transition
                          bg-[var(--bg-sunken)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-[var(--border-strong)] cursor-pointer">
-              <HiOutlineAdjustmentsHorizontal className="text-[13px]" />
+              <HiOutlineAdjustmentsHorizontal className="text-[14px]" />
               Özel Alanlar
             </button>
             <input
@@ -379,21 +373,21 @@ export default function DeviceManagement({ token }) {
               onChange={handleImportFile}
             />
             <button onClick={() => fileInputRef.current?.click()} disabled={importing}
-              className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-md border transition tracking-wide uppercase
+              className="flex items-center gap-1.5 text-[12px] font-bold px-3 py-1.5 rounded-md border transition
                          bg-[var(--bg-sunken)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-[var(--border-strong)] cursor-pointer disabled:opacity-50">
-              <HiOutlineArrowUpTray className={`text-[13px] ${importing ? "animate-pulse" : ""}`} />
+              <HiOutlineArrowUpTray className={`text-[14px] ${importing ? "animate-pulse" : ""}`} />
               {importing ? "Aktarılıyor..." : "İçe Aktar"}
             </button>
             <button onClick={handleExport}
-              className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-md border transition tracking-wide uppercase
+              className="flex items-center gap-1.5 text-[13px] font-semibold px-3.5 py-2 rounded-lg border transition
                          bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft-hover)] cursor-pointer">
-              <HiOutlineArrowDownTray className="text-[13px]" />
+              <HiOutlineArrowDownTray className="text-[14px]" />
               Dışa Aktar
             </button>
             <button onClick={() => { setEditingId(null); setShowForm(true); setFormError(""); setForm(EMPTY_FORM); setTemplateSourceId(null); }}
-              className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-md border transition tracking-wide uppercase
-                         bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400 shadow-sm shadow-emerald-500/20 cursor-pointer">
-              <HiOutlinePlus className="text-[13px]" />
+              className="flex items-center gap-1.5 text-[12px] font-bold px-3 py-1.5 rounded-md border transition
+                         bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer">
+              <HiOutlinePlus className="text-[14px]" />
               Yeni Cihaz
             </button>
           </div>
@@ -401,7 +395,7 @@ export default function DeviceManagement({ token }) {
       </div>
 
       {(error || info) && (
-        <div className={`mb-4 px-3 py-2 rounded-lg text-[12px] font-medium border
+        <div className={`mb-4 px-3 py-2 rounded-lg text-[13px] font-medium border
           ${error ? "bg-rose-500/10 border-rose-500/30 text-rose-500" : "bg-emerald-500/10 border-emerald-500/30 text-emerald-500"}`}>
           {error || info}
         </div>
@@ -410,19 +404,19 @@ export default function DeviceManagement({ token }) {
       {showForm && (
         <div className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] rounded-xl p-4 mb-5">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-[12px] font-bold text-[var(--text-primary)] tracking-wide uppercase flex items-center gap-2">
+            <h3 className="text-[13px] font-bold text-[var(--text-primary)] tracking-wide uppercase flex items-center gap-2">
               {editingId !== null ? <HiOutlinePencilSquare className="text-[var(--accent)]" /> : <HiOutlinePlus className="text-[var(--accent)]" />}
               {editingId !== null ? "Cihazı Düzenle" : "Yeni Cihaz Ekle"}
             </h3>
             <button onClick={cancelForm}
-              className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition cursor-pointer">
+              className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition cursor-pointer">
               <HiOutlineXMark className="text-[16px]" />
             </button>
           </div>
 
           {formError && (
-            <div className="mb-3 px-2.5 py-1.5 rounded-md bg-rose-500/10 border border-rose-500/30 text-rose-500 text-[11px] font-medium flex items-center gap-1.5">
-              <HiOutlineExclamationCircle className="text-[12px]" />{formError}
+            <div className="mb-3 px-2.5 py-1.5 rounded-md bg-rose-500/10 border border-rose-500/30 text-rose-500 text-[12px] font-medium flex items-center gap-1.5">
+              <HiOutlineExclamationCircle className="text-[13px]" />{formError}
             </div>
           )}
 
@@ -437,10 +431,10 @@ export default function DeviceManagement({ token }) {
             <Field label="Seri No" value={form.serial_no} onChange={setField("serial_no")} placeholder="BT110S222509171140" mono />
             <Field label="MAC Adresi" value={form.mac} onChange={setField("mac")} placeholder="30:ED:A0:31:B2:E0" required mono />
             <div>
-              <label className="block text-[10px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Bağlantı</label>
+              <label className="block text-[11px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Bağlantı</label>
               <select value={form.connection} onChange={setField("connection")}
                 className="w-full bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                           px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
+                           px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
                 <option value="">Seçin...</option>
                 <option value="GSM">GSM</option>
                 <option value="WiFi">WiFi</option>
@@ -465,9 +459,9 @@ export default function DeviceManagement({ token }) {
 
           <div className="flex justify-end mt-3">
             <button onClick={handleSave} disabled={saving}
-              className={`flex items-center gap-1.5 text-[11px] font-bold px-4 py-1.5 rounded-md border transition tracking-wide uppercase
-                ${saving ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400 cursor-pointer"}`}>
-              {editingId !== null ? <HiOutlinePencilSquare className="text-[13px]" /> : <HiOutlinePlus className="text-[13px]" />}
+              className={`flex items-center gap-1.5 text-[12px] font-semibold px-4 py-1.5 rounded-lg border transition
+                ${saving ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer"}`}>
+              {editingId !== null ? <HiOutlinePencilSquare className="text-[14px]" /> : <HiOutlinePlus className="text-[14px]" />}
               {saving ? "Kaydediliyor..." : (editingId !== null ? "Kaydet" : "Ekle")}
             </button>
           </div>
@@ -477,21 +471,21 @@ export default function DeviceManagement({ token }) {
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <select value={filterCompany} onChange={(e) => setFilterCompany(e.target.value)}
           className="flex-1 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                     px-3 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
+                     px-3 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
           <option value="">Tüm Şirketler</option>
           {companies.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <div className="relative flex-1">
-          <HiOutlineMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-[13px]" />
+          <HiOutlineMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-[14px]" />
           <input value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Konum, ID, MAC veya seri no ara..."
             className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                       pl-8 pr-3 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition
+                       pl-8 pr-3 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition
                        placeholder:text-[var(--text-muted)]" />
         </div>
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
           className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                     px-3 py-2 rounded-lg text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer shrink-0">
+                     px-3 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer shrink-0">
           <option value="newest">Panele Eklenme (Yeni→Eski)</option>
           <option value="oldest">Panele Eklenme (Eski→Yeni)</option>
           <option value="az">Konum (A-Z)</option>
@@ -500,29 +494,29 @@ export default function DeviceManagement({ token }) {
       </div>
 
       <div className="flex items-center justify-between mb-3 px-1">
-        <span className="text-[11px] text-[var(--text-muted)]">
+        <span className="text-[12px] text-[var(--text-muted)]">
           {loading ? "Yükleniyor..." : (
             <><span className="text-[var(--accent)] font-semibold">{filtered.length}</span> / {devices.length} cihaz</>
           )}
         </span>
         <button onClick={loadDevices} disabled={loading}
-          className="text-[10px] font-semibold tracking-wide uppercase text-[var(--accent)] hover:underline disabled:opacity-50">
+          className="text-[11px] font-semibold text-[var(--accent)] hover:underline disabled:opacity-50">
           Yenile
         </button>
       </div>
 
       {selectedIds.size > 0 && (
         <div className="flex items-center justify-between mb-3 px-3 py-2 rounded-lg bg-[var(--accent-soft)] border border-[var(--accent-border)]">
-          <span className="text-[12px] font-semibold text-[var(--accent)]">{selectedIds.size} cihaz seçildi</span>
+          <span className="text-[13px] font-semibold text-[var(--accent)]">{selectedIds.size} cihaz seçildi</span>
           <div className="flex items-center gap-2">
             <button onClick={() => setSelectedIds(new Set())}
-              className="text-[11px] font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition">
+              className="text-[12px] font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition">
               Seçimi Temizle
             </button>
             <button onClick={openBulkModal}
-              className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-md border transition tracking-wide uppercase
+              className="flex items-center gap-1.5 text-[13px] font-semibold px-3.5 py-2 rounded-lg border transition
                          bg-[var(--accent)] text-white border-[var(--accent)] hover:opacity-90 cursor-pointer">
-              <HiOutlinePencilSquare className="text-[12px]" />
+              <HiOutlinePencilSquare className="text-[13px]" />
               Toplu Düzenle
             </button>
           </div>
@@ -537,10 +531,10 @@ export default function DeviceManagement({ token }) {
                 checked={filtered.length > 0 && filtered.every((d) => selectedIds.has(d.id))}
                 onChange={() => toggleSelectAll(filtered.map((d) => d.id))}
                 className="cursor-pointer" />
-              <span className="text-[10px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">Konum — ID</span>
-              <span className="text-[10px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">Şirket</span>
-              <span className="text-[10px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">MAC</span>
-              <span className="text-[10px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">Bağlantı</span>
+              <span className="text-[11px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">Konum — ID</span>
+              <span className="text-[11px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">Şirket</span>
+              <span className="text-[11px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">MAC</span>
+              <span className="text-[11px] font-bold text-[var(--text-muted)] tracking-[0.1em] uppercase">Bağlantı</span>
               <span />
             </div>
             <div className="max-h-[500px] overflow-y-auto custom-scroll">
@@ -563,36 +557,36 @@ export default function DeviceManagement({ token }) {
                     onClick={(e) => e.stopPropagation()}
                     className="cursor-pointer" />
                   <div>
-                    <div className="text-[12px] text-[var(--text-primary)] font-medium leading-tight">
+                    <div className="text-[13px] text-[var(--text-primary)] font-medium leading-tight">
                       {d.location || "—"}
                       {d.device_code && <span className="text-[var(--text-muted)]"> — {d.device_code}</span>}
                     </div>
-                    {d.serial_no && <div className="text-[10px] text-[var(--text-muted)] font-mono mt-0.5">{d.serial_no}</div>}
+                    {d.serial_no && <div className="text-[11px] text-[var(--text-muted)] font-mono mt-0.5">{d.serial_no}</div>}
                   </div>
-                  <div className="text-[12px] text-[var(--text-secondary)] truncate pr-2">{d.company || "—"}</div>
-                  <div className="text-[11px] text-[var(--text-muted)] font-mono truncate pr-2">{d.mac || "—"}</div>
+                  <div className="text-[13px] text-[var(--text-secondary)] truncate pr-2">{d.company || "—"}</div>
+                  <div className="text-[12px] text-[var(--text-muted)] font-mono truncate pr-2">{d.mac || "—"}</div>
                   <div>
                     {d.connection ? (
-                      <span className={`inline-flex items-center text-[10px] font-bold px-2 py-[3px] rounded-full
+                      <span className={`inline-flex items-center text-[11px] font-bold px-2 py-[3px] rounded-full
                         ${d.connection.toLowerCase().includes("wifi")
                           ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
                           : "bg-amber-500/10 text-amber-400 border border-amber-500/20"}`}>
                         {d.connection}
                       </span>
-                    ) : <span className="text-[11px] text-[var(--text-muted)]">—</span>}
+                    ) : <span className="text-[12px] text-[var(--text-muted)]">—</span>}
                   </div>
                   <div className="flex justify-end gap-1.5" onDoubleClick={(e) => e.stopPropagation()}>
                     <button onClick={() => setSelectedDetail(d)} title="Detayları göster"
                       className="p-1.5 rounded-md border bg-[var(--bg-sunken)] border-[var(--border-subtle)] text-[var(--text-muted)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] hover:border-[var(--accent-border)] transition cursor-pointer">
-                      <HiOutlineDocumentMagnifyingGlass className="text-[12px]" />
+                      <HiOutlineDocumentMagnifyingGlass className="text-[13px]" />
                     </button>
                     <button onClick={() => startEdit(d)} title="Düzenle"
                       className="p-1.5 rounded-md border bg-[var(--bg-sunken)] border-[var(--border-subtle)] text-[var(--text-muted)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] hover:border-[var(--accent-border)] transition cursor-pointer">
-                      <HiOutlinePencilSquare className="text-[12px]" />
+                      <HiOutlinePencilSquare className="text-[13px]" />
                     </button>
                     <button onClick={() => setConfirmDelete(d.id)} title="Sil"
                       className="p-1.5 rounded-md border bg-[var(--bg-sunken)] border-[var(--border-subtle)] text-[var(--text-muted)] hover:bg-rose-500/10 hover:text-rose-500 hover:border-rose-500/30 transition cursor-pointer">
-                      <HiOutlineTrash className="text-[12px]" />
+                      <HiOutlineTrash className="text-[13px]" />
                     </button>
                   </div>
                 </div>
@@ -606,7 +600,7 @@ export default function DeviceManagement({ token }) {
       {!loading && filtered.length === 0 && (
         <div className="text-center py-12 text-[var(--text-muted)]">
           <HiOutlineCpuChip className="text-[32px] mx-auto mb-2 opacity-40" />
-          <p className="text-[12px]">Eşleşen cihaz bulunamadı</p>
+          <p className="text-[13px]">Eşleşen cihaz bulunamadı</p>
         </div>
       )}
 
@@ -621,18 +615,18 @@ export default function DeviceManagement({ token }) {
               </div>
               <h3 className="text-[14px] font-bold text-[var(--text-primary)] font-display">Cihazı Sil?</h3>
             </div>
-            <p className="text-[12px] text-[var(--text-secondary)] mb-5 leading-relaxed">
+            <p className="text-[13px] text-[var(--text-secondary)] mb-5 leading-relaxed">
               Bu cihaz kalıcı olarak silinecek. Bu işlem geri alınamaz.
             </p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setConfirmDelete(null)} disabled={deleting}
-                className="text-[11px] font-semibold px-3 py-1.5 rounded-md border bg-[var(--bg-subtle)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] transition cursor-pointer tracking-wide uppercase disabled:opacity-50">
+                className="text-[12px] font-semibold px-3 py-1.5 rounded-md border bg-[var(--bg-subtle)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] transition cursor-pointer disabled:opacity-50">
                 İptal
               </button>
               <button onClick={handleDelete} disabled={deleting}
-                className={`flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-md border transition tracking-wide uppercase
+                className={`flex items-center gap-1.5 text-[13px] font-semibold px-3.5 py-2 rounded-lg border transition
                   ${deleting ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-rose-500 hover:bg-rose-400 text-white border-rose-400 cursor-pointer"}`}>
-                <HiOutlineTrash className="text-[13px]" />
+                <HiOutlineTrash className="text-[14px]" />
                 {deleting ? "Siliniyor..." : "Sil"}
               </button>
             </div>
@@ -648,7 +642,7 @@ export default function DeviceManagement({ token }) {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="text-[14px] font-bold text-[var(--text-primary)] font-display">Cihaz Detayları</h3>
-                <p className="text-[11px] text-[var(--text-muted)] font-mono mt-0.5">{selectedDetail.mac}</p>
+                <p className="text-[12px] text-[var(--text-muted)] font-mono mt-0.5">{selectedDetail.mac}</p>
               </div>
               <button onClick={() => setSelectedDetail(null)}
                 className="p-1.5 rounded-md border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--border-strong)] transition">
@@ -678,7 +672,7 @@ export default function DeviceManagement({ token }) {
                   return [def ? def.label : key, val];
                 }),
               ].map(([label, value]) => (
-                <div key={label} className="flex items-start justify-between gap-3 text-[11px] py-1.5 border-b border-[var(--border-subtle)] last:border-b-0">
+                <div key={label} className="flex items-start justify-between gap-3 text-[12px] py-1.5 border-b border-[var(--border-subtle)] last:border-b-0">
                   <span className="text-[var(--text-muted)] shrink-0">{label}</span>
                   <span className="text-[var(--text-primary)] font-mono text-right break-all">
                     {value === "" || value === null || value === undefined ? "—" : String(value)}
@@ -698,7 +692,7 @@ export default function DeviceManagement({ token }) {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-[14px] font-bold text-[var(--text-primary)] font-display">Toplu Düzenle</h3>
-                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{selectedIds.size} cihaz etkilenecek</p>
+                <p className="text-[12px] text-[var(--text-muted)] mt-0.5">{selectedIds.size} cihaz etkilenecek</p>
               </div>
               <button onClick={() => setShowBulkModal(false)} disabled={bulkSaving}
                 className="p-1.5 rounded-md border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--border-strong)] transition">
@@ -709,10 +703,10 @@ export default function DeviceManagement({ token }) {
             <div className="flex flex-col gap-3">
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-[10px] font-semibold tracking-wide uppercase text-[var(--text-muted)]">Alan</label>
+                  <label className="block text-[11px] font-semibold tracking-wide uppercase text-[var(--text-muted)]">Alan</label>
                   <button onClick={() => { setShowInlineFieldAdd((v) => !v); setNewFieldLabel(""); setFieldManagerError(""); }}
-                    className="flex items-center gap-1 text-[10px] font-bold text-[var(--accent)] hover:underline cursor-pointer">
-                    <HiOutlinePlus className="text-[10px]" />
+                    className="flex items-center gap-1 text-[11px] font-bold text-[var(--accent)] hover:underline cursor-pointer">
+                    <HiOutlinePlus className="text-[11px]" />
                     Yeni Alan
                   </button>
                 </div>
@@ -724,17 +718,17 @@ export default function DeviceManagement({ token }) {
                       onKeyDown={(e) => e.key === "Enter" && handleAddField()}
                       placeholder="örn: Kurulum Ekibi" autoFocus
                       className="flex-1 bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                 px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition
+                                 px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition
                                  placeholder:text-[var(--text-muted)]" />
                     <button onClick={handleAddField} disabled={fieldManagerSaving}
-                      className={`text-[11px] font-bold px-3 py-1.5 rounded-md border transition tracking-wide uppercase shrink-0
-                        ${fieldManagerSaving ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400 cursor-pointer"}`}>
+                      className={`text-[13px] font-semibold px-3.5 py-2 rounded-lg border transition shrink-0
+                        ${fieldManagerSaving ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer"}`}>
                       Ekle
                     </button>
                   </div>
                 )}
                 {showInlineFieldAdd && fieldManagerError && (
-                  <p className="text-[10px] text-rose-500 font-medium mb-2">{fieldManagerError}</p>
+                  <p className="text-[11px] text-rose-500 font-medium mb-2">{fieldManagerError}</p>
                 )}
 
                 <div className="flex gap-1.5">
@@ -745,7 +739,7 @@ export default function DeviceManagement({ token }) {
                       else { setBulkIsCustom(false); setBulkField(v); }
                     }}
                     className="flex-1 min-w-0 bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                               px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
+                               px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
                     {Object.entries(BULK_FIELD_LABELS).map(([key, label]) => (
                       <option key={key} value={key}>{label}</option>
                     ))}
@@ -761,18 +755,18 @@ export default function DeviceManagement({ token }) {
                     <button onClick={() => handleDeleteField(bulkField)} title="Bu özel alanı sil"
                       className="p-1.5 rounded-md border bg-[var(--bg-sunken)] border-[var(--border-subtle)] text-[var(--text-muted)]
                                  hover:bg-rose-500/10 hover:text-rose-500 hover:border-rose-500/30 transition cursor-pointer shrink-0">
-                      <HiOutlineTrash className="text-[13px]" />
+                      <HiOutlineTrash className="text-[14px]" />
                     </button>
                   )}
                 </div>
               </div>
 
               <div className="flex gap-4">
-                <label className="flex items-center gap-1.5 text-[12px] text-[var(--text-secondary)] cursor-pointer">
+                <label className="flex items-center gap-1.5 text-[13px] text-[var(--text-secondary)] cursor-pointer">
                   <input type="radio" checked={bulkMode === "set"} onChange={() => setBulkMode("set")} />
                   Aynı değeri ata
                 </label>
-                <label className="flex items-center gap-1.5 text-[12px] text-[var(--text-secondary)] cursor-pointer">
+                <label className="flex items-center gap-1.5 text-[13px] text-[var(--text-secondary)] cursor-pointer">
                   <input type="radio" checked={bulkMode === "replace"} onChange={() => setBulkMode("replace")} />
                   Bul ve Değiştir
                 </label>
@@ -780,41 +774,41 @@ export default function DeviceManagement({ token }) {
 
               {bulkMode === "set" ? (
                 <div>
-                  <label className="block text-[10px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">
+                  <label className="block text-[11px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">
                     Yeni Değer (seçili {selectedIds.size} cihazın hepsine aynen yazılır)
                   </label>
                   <input type="text" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}
                     placeholder="örn: v4.0.5"
                     className="w-full bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                               px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition
+                               px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition
                                placeholder:text-[var(--text-muted)]" />
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[10px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Bul</label>
+                    <label className="block text-[11px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Bul</label>
                     <input type="text" value={bulkFind} onChange={(e) => setBulkFind(e.target.value)}
                       placeholder="örn: A Parsel"
                       className="w-full bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                 px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition
+                                 px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition
                                  placeholder:text-[var(--text-muted)]" />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Değiştir</label>
+                    <label className="block text-[11px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Değiştir</label>
                     <input type="text" value={bulkReplace} onChange={(e) => setBulkReplace(e.target.value)}
                       placeholder="örn: B Parsel"
                       className="w-full bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                 px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition
+                                 px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition
                                  placeholder:text-[var(--text-muted)]" />
                   </div>
-                  <p className="col-span-2 text-[10px] text-[var(--text-muted)] italic">
+                  <p className="col-span-2 text-[11px] text-[var(--text-muted)] italic">
                     Yalnızca seçilen alanda "{bulkFind || "..."}" geçen cihazlar etkilenir, geri kalanı olduğu gibi kalır.
                   </p>
                 </div>
               )}
 
               {bulkError && (
-                <div className="text-[11px] text-rose-500 font-medium px-2.5 py-1.5 rounded-md bg-rose-500/10 border border-rose-500/25">
+                <div className="text-[12px] text-rose-500 font-medium px-2.5 py-1.5 rounded-md bg-rose-500/10 border border-rose-500/25">
                   {bulkError}
                 </div>
               )}
@@ -822,12 +816,12 @@ export default function DeviceManagement({ token }) {
 
             <div className="flex justify-end gap-2 mt-5">
               <button onClick={() => setShowBulkModal(false)} disabled={bulkSaving}
-                className="text-[11px] font-semibold px-3 py-1.5 rounded-md border bg-[var(--bg-subtle)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] transition cursor-pointer tracking-wide uppercase disabled:opacity-50">
+                className="text-[12px] font-semibold px-3 py-1.5 rounded-md border bg-[var(--bg-subtle)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] transition cursor-pointer disabled:opacity-50">
                 İptal
               </button>
               <button onClick={handleBulkApply} disabled={bulkSaving}
-                className={`flex items-center gap-1.5 text-[11px] font-bold px-4 py-1.5 rounded-md border transition tracking-wide uppercase
-                  ${bulkSaving ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400 cursor-pointer"}`}>
+                className={`flex items-center gap-1.5 text-[12px] font-semibold px-4 py-1.5 rounded-lg border transition
+                  ${bulkSaving ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer"}`}>
                 {bulkSaving ? "Uygulanıyor..." : `${selectedIds.size} Cihaza Uygula`}
               </button>
             </div>
@@ -843,7 +837,7 @@ export default function DeviceManagement({ token }) {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-[14px] font-bold text-[var(--text-primary)] font-display">Özel Alanlar</h3>
-                <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                <p className="text-[12px] text-[var(--text-muted)] mt-0.5">
                   Panelden yeni bir cihaz özelliği tanımla — Excel'e gerek kalmadan
                 </p>
               </div>
@@ -856,16 +850,16 @@ export default function DeviceManagement({ token }) {
             {/* Mevcut özel alanlar listesi */}
             <div className="flex flex-col gap-1.5 mb-4 max-h-[200px] overflow-y-auto custom-scroll">
               {customFields.length === 0 ? (
-                <p className="text-[11px] text-[var(--text-muted)] italic px-1">Henüz özel alan tanımlanmamış</p>
+                <p className="text-[12px] text-[var(--text-muted)] italic px-1">Henüz özel alan tanımlanmamış</p>
               ) : customFields.map((f) => (
                 <div key={f.field_key} className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-[var(--bg-sunken)] border border-[var(--border-subtle)]">
                   <div className="min-w-0">
-                    <span className="text-[12px] text-[var(--text-primary)] font-medium">{f.label}</span>
-                    <span className="text-[9px] text-[var(--text-muted)] font-mono ml-1.5">#{f.field_key}</span>
+                    <span className="text-[13px] text-[var(--text-primary)] font-medium">{f.label}</span>
+                    <span className="text-[10px] text-[var(--text-muted)] font-mono ml-1.5">#{f.field_key}</span>
                   </div>
                   <button onClick={() => handleDeleteField(f.field_key)} title="Alanı sil"
                     className="p-1 rounded-md text-[var(--text-muted)] hover:text-rose-500 hover:bg-rose-500/10 transition cursor-pointer shrink-0">
-                    <HiOutlineTrash className="text-[12px]" />
+                    <HiOutlineTrash className="text-[13px]" />
                   </button>
                 </div>
               ))}
@@ -873,26 +867,26 @@ export default function DeviceManagement({ token }) {
 
             {/* Yeni alan ekleme */}
             <div className="border-t border-[var(--border-subtle)] pt-3">
-              <label className="block text-[10px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Yeni Alan Adı</label>
+              <label className="block text-[11px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Yeni Alan Adı</label>
               <div className="flex gap-2">
                 <input type="text" value={newFieldLabel}
                   onChange={(e) => setNewFieldLabel(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleAddField()}
                   placeholder="örn: Kurulum Ekibi"
                   className="flex-1 bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                             px-2.5 py-1.5 rounded-md text-[12px] outline-none focus:border-[var(--accent)] transition
+                             px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition
                              placeholder:text-[var(--text-muted)]" />
                 <button onClick={handleAddField} disabled={fieldManagerSaving}
-                  className={`flex items-center gap-1 text-[11px] font-bold px-3 py-1.5 rounded-md border transition tracking-wide uppercase shrink-0
-                    ${fieldManagerSaving ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400 cursor-pointer"}`}>
-                  <HiOutlinePlus className="text-[12px]" />
+                  className={`flex items-center gap-1 text-[13px] font-semibold px-3.5 py-2 rounded-lg border transition shrink-0
+                    ${fieldManagerSaving ? "bg-[var(--bg-sunken)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed" : "bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer"}`}>
+                  <HiOutlinePlus className="text-[13px]" />
                   Ekle
                 </button>
               </div>
               {fieldManagerError && (
-                <p className="text-[11px] text-rose-500 font-medium mt-2">{fieldManagerError}</p>
+                <p className="text-[12px] text-rose-500 font-medium mt-2">{fieldManagerError}</p>
               )}
-              <p className="text-[10px] text-[var(--text-muted)] italic mt-2">
+              <p className="text-[11px] text-[var(--text-muted)] italic mt-2">
                 Eklenen alan otomatik olarak Ekle/Düzenle formunda, Toplu Düzenle'de ve Detay penceresinde görünür.
               </p>
             </div>

@@ -21,7 +21,7 @@ export default function Navigation({ activePage = "dashboard", onNavigate, onLog
         {/* Logo */}
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleClick("dashboard")}>
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center">
-            <span className="text-white text-[11px] font-black">B</span>
+            <span className="text-white text-[12px] font-black">B</span>
           </div>
           <span className="text-[15px] font-bold tracking-tight">
             <span className="text-sky-400">blue</span>
@@ -35,7 +35,7 @@ export default function Navigation({ activePage = "dashboard", onNavigate, onLog
             <button
               key={item.key}
               onClick={() => handleClick(item.key)}
-              className={`text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors cursor-pointer
+              className={`text-[13px] font-medium px-3 py-1.5 rounded-md transition-colors cursor-pointer
                 ${activePage === item.key
                   ? "text-sky-400 bg-sky-500/10"
                   : "text-slate-500 hover:text-slate-200 hover:bg-slate-800/50"
@@ -49,8 +49,8 @@ export default function Navigation({ activePage = "dashboard", onNavigate, onLog
           {onLogout && (
             <button
               onClick={onLogout}
-              className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500
-                         px-3 py-1.5 rounded-md hover:text-red-400 hover:bg-red-500/10
+              className="flex items-center gap-1.5 text-[13px] font-medium text-slate-500
+                         px-3.5 py-2 rounded-lg hover:text-red-400 hover:bg-red-500/10
                          transition-colors cursor-pointer ml-2"
               title="Çıkış Yap"
             >
@@ -76,7 +76,7 @@ export default function Navigation({ activePage = "dashboard", onNavigate, onLog
             <button
               key={item.key}
               onClick={() => handleClick(item.key)}
-              className={`block w-full text-left text-[12px] font-medium py-2 transition-colors
+              className={`block w-full text-left text-[13px] font-medium py-2 transition-colors
                 ${activePage === item.key
                   ? "text-sky-400"
                   : "text-slate-500 hover:text-slate-200"
@@ -88,7 +88,7 @@ export default function Navigation({ activePage = "dashboard", onNavigate, onLog
           {onLogout && (
             <button
               onClick={onLogout}
-              className="block w-full text-left text-[12px] font-medium py-2 text-red-400
+              className="block w-full text-left text-[13px] font-medium py-2 text-red-400
                          hover:text-red-300 transition-colors"
             >
               Çıkış Yap
