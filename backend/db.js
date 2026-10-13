@@ -14,6 +14,8 @@ db.exec(`
     mac         TEXT,
     company     TEXT,
     location    TEXT,
+    latitude    REAL,
+    longitude   REAL,
     connection  TEXT,
     logo        TEXT,
     sw_version  TEXT,
@@ -62,6 +64,10 @@ db.exec(`
 if (!existingColumns.includes("msp_sw")) {
   db.exec("ALTER TABLE devices ADD COLUMN msp_sw TEXT");
 }
+
+// Harita/konum desteği — eski cihaz kayıtlarında koordinat boş kalır.
+if (!existingColumns.includes("latitude")) db.exec("ALTER TABLE devices ADD COLUMN latitude REAL");
+if (!existingColumns.includes("longitude")) db.exec("ALTER TABLE devices ADD COLUMN longitude REAL");
 
 // ── Toplu Parametre işleri — backend'de arka planda çalışan, kalıcı iş kaydı ──
 // Tarayıcı sekmesi kapansa/yenilense bile ("Toplu Parametre" bileşeni unmount
@@ -129,7 +135,7 @@ function createBulkJob({ id, company, params, createdBy, devices, workerCount, a
   `).run({
     id, company: company || null, createdBy, workerCount: workerCount || 1, now,
     paramId: first.id, paramLabel: first.label, value: first.value,
-    paramsJson: JSON.stringify(params.map((p) => ({ id: p.id, label: p.label, value: p.value }))),
+    paramsJson: JSON.stringify(params.map((p) => ({ id: p.id, label: p.label, value: p.value, operation: p.operation || "set" }))),
     autoRetryMinutes: autoRetryMinutes || null, autoRetryMax: autoRetryMax || null, autoRetryUsed: autoRetryUsed || 0,
   });
 
@@ -384,7 +390,7 @@ function getDevices({ company, location, role, userCompany } = {}) {
 
   const rows = db
     .prepare(
-      `SELECT id, device_code, serial_no, mac, company, location, connection,
+      `SELECT id, device_code, serial_no, mac, company, location, latitude, longitude, connection,
               logo, sw_version, msp_fw, msp_sw, hw_version, note, updated_at, created_at, extra_fields, is_revision
        FROM devices ${where}
        ORDER BY company, location, device_code`
@@ -419,13 +425,34 @@ function updateDeviceVersion(mac, fields) {
   db.prepare(`UPDATE devices SET ${setClause} WHERE UPPER(mac) = UPPER(@mac)`).run(params);
 }
 
+// Cihazdan başarılı bir okuma/SET OK geldikten sonra envanter alanlarını
+// MAC'e göre günceller. MAC ve kullanıcı açıklaması özellikle bu fonksiyona
+// dahil değildir; ikisi de envanter kimliği/manuel alan olarak kalır.
+function updateDeviceInventoryByMac(mac, fields) {
+  const allowed = ["device_code", "serial_no", "connection", "sw_version", "msp_sw", "hw_version", "logo"];
+  const clean = {};
+  for (const key of allowed) {
+    if (fields && fields[key] !== undefined && fields[key] !== null && String(fields[key]).trim() !== "") {
+      clean[key] = String(fields[key]).trim();
+    }
+  }
+  const compact = String(mac || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
+  if (!/^[0-9A-F]{12}$/.test(compact) || Object.keys(clean).length === 0) return 0;
+  const formatted = compact.match(/.{2}/g).join(":");
+  const setClause = Object.keys(clean).map((key) => `${key} = @${key}`).join(", ");
+  const params = { mac: formatted, updatedAt: new Date().toISOString().split("T")[0], ...clean };
+  const result = db.prepare(`UPDATE devices SET ${setClause}, updated_at = @updatedAt WHERE UPPER(REPLACE(mac, ':', '')) = @macCompact`)
+    .run({ ...params, macCompact: compact });
+  return result.changes;
+}
+
 function replaceAllDevices(rows) {
   const insert = db.prepare(`
     INSERT INTO devices
-      (device_code, serial_no, mac, company, location, connection,
+      (device_code, serial_no, mac, company, location, latitude, longitude, connection,
        logo, sw_version, msp_fw, msp_sw, hw_version, note, updated_at, created_at, extra_fields, is_revision)
     VALUES
-      (@device_code, @serial_no, @mac, @company, @location, @connection,
+      (@device_code, @serial_no, @mac, @company, @location, @latitude, @longitude, @connection,
        @logo, @sw_version, @msp_fw, @msp_sw, @hw_version, @note, @updated_at, @created_at, @extra_fields, @is_revision)
   `);
 
@@ -436,6 +463,8 @@ function replaceAllDevices(rows) {
       // verilmişse (mevcut bir cihaz güncelleniyorsa) olduğu gibi korunur, "eklenme sırası" bozulmaz
       insert.run({
         ...row,
+        latitude: row.latitude ?? null,
+        longitude: row.longitude ?? null,
         msp_sw: row.msp_sw ?? null,
         created_at: row.created_at || new Date().toISOString(),
         extra_fields: JSON.stringify(row.extra_fields && typeof row.extra_fields === "object" ? row.extra_fields : {}),
@@ -445,6 +474,23 @@ function replaceAllDevices(rows) {
 
   importAll(rows);
   return rows.length;
+}
+
+function updateDeviceLocation(id, { location, latitude, longitude }) {
+  return db.prepare(`
+    UPDATE devices
+       SET location = @location,
+           latitude = @latitude,
+           longitude = @longitude,
+           updated_at = @updatedAt
+     WHERE id = @id
+  `).run({
+    id: Number(id),
+    location: location || null,
+    latitude: latitude ?? null,
+    longitude: longitude ?? null,
+    updatedAt: new Date().toISOString().split("T")[0],
+  });
 }
 
 // bulk:<jobId>:w<n> / ota:<jobId>:w<n> — toplu iş şeritlerinin kullandığı
@@ -554,7 +600,7 @@ function listRecentJobs({ createdBy, includeOta = true, limit = 8 } = {}) {
 
 module.exports = {
   getAllDeviceLiveStatus, listRecentJobs,
-  getCompanies, getLocations, getDevices, getDeviceByCode, replaceAllDevices, updateDeviceVersion,
+  getCompanies, getLocations, getDevices, getDeviceByCode, replaceAllDevices, updateDeviceVersion, updateDeviceInventoryByMac, updateDeviceLocation,
   getCustomFields, addCustomField, deleteCustomField,
   createBulkJob, updateBulkJobDevice, setBulkJobStatus, dismissBulkJob, getBulkJob, listBulkJobs,
   setBulkJobAutoRetryNextAt, setBulkJobAutoRetryChild, listPendingAutoRetryBulkJobs,

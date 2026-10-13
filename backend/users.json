@@ -117,7 +117,7 @@
     "role": "operator",
     "company": "Sepaş",
     "allowedMacs": [],
-    "email": null,
+    "email": "sepas@xn--gmail-jua.com",
     "createdAt": "2026-08-21T11:04:59.257Z"
   },
   {
@@ -179,5 +179,31 @@
     "allowedMacs": [],
     "email": null,
     "createdAt": "2026-09-21T08:28:58.713Z"
+  },
+  {
+    "username": "abdulhamit",
+    "fullName": "Abdulhamit Mercan",
+    "passwordHash": "$2b$10$a.KlPRvylBKOVY2.0WCZl.B23uU.rcEjEhdr9qu4k4yJM/gD6JR6C",
+    "role": "operator",
+    "status": "active",
+    "company": null,
+    "allowedMacs": [
+      "DC:DA:0C:54:73:BC"
+    ],
+    "email": "abdulhamitmercan937@gmail.com",
+    "createdAt": "2026-10-12T21:45:59.862Z",
+    "ownedMacs": [
+      "DC:DA:0C:54:73:BC"
+    ]
+  },
+  {
+    "username": "abdo",
+    "fullName": "Mercan",
+    "passwordHash": "$2b$10$qrvv8hm.hxaA16wAb.PoY.ejx5Dkl/aOSq03LcLsvkYfeEohFSZmy",
+    "role": "operator",
+    "company": "bluetech",
+    "allowedMacs": [],
+    "email": null,
+    "createdAt": "2026-10-13T10:01:06.612Z"
   }
 ]

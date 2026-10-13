@@ -1,4 +1,4 @@
-const { getCompanies, getLocations, getDevices, getDeviceByCode, getCustomFields, addCustomField, deleteCustomField, isSyntheticSessionStale } = require('./db');
+const { getCompanies, getLocations, getDevices, getDeviceByCode, getCustomFields, addCustomField, deleteCustomField, isSyntheticSessionStale, updateDeviceLocation, updateDeviceInventoryByMac } = require('./db');
 require('dotenv').config();
 
 const INACTIVITY_TIMEOUT      = 5 * 60 * 1000;  // 5 dakika (ms) — hareketsiz bağlantı otomatik kapatma süresi
@@ -15,13 +15,17 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const multer = require('multer');
 const SftpClient = require('ssh2-sftp-client');
-const { validateBin, validateTxt, convertCtoBin } = require('./ota-validators');
+const { validateBin, validateTxt, convertCtoBin, validateIndexed4Logo } = require('./ota-validators');
 const { updateFirmwareJson, dottedVersion, readFirmwareJson, extractVersions, removeFromFirmwareJson } = require('./ota-firmware-json');
 const { readOtaConfig, writeOtaConfig } = require('./ota-config');
 const otaLogTailer = require('./ota-log-tailer');
 const { buildScope, allowsDevice, allowsMac, visibleDevices } = require('./device-scope');
 const rateLimit = require('express-rate-limit');
-const { sendPasswordResetEmail } = require('./email');
+const {
+    sendPasswordResetEmail,
+    sendRegistrationVerificationEmail,
+    sendRegistrationApprovedEmail,
+} = require('./email');
 
 const app = express();
 app.use(cors());
@@ -37,6 +41,7 @@ if (fs.existsSync(distPath)) {
 const TARGET_PATH    = process.env.TARGET_PATH    || '/home/bluetech/target.json';
 const RESPONSES_PATH = process.env.RESPONSES_PATH || '/home/bluetech/responses.json';
 const USERS_PATH     = process.env.USERS_PATH     || path.join(__dirname, 'users.json');
+const DEVICE_SHARE_REQUESTS_PATH = process.env.DEVICE_SHARE_REQUESTS_PATH || path.join(__dirname, 'device_share_requests.json');
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'http://localhost:5173';
 
 // ── OTA Sunucu Kontrolü — şirket sunucusuna SFTP ile dosya gönderme ──
@@ -115,10 +120,64 @@ function writeUsers(users) {
     fs.renameSync(tmp, USERS_PATH);
 }
 
+function readDeviceShareRequests() {
+    if (!fs.existsSync(DEVICE_SHARE_REQUESTS_PATH)) return [];
+    try {
+        const raw = fs.readFileSync(DEVICE_SHARE_REQUESTS_PATH, 'utf-8');
+        const requests = JSON.parse(raw);
+        return Array.isArray(requests) ? requests : [];
+    } catch (e) {
+        console.error('[BLE-SHARE] istek dosyası okunamadı:', e.message);
+        return [];
+    }
+}
+
+function writeDeviceShareRequests(requests) {
+    const tmp = DEVICE_SHARE_REQUESTS_PATH + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(requests, null, 2), 'utf-8');
+    fs.renameSync(tmp, DEVICE_SHARE_REQUESTS_PATH);
+}
+
 // Istek sahibinin cihaz erisim kapsami
 function scopeFor(req) {
     const users = readUsers();
     return buildScope(users.find((u) => u.username === req.username), req.userRole);
+}
+
+// Bireysel operator hesapları için panel kısıtı. Şirket hesabı olmayan ve
+// cihazları tek tek allowedMacs ile atanmış kullanıcılar bu kapsamdadır.
+function isRestrictedOperator(req) {
+    if (req.userRole !== 'operator') return false;
+    const user = readUsers().find((u) => u.username === req.username);
+    return !user || !user.company || isIndividualDeviceCompany(user.company);
+}
+
+function deviceForMac(mac) {
+    const compact = String(mac || '').replace(/[^0-9a-f]/gi, '').toUpperCase();
+    if (!/^[0-9A-F]{12}$/.test(compact)) return null;
+    return getDevices({}).find((device) =>
+        String(device.mac || '').replace(/[^0-9a-f]/gi, '').toUpperCase() === compact
+    ) || null;
+}
+
+// Bireysel cihazlarda yalnızca Wi-Fi/bağlantı, RFID ve temel kontrol/telemetri
+// değişkenleri kullanılabilir. OCPP alanları API seviyesinde de kapalıdır.
+const INDIVIDUAL_READ_IDS = new Set([
+    5, 6, 7, 8, 15, 19, 20, 21, 22, 23, 24, 25, 26, 27, 33, 34, 44,
+    46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 62, 66, 67, 68,
+]);
+const INDIVIDUAL_SET_IDS = new Set([5, 6, 7, 8, 15, 20, 21, 62, 66]);
+
+function individualCommandAllowed(type, variable) {
+    const id = Number(variable);
+    if (type === 'read') return INDIVIDUAL_READ_IDS.has(id);
+    if (type === 'set') return INDIVIDUAL_SET_IDS.has(id);
+    return false;
+}
+
+function isRestrictedTarget(req, mac) {
+    const company = deviceForMac(mac)?.company;
+    return req.userRole === 'operator' && (isIndividualDeviceCompany(company) || !String(company || '').trim());
 }
 
 // Token deposu
@@ -153,6 +212,18 @@ app.post('/api/login', async (req, res) => {
     try { ok = await bcrypt.compare(password, user.passwordHash || ''); }
     catch (e) { return res.status(500).json({ error: 'Doğrulama hatası' }); }
     if (!ok) return res.status(401).json({ error: 'Kullanıcı adı veya şifre hatalı' });
+
+    // Yeni kayıtlar e-posta kodu ile doğrulanır. Eski users.json
+    // kayıtlarında status yoksa geriye dönük olarak aktif kabul edilir.
+    if (user.status === 'pending_email') {
+        return res.status(403).json({ error: 'Önce e-posta adresinize gelen doğrulama kodunu girin.' });
+    }
+    if (user.status === 'pending') {
+        return res.status(403).json({ error: 'Hesabınız eski kayıt akışı nedeniyle yönetici onayı bekliyor.' });
+    }
+    if (user.status === 'disabled') {
+        return res.status(403).json({ error: 'Hesabınız devre dışı bırakılmış.' });
+    }
 
     if (page === 'admin' && user.role === 'operator') {
         return res.status(403).json({ error: 'Bu sayfaya yetkiniz yok' });
@@ -239,9 +310,644 @@ app.get('/api/me', requireAuth(), (req, res) => {
         username: user.username,
         fullName: user.fullName,
         role: user.role,
+        company: user.company || null,
+        status: user.status || 'active',
         email: user.email || null,
         session_id: user.username,
     });
+});
+
+// ── BLE çevrimdışı kurulum yetkilendirmesi ──────────────────────
+// Flutter QR'daki gizlenmiş kimliği çözüp gerçek eFuse MAC'ini gönderir.
+// Bu endpoint yeni bir tablo kullanmaz; mevcut cihaz kaydı ve device-scope
+// kuralları üzerinden yetki verir. Böylece başka şirkete/kullanıcıya ait
+// cihazın BLE ayarlarına erişilemez.
+function decodeBleDeviceToken(rawToken) {
+    const token = String(rawToken || '').trim().toUpperCase().replace(/\s+/g, '');
+    if (token.length !== 30) return null;
+
+    const brand = 'BLUETECH';
+    let digits = '';
+    for (let index = 0; index < 15; index += 1) {
+        if (token[index * 2] !== brand[index % brand.length]) return null;
+        const digit = token[index * 2 + 1];
+        if (!/[0-9]/.test(digit)) return null;
+        digits += digit;
+    }
+
+    const reversedBits = BigInt(digits.split('').reverse().join(''));
+    let value = 0n;
+    for (let bit = 0; bit < 48; bit += 1) {
+        value = (value << 1n) | ((reversedBits >> BigInt(bit)) & 1n);
+    }
+
+    // Flutter tarafındaki _reverseMacBytes() işleminin BigInt karşılığı.
+    let macValue = 0n;
+    for (let byte = 0; byte < 6; byte += 1) {
+        macValue = (macValue << 8n) | ((value >> BigInt(byte * 8)) & 0xFFn);
+    }
+    return macValue.toString(16).toUpperCase().padStart(12, '0');
+}
+
+app.post('/api/ble/authorize-device', requireAuth(), (req, res) => {
+    const supplied = String(req.body?.deviceId || '').trim();
+    const compactMac = supplied.replace(/[^0-9a-f]/gi, '').toUpperCase();
+
+    if (!/^[0-9A-F]{12}$/.test(compactMac)) {
+        return res.status(400).json({ error: 'Geçerli bir cihaz MAC adresi gerekli' });
+    }
+
+    const mac = compactMac.match(/.{2}/g).join(':');
+    const device = getDevices({}).find((item) =>
+        String(item.mac || '').replace(/[^0-9a-f]/gi, '').toUpperCase() === compactMac
+    );
+
+    if (!device) {
+        return res.status(404).json({ error: 'Cihaz kayıtlı değil' });
+    }
+
+    if (!allowsDevice(scopeFor(req), device)) {
+        console.warn(`[BLE-AUTH] ${req.username} yetkisiz BLE kurulumu denedi: ${mac}`);
+        return res.status(403).json({ error: 'Bu cihaz için yetkiniz yok' });
+    }
+
+    console.log(`[BLE-AUTH] ${req.username} BLE kurulum yetkisi aldı: ${mac}`);
+    return res.json({ allowed: true });
+});
+
+// "Bireysel" cihazlar şirket adı alanında tutulabilir. Bu değerler
+// erişim kurallarında şirket cihazı gibi değerlendirilmez; cihaz sahibi
+// kullanıcı olur ve başka kullanıcı ekleme onay akışı çalışır.
+function isIndividualDeviceCompany(value) {
+    const normalized = String(value || '')
+        .trim()
+        .toLocaleLowerCase('tr-TR')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+    return ['bireysel', 'individual', 'kisisel', 'private', 'ozel'].includes(normalized);
+}
+
+// Cihaz kayıtlarında şirket alanı boş bırakıldığında bu cihaz henüz
+// "Atanabilir" durumdadır. Bireysel sahiplik için açıkça Bireysel seçilir.
+function normalizeDeviceCompany(value) {
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    return isIndividualDeviceCompany(raw) ? 'Bireysel' : raw;
+}
+
+function normalizeMacValue(value) {
+    return String(value || '').replace(/[^0-9a-f]/gi, '').toUpperCase();
+}
+
+function formattedMacValue(value) {
+    const compact = normalizeMacValue(value);
+    return /^[0-9A-F]{12}$/.test(compact) ? compact.match(/.{2}/g).join(':') : String(value || '').trim();
+}
+
+function companyForRequest(req) {
+    const user = readUsers().find((item) => item.username === req.username);
+    return normalizeDeviceCompany(user?.company);
+}
+
+function isCompanyManager(req, company) {
+    return (req.userRole === 'admin' || req.userRole === 'operator') &&
+        !!String(company || '').trim() && !isIndividualDeviceCompany(company);
+}
+
+// Superadmin ve şirketi olmayan admin tüm şirketlerde işlem yapabilir.
+// Şirket yöneticisi yalnızca kendi şirketine veya kendi hesabına ait
+// bireysel (boş şirketli) cihaza kayıt/güncelleme yapabilir.
+function canManageDeviceCompany(req, company) {
+    if (req.userRole === 'superadmin') return true;
+    if (req.userRole !== 'admin') return false;
+    const ownCompany = companyForRequest(req);
+    return !ownCompany || company === null || company === ownCompany;
+}
+
+function addOwnedDeviceToUser(user, mac) {
+    const formatted = formattedMacValue(mac);
+    const compact = normalizeMacValue(mac);
+    if (!/^[0-9A-F]{12}$/.test(compact)) return false;
+    const owned = Array.isArray(user.ownedMacs) ? user.ownedMacs : [];
+    const allowed = Array.isArray(user.allowedMacs) ? user.allowedMacs : [];
+    const hasOwned = owned.some((value) => normalizeMacValue(value) === compact);
+    const hasAllowed = allowed.some((value) => normalizeMacValue(value) === compact);
+    if (!hasOwned) user.ownedMacs = [...owned, formatted];
+    if (!hasAllowed) user.allowedMacs = [...allowed, formatted];
+    return !hasOwned || !hasAllowed;
+}
+
+function removeOwnedDeviceFromUser(user, mac) {
+    const compact = normalizeMacValue(mac);
+    const owned = Array.isArray(user.ownedMacs) ? user.ownedMacs : [];
+    const wasOwned = owned.some((value) => normalizeMacValue(value) === compact);
+    user.ownedMacs = owned.filter((value) => normalizeMacValue(value) !== compact);
+    if (wasOwned) {
+        const allowed = Array.isArray(user.allowedMacs) ? user.allowedMacs : [];
+        user.allowedMacs = allowed.filter((value) => normalizeMacValue(value) !== compact);
+    }
+    return wasOwned;
+}
+
+function removeCompanyAccess(target, company, allDevices) {
+    const companyMacs = new Set(allDevices
+        .filter((item) => String(item.company || '').trim() === company)
+        .map((item) => String(item.mac || '').replace(/[^0-9a-f]/gi, '').toUpperCase())
+        .filter((mac) => /^[0-9A-F]{12}$/.test(mac)));
+    const targetMacs = Array.isArray(target.allowedMacs) ? target.allowedMacs : [];
+    const filteredMacs = targetMacs.filter((value) => !companyMacs.has(String(value).replace(/[^0-9a-f]/gi, '').toUpperCase()));
+    const removedMacCount = targetMacs.length - filteredMacs.length;
+    const companyRemoved = String(target.company || '').trim() === company;
+    target.allowedMacs = filteredMacs;
+    if (companyRemoved) target.company = null;
+    return { changed: companyRemoved || removedMacCount > 0, removedMacCount };
+}
+
+// ── BLE cihaz kodu ile cihaz sahiplenme ─────────────────────────
+// ESP ekranındaki 30 karakterlik BLUETECH+rakam kodu çözülür ve yeni
+// operator hesabının allowedMacs listesine eklenir. Bu işlem yeni bir tablo
+// kullanmaz; mevcut users.json yetki modeli kullanılır.
+//
+// Güvenlik kuralları:
+//   * Superadmin/admin zaten kapsam dışı bırakılmaz; onlar için işlem no-op'tur.
+//   * Başka bir kullanıcının allowedMacs listesinde olan cihaz taşınamaz.
+//   * Firmaya atanmış cihazı bireysel/operator hesap sahiplenemez; firma
+//     yöneticisi tarafından atanması gerekir.
+//   * Boş/unassigned cihaz hesaba eklenebilir; firma cihazı bireysel hesaba
+//     aktarılmaz. BLE ayar değişiklikleri ayrıca /authorize-device kapsamına
+//     tabidir.
+app.post('/api/ble/claim-device', requireAuth(), (req, res) => {
+    const token = String(req.body?.deviceToken || '').trim();
+    const supplied = String(req.body?.deviceId || '').trim();
+    const decodedTokenMac = token ? decodeBleDeviceToken(token) : null;
+    const compactMac = decodedTokenMac || supplied.replace(/[^0-9a-f]/gi, '').toUpperCase();
+
+    if (!/^[0-9A-F]{12}$/.test(compactMac)) {
+        return res.status(400).json({ error: 'Geçerli bir cihaz MAC adresi gerekli' });
+    }
+
+    const mac = compactMac.match(/.{2}/g).join(':');
+    const device = getDevices({}).find((item) =>
+        String(item.mac || '').replace(/[^0-9a-f]/gi, '').toUpperCase() === compactMac
+    );
+    if (!device) return res.status(404).json({ error: 'Cihaz kayıtlı değil' });
+
+    const users = readUsers();
+    const current = users.find((user) => user.username === req.username);
+    if (!current) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+
+    // Admin ve superadmin için QR ile sahiplenme gerekmez; mevcut kapsamları
+    // aynen korunur. UI yanlışlıkla bu endpoint'i çağırsa bile yetki daralmaz.
+    if (req.userRole !== 'operator') {
+        if (!allowsDevice(scopeFor(req), device)) {
+            return res.status(403).json({ error: 'Bu cihaz için yetkiniz yok' });
+        }
+        return res.json({ claimed: false, allowed: true, deviceCode: device.device_code || null });
+    }
+
+    const normalizeMac = (value) => String(value || '').replace(/[^0-9a-f]/gi, '').toUpperCase();
+    const currentMacs = Array.isArray(current.allowedMacs) ? current.allowedMacs : [];
+    if (currentMacs.some((value) => normalizeMac(value) === compactMac)) {
+        return res.json({ claimed: false, allowed: true, deviceCode: device.device_code || null });
+    }
+
+    const deviceCompany = String(device.company || '').trim();
+    // Açıkça Bireysel olan veya henüz firma atanmamış (boş) cihazlar kod ile
+    // sahiplenilebilir. Firmaya atanmış cihaz yalnız şirket yöneticisiyle paylaşılır.
+    const individualDevice = isIndividualDeviceCompany(deviceCompany) || !deviceCompany;
+    // Şirket cihazı QR/kod ile bireysel olarak sahiplenilmez. Şirket yetkilisi
+    // Device Select içindeki "Kullanıcı ekle" akışından paylaşmalıdır.
+    if (!individualDevice) {
+        console.warn(`[BLE-CLAIM] ${req.username} firma cihazını sahiplenmek istedi: ${mac} (${deviceCompany})`);
+        return res.status(403).json({ error: 'Bu cihaz firmaya atanmış. Cihazı şirket yetkilisi hesabınıza eklemeli.' });
+    }
+
+    // Kod sahibi olmayan bireysel kullanıcı cihaz kodunu girdiğinde cihaz
+    // sahibine onay isteği gönderilir. Sahip onay verene kadar hedef hesaba
+    // allowedMacs yazılmaz.
+    const explicitOwners = users.filter((user) => Array.isArray(user.ownedMacs) &&
+        user.ownedMacs.some((value) => normalizeMac(value) === compactMac));
+    const fallbackOwners = users.filter((user) => user.username !== req.username &&
+        Array.isArray(user.allowedMacs) &&
+        user.allowedMacs.some((value) => normalizeMac(value) === compactMac));
+    const owners = explicitOwners.length > 0 ? explicitOwners : fallbackOwners;
+    const owner = owners.length === 1 ? owners[0] : null;
+    if (owner && owner.username !== req.username) {
+        const requests = readDeviceShareRequests();
+        const duplicate = requests.find((request) => request.status === 'pending' &&
+            request.ownerUsername === owner.username &&
+            request.targetUsername === current.username &&
+            request.deviceMac === mac);
+        if (duplicate) {
+            return res.status(409).json({ error: 'Onay isteğiniz zaten gönderildi; cihaz sahibinin onayı bekleniyor.', pendingApproval: true });
+        }
+
+        requests.push({
+            id: crypto.randomBytes(12).toString('hex'),
+            ownerUsername: owner.username,
+            targetUsername: current.username,
+            deviceMac: mac,
+            deviceId: device.id,
+            deviceCode: device.device_code || null,
+            location: device.location || null,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+        });
+        writeDeviceShareRequests(requests);
+        console.log(`[BLE-CLAIM] onay isteği ${current.username} -> ${owner.username}: ${mac}`);
+        return res.status(202).json({
+            pendingApproval: true,
+            ownerUsername: owner.username,
+            message: 'İstek gönderildi. Cihaz sahibi onayladığında cihaz hesabınıza eklenecek.',
+        });
+    }
+
+    current.allowedMacs = [...new Set([...currentMacs, mac.toUpperCase()])];
+    current.ownedMacs = [...new Set([...(Array.isArray(current.ownedMacs) ? current.ownedMacs : []), mac.toUpperCase()])];
+    writeUsers(users);
+    console.log(`[BLE-CLAIM] ${req.username} cihazı hesabına ekledi: ${mac}`);
+    return res.json({
+        claimed: true,
+        allowed: true,
+        deviceCode: device.device_code || null,
+        location: device.location || null,
+    });
+});
+
+// ── Cihazı başka aktif kullanıcıya paylaşma ─────────────────────
+// Kaynak kullanıcı cihazı zaten görebiliyor olmalı. Bireysel cihazlarda
+// paylaşım, cihazın mevcut allowedMacs yetkisi üzerinden yapılır; şirket
+// cihazlarında hem kaynak hem hedef aynı şirkette olmalıdır.
+app.post('/api/ble/share-device', requireAuth(), (req, res) => {
+    const targetUsername = String(req.body?.username || '').trim();
+    const suppliedId = String(req.body?.deviceId || '').trim();
+    const token = String(req.body?.deviceToken || '').trim();
+    const tokenMac = token ? decodeBleDeviceToken(token) : null;
+    const compactMac = tokenMac || suppliedId.replace(/[^0-9a-f]/gi, '').toUpperCase();
+
+    if (!targetUsername) return res.status(400).json({ error: 'Eklenecek kullanıcı adı gerekli' });
+
+    const allDevices = getDevices({});
+    let device = null;
+    if (/^\d+$/.test(suppliedId)) {
+        device = allDevices.find((item) => String(item.id) === suppliedId);
+    }
+    if (!device && /^[0-9A-F]{12}$/.test(compactMac)) {
+        device = allDevices.find((item) =>
+            String(item.mac || '').replace(/[^0-9a-f]/gi, '').toUpperCase() === compactMac
+        );
+    }
+    if (!device) return res.status(404).json({ error: 'Cihaz kayıtlı değil' });
+
+    const users = readUsers();
+    const source = users.find((user) => user.username === req.username);
+    const target = users.find((user) => String(user.username || '').toLowerCase() === targetUsername.toLowerCase());
+    if (!source) return res.status(404).json({ error: 'Kaynak kullanıcı bulunamadı' });
+    if (!target) return res.status(404).json({ error: 'Eklenecek kullanıcı bulunamadı' });
+    if (target.role === 'superadmin') return res.status(400).json({ error: 'Superadmin cihaz listesine eklenemez' });
+    if (target.status === 'disabled' || target.status === 'pending_email' || target.status === 'pending') {
+        return res.status(403).json({ error: 'Sadece aktif kullanıcıya cihaz eklenebilir' });
+    }
+    if (target.username === source.username) {
+        return res.status(400).json({ error: 'Kullanıcı zaten bu hesaba ait' });
+    }
+
+    const sourceScope = scopeFor(req);
+    if (!allowsDevice(sourceScope, device)) {
+        console.warn(`[BLE-SHARE] ${req.username} yetkisiz cihaz paylaşımı denedi: ${device.mac || device.id}`);
+        return res.status(403).json({ error: 'Bu cihazı paylaşma yetkiniz yok' });
+    }
+
+    const rawDeviceCompany = String(device.company || '').trim();
+    const deviceCompany = (!rawDeviceCompany || isIndividualDeviceCompany(rawDeviceCompany)) ? '' : rawDeviceCompany;
+    const sourceCompany = String(source.company || '').trim();
+    const targetCompany = String(target.company || '').trim();
+    const unrestrictedSource = req.userRole === 'superadmin' || (req.userRole === 'admin' && !sourceCompany);
+    // Şirket yöneticisi, kendi şirketindeki cihaza daha önce kendi hesabını
+    // oluşturmuş ama şirketi henüz boş olan aktif bir kullanıcıyı ekleyebilir.
+    // Bu işlem hedef hesabı şirketine bağlar; böylece tek cihaz değil,
+    // şirket kapsamındaki tüm cihazlar görünür.
+    const canAssignTargetCompany = isCompanyManager(req, sourceCompany) &&
+        !!deviceCompany && sourceCompany === deviceCompany && !targetCompany;
+
+    if (!unrestrictedSource && deviceCompany && sourceCompany !== deviceCompany) {
+        return res.status(403).json({ error: 'Bu şirket cihazını yalnızca şirket yetkilisi paylaşabilir' });
+    }
+    if (deviceCompany && targetCompany && targetCompany !== deviceCompany && !unrestrictedSource) {
+        return res.status(403).json({ error: 'Şirket cihazı yalnızca aynı şirketteki kullanıcıya eklenebilir' });
+    }
+    if (deviceCompany && !targetCompany && !canAssignTargetCompany && !unrestrictedSource) {
+        return res.status(403).json({ error: 'Bu kullanıcıya önce aynı şirket atanmalı; şirket yöneticisi eklemelidir' });
+    }
+    if (!deviceCompany && targetCompany && !unrestrictedSource) {
+        return res.status(403).json({ error: 'Bireysel cihaz şirket hesabına eklenemez' });
+    }
+
+    const normalizedMac = String(device.mac || '').replace(/[^0-9a-f]/gi, '').toUpperCase();
+    if (!/^[0-9A-F]{12}$/.test(normalizedMac)) {
+        return res.status(422).json({ error: 'Cihazın MAC kimliği geçersiz' });
+    }
+    const formattedMac = normalizedMac.match(/.{2}/g).join(':');
+    const targetMacs = Array.isArray(target.allowedMacs) ? target.allowedMacs : [];
+    let targetChanged = false;
+
+    if (canAssignTargetCompany) {
+        target.company = deviceCompany;
+        targetChanged = true;
+    }
+
+    // Bireysel cihazı yalnızca sahibi paylaşım isteği oluşturabilir. Yeni
+    // sahiplik alanı olmayan eski kayıtlarda, cihazı allowedMacs listesinde
+    // taşıyan tek kullanıcı geriye dönük olarak sahip kabul edilir.
+    if (!deviceCompany && !unrestrictedSource) {
+        const explicitOwners = users.filter((user) => Array.isArray(user.ownedMacs) &&
+            user.ownedMacs.some((value) => String(value).replace(/[^0-9a-f]/gi, '').toUpperCase() === normalizedMac));
+        const fallbackOwners = users.filter((user) => Array.isArray(user.allowedMacs) &&
+            user.allowedMacs.some((value) => String(value).replace(/[^0-9a-f]/gi, '').toUpperCase() === normalizedMac));
+        const owners = explicitOwners.length > 0 ? explicitOwners : fallbackOwners;
+        const owner = owners.length === 1 ? owners[0] : null;
+        if (owner && owner.username !== source.username) {
+            return res.status(403).json({ error: 'Bu cihazın paylaşımını yalnızca cihaz sahibi başlatabilir' });
+        }
+
+        const requests = readDeviceShareRequests();
+        const duplicate = requests.find((request) => request.status === 'pending' &&
+            request.ownerUsername === source.username &&
+            request.targetUsername === target.username &&
+            request.deviceMac === formattedMac);
+        if (duplicate) {
+            return res.status(409).json({ error: 'Bu kullanıcı için zaten bekleyen bir onay isteği var', pendingApproval: true });
+        }
+
+        const request = {
+            id: crypto.randomBytes(12).toString('hex'),
+            ownerUsername: source.username,
+            targetUsername: target.username,
+            deviceMac: formattedMac,
+            deviceId: device.id,
+            deviceCode: device.device_code || null,
+            location: device.location || null,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+        };
+        requests.push(request);
+        writeDeviceShareRequests(requests);
+        console.log(`[BLE-SHARE] onay bekliyor ${source.username} -> ${target.username}: ${formattedMac}`);
+        return res.status(202).json({ pendingApproval: true, ownerUsername: source.username, deviceCode: device.device_code || null });
+    }
+
+    if (!targetMacs.some((value) => String(value).replace(/[^0-9a-f]/gi, '').toUpperCase() === normalizedMac)) {
+        target.allowedMacs = [...new Set([...targetMacs, formattedMac])];
+        targetChanged = true;
+    }
+    if (targetChanged) {
+        writeUsers(users);
+    }
+
+    console.log(`[BLE-SHARE] ${req.username} -> ${target.username}: ${formattedMac}`);
+    return res.json({
+        shared: true,
+        username: target.username,
+        companyAssigned: canAssignTargetCompany,
+        company: target.company || null,
+        deviceCode: device.device_code || null,
+    });
+});
+
+// ── Şirket yöneticisi: kullanıcıyı şirket kapsamına alma ─────────
+// Bu akış cihaz seçim ekranından bağımsızdır. Şirket yöneticisi Hesap
+// Yönetimi bölümünde aktif kullanıcının adını yazar; kullanıcı şirketin
+// tüm cihazlarını görür.
+app.post('/api/company/assign-user', requireAuth(), (req, res) => {
+    const targetUsername = String(req.body?.username || '').trim();
+    if (!targetUsername) return res.status(400).json({ error: 'Eklenecek kullanıcı adı gerekli' });
+
+    const users = readUsers();
+    const source = users.find((user) => user.username === req.username);
+    const target = users.find((user) => String(user.username || '').toLowerCase() === targetUsername.toLowerCase());
+    const sourceCompany = String(source?.company || '').trim();
+
+    if (!isCompanyManager(req, sourceCompany)) {
+        return res.status(403).json({ error: 'Bu işlem yalnızca şirket yöneticisi hesabından yapılabilir' });
+    }
+    if (!target) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+    if (target.username === source.username) return res.status(400).json({ error: 'Kendi hesabınız zaten bu şirkete bağlı' });
+    if (target.role === 'superadmin') return res.status(400).json({ error: 'Superadmin şirkete atanamaz' });
+    if (target.status === 'disabled' || target.status === 'pending_email' || target.status === 'pending') {
+        return res.status(403).json({ error: 'Sadece aktif kullanıcı şirkete atanabilir' });
+    }
+    const targetCompany = String(target.company || '').trim();
+    if (targetCompany && targetCompany !== sourceCompany) {
+        return res.status(403).json({ error: 'Kullanıcı başka bir şirkete zaten atanmış' });
+    }
+
+    target.company = sourceCompany;
+    writeUsers(users);
+    console.log(`[COMPANY] ${req.username} -> ${target.username}: ${sourceCompany} şirketine atandı`);
+    return res.json({ assigned: true, username: target.username, company: sourceCompany });
+});
+
+// ── Şirket yöneticisi: kullanıcının şirket erişimini kaldırma ─────
+app.post('/api/company/revoke-user', requireAuth(), (req, res) => {
+    const targetUsername = String(req.body?.username || '').trim();
+    if (!targetUsername) return res.status(400).json({ error: 'Erişimi kaldırılacak kullanıcı adı gerekli' });
+
+    const users = readUsers();
+    const source = users.find((user) => user.username === req.username);
+    const target = users.find((user) => String(user.username || '').toLowerCase() === targetUsername.toLowerCase());
+    const sourceCompany = String(source?.company || '').trim();
+
+    if (!isCompanyManager(req, sourceCompany)) {
+        return res.status(403).json({ error: 'Bu işlem yalnızca şirket yöneticisi hesabından yapılabilir' });
+    }
+    if (!target) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+    if (target.username === source.username) return res.status(400).json({ error: 'Kendi şirket erişiminizi kaldıramazsınız' });
+    if (target.role === 'superadmin') return res.status(400).json({ error: 'Superadmin erişimi kaldırılamaz' });
+    if (String(target.company || '').trim() !== sourceCompany) {
+        return res.status(404).json({ error: 'Kullanıcının bu şirkete erişimi yok' });
+    }
+
+    const result = removeCompanyAccess(target, sourceCompany, getDevices({}));
+    if (!result.changed) return res.status(404).json({ error: 'Kullanıcının bu şirkete erişimi yok' });
+    writeUsers(users);
+    console.log(`[COMPANY] ${req.username} -> ${target.username}: ${sourceCompany} şirket erişimi kaldırıldı`);
+    return res.json({ revoked: true, username: target.username, company: null, removedMacCount: result.removedMacCount });
+});
+
+// ── Kullanıcının cihaz/şirket erişimini kaldırma ─────────────────
+// Şirket yöneticisi kendi şirketindeki kullanıcıyı şirketten çıkarabilir.
+// Şirket erişimi kaldırıldığında kullanıcının o şirkete ait cihaz MAC'leri
+// de allowedMacs listesinden temizlenir; başka şirket/bireysel cihazları
+// korunur. Bireysel cihazlarda ise yalnızca ilgili cihaz yetkisi kaldırılır.
+app.post('/api/ble/revoke-device-access', requireAuth(), (req, res) => {
+    const targetUsername = String(req.body?.username || '').trim();
+    const suppliedId = String(req.body?.deviceId || '').trim();
+    const token = String(req.body?.deviceToken || '').trim();
+    const tokenMac = token ? decodeBleDeviceToken(token) : null;
+    const compactMac = tokenMac || suppliedId.replace(/[^0-9a-f]/gi, '').toUpperCase();
+
+    if (!targetUsername) return res.status(400).json({ error: 'Erişimi kaldırılacak kullanıcı adı gerekli' });
+
+    const allDevices = getDevices({});
+    let device = null;
+    if (/^\d+$/.test(suppliedId)) {
+        device = allDevices.find((item) => String(item.id) === suppliedId);
+    }
+    if (!device && /^[0-9A-F]{12}$/.test(compactMac)) {
+        device = allDevices.find((item) =>
+            String(item.mac || '').replace(/[^0-9a-f]/gi, '').toUpperCase() === compactMac
+        );
+    }
+    if (!device) return res.status(404).json({ error: 'Cihaz kayıtlı değil' });
+
+    const users = readUsers();
+    const source = users.find((user) => user.username === req.username);
+    const target = users.find((user) => String(user.username || '').toLowerCase() === targetUsername.toLowerCase());
+    if (!source) return res.status(404).json({ error: 'Kaynak kullanıcı bulunamadı' });
+    if (!target) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+    if (target.role === 'superadmin') return res.status(400).json({ error: 'Superadmin erişimi kaldırılamaz' });
+    if (target.username === source.username) return res.status(400).json({ error: 'Kendi erişiminizi bu işlemle kaldıramazsınız' });
+
+    const sourceScope = scopeFor(req);
+    if (!allowsDevice(sourceScope, device)) {
+        console.warn(`[BLE-REVOKE] ${req.username} yetkisiz erişim kaldırma denedi: ${device.mac || device.id}`);
+        return res.status(403).json({ error: 'Bu cihazın erişimini kaldırma yetkiniz yok' });
+    }
+
+    const rawDeviceCompany = String(device.company || '').trim();
+    const deviceCompany = (!rawDeviceCompany || isIndividualDeviceCompany(rawDeviceCompany)) ? '' : rawDeviceCompany;
+    const sourceCompany = String(source.company || '').trim();
+    const targetCompany = String(target.company || '').trim();
+    const unrestrictedSource = req.userRole === 'superadmin' || (req.userRole === 'admin' && !sourceCompany);
+
+    if (deviceCompany) {
+        const companyManager = req.userRole === 'admin' && sourceCompany === deviceCompany;
+        if (!unrestrictedSource && !companyManager) {
+            return res.status(403).json({ error: 'Bu şirket kullanıcısının erişimini yalnızca şirket yöneticisi kaldırabilir' });
+        }
+        if (targetCompany !== deviceCompany) {
+            return res.status(404).json({ error: 'Kullanıcının bu şirkete erişimi yok' });
+        }
+
+        const companyMacs = new Set(allDevices
+            .filter((item) => String(item.company || '').trim() === deviceCompany)
+            .map((item) => String(item.mac || '').replace(/[^0-9a-f]/gi, '').toUpperCase())
+            .filter((mac) => /^[0-9A-F]{12}$/.test(mac)));
+        const targetMacs = Array.isArray(target.allowedMacs) ? target.allowedMacs : [];
+        const filteredMacs = targetMacs.filter((value) => !companyMacs.has(String(value).replace(/[^0-9a-f]/gi, '').toUpperCase()));
+        const removedMacCount = targetMacs.length - filteredMacs.length;
+        target.allowedMacs = filteredMacs;
+        target.company = null;
+        writeUsers(users);
+
+        console.log(`[BLE-REVOKE] ${req.username} -> ${target.username}: ${deviceCompany} şirket erişimi kaldırıldı`);
+        return res.json({
+            revoked: true,
+            username: target.username,
+            companyRevoked: true,
+            removedMacCount,
+            message: 'Kullanıcının şirket cihazlarına erişimi kaldırıldı',
+        });
+    }
+
+    // Bireysel cihazı yalnızca sahibi (veya superadmin) paylaşım kapsamından
+    // çıkarabilir. Şirket yöneticisi bireysel cihaz erişimini kaldıramaz.
+    if (!unrestrictedSource) {
+        const normalizedMac = String(device.mac || '').replace(/[^0-9a-f]/gi, '').toUpperCase();
+        const explicitOwners = users.filter((user) => Array.isArray(user.ownedMacs) &&
+            user.ownedMacs.some((value) => String(value).replace(/[^0-9a-f]/gi, '').toUpperCase() === normalizedMac));
+        const fallbackOwners = users.filter((user) => Array.isArray(user.allowedMacs) &&
+            user.allowedMacs.some((value) => String(value).replace(/[^0-9a-f]/gi, '').toUpperCase() === normalizedMac));
+        const owners = explicitOwners.length > 0 ? explicitOwners : fallbackOwners;
+        const owner = owners.length === 1 ? owners[0] : null;
+        if (!owner || owner.username !== source.username) {
+            return res.status(403).json({ error: 'Bireysel cihaz erişimini yalnızca cihaz sahibi kaldırabilir' });
+        }
+    }
+
+    const normalizedMac = String(device.mac || '').replace(/[^0-9a-f]/gi, '').toUpperCase();
+    if (!/^[0-9A-F]{12}$/.test(normalizedMac)) {
+        return res.status(422).json({ error: 'Cihazın MAC kimliği geçersiz' });
+    }
+    const targetMacs = Array.isArray(target.allowedMacs) ? target.allowedMacs : [];
+    const filteredMacs = targetMacs.filter((value) => String(value).replace(/[^0-9a-f]/gi, '').toUpperCase() !== normalizedMac);
+    if (filteredMacs.length === targetMacs.length) {
+        return res.status(404).json({ error: 'Kullanıcının bu cihaz için erişimi yok' });
+    }
+
+    target.allowedMacs = filteredMacs;
+    writeUsers(users);
+
+    const formattedMac = normalizedMac.match(/.{2}/g).join(':');
+    const requests = readDeviceShareRequests();
+    let pendingChanged = false;
+    for (const request of requests) {
+        if (request.status === 'pending' && request.ownerUsername === source.username &&
+            request.targetUsername === target.username && request.deviceMac === formattedMac) {
+            request.status = 'revoked';
+            request.revokedAt = new Date().toISOString();
+            pendingChanged = true;
+        }
+    }
+    if (pendingChanged) writeDeviceShareRequests(requests);
+
+    console.log(`[BLE-REVOKE] ${req.username} -> ${target.username}: ${formattedMac}`);
+    return res.json({ revoked: true, username: target.username, companyRevoked: false, deviceCode: device.device_code || null });
+});
+
+// Bireysel cihaz paylaşım istekleri yalnızca cihaz sahibine görünür.
+app.get('/api/me/device-share-requests', requireAuth(), (req, res) => {
+    const requests = readDeviceShareRequests()
+        .filter((request) => request.ownerUsername === req.username && request.status === 'pending')
+        .map((request) => ({ ...request }));
+    return res.json({ requests });
+});
+
+function resolveShareRequest(req, requestId) {
+    const requests = readDeviceShareRequests();
+    const index = requests.findIndex((request) => request.id === requestId);
+    if (index < 0) return { requests, index, request: null };
+    return { requests, index, request: requests[index] };
+}
+
+app.post('/api/me/device-share-requests/:id/approve', requireAuth(), (req, res) => {
+    const resolved = resolveShareRequest(req, req.params.id);
+    if (!resolved.request) return res.status(404).json({ error: 'Onay isteği bulunamadı' });
+    if (resolved.request.ownerUsername !== req.username) return res.status(403).json({ error: 'Bu isteği yalnızca cihaz sahibi onaylayabilir' });
+    if (resolved.request.status !== 'pending') return res.status(409).json({ error: 'Bu istek artık beklemede değil' });
+
+    const users = readUsers();
+    const target = users.find((user) => user.username === resolved.request.targetUsername);
+    if (!target || target.status === 'disabled' || target.status === 'pending_email' || target.status === 'pending') {
+        return res.status(404).json({ error: 'Eklenecek kullanıcı artık aktif değil' });
+    }
+
+    const mac = String(resolved.request.deviceMac || '').replace(/[^0-9a-f]/gi, '').toUpperCase();
+    if (!/^[0-9A-F]{12}$/.test(mac)) return res.status(422).json({ error: 'Cihaz kimliği geçersiz' });
+    const targetMacs = Array.isArray(target.allowedMacs) ? target.allowedMacs : [];
+    if (!targetMacs.some((value) => String(value).replace(/[^0-9a-f]/gi, '').toUpperCase() === mac)) {
+        target.allowedMacs = [...new Set([...targetMacs, mac.match(/.{2}/g).join(':')])];
+        writeUsers(users);
+    }
+
+    resolved.request.status = 'approved';
+    resolved.request.approvedAt = new Date().toISOString();
+    writeDeviceShareRequests(resolved.requests);
+    console.log(`[BLE-SHARE] onaylandı ${req.username} -> ${target.username}: ${resolved.request.deviceMac}`);
+    return res.json({ approved: true, username: target.username, deviceCode: resolved.request.deviceCode || null });
+});
+
+app.post('/api/me/device-share-requests/:id/reject', requireAuth(), (req, res) => {
+    const resolved = resolveShareRequest(req, req.params.id);
+    if (!resolved.request) return res.status(404).json({ error: 'Onay isteği bulunamadı' });
+    if (resolved.request.ownerUsername !== req.username) return res.status(403).json({ error: 'Bu isteği yalnızca cihaz sahibi reddedebilir' });
+    if (resolved.request.status !== 'pending') return res.status(409).json({ error: 'Bu istek artık beklemede değil' });
+
+    resolved.request.status = 'rejected';
+    resolved.request.rejectedAt = new Date().toISOString();
+    writeDeviceShareRequests(resolved.requests);
+    console.log(`[BLE-SHARE] reddedildi ${req.username}: ${resolved.request.targetUsername} / ${resolved.request.deviceMac}`);
+    return res.json({ rejected: true });
 });
 
 // =============================================
@@ -267,6 +973,165 @@ function passwordPolicyError(pw) {
     return null;
 }
 
+// ── PUBLIC KAYIT + E-POSTA DOĞRULAMA ───────────────────────────
+// Yeni hesaplar operator + pending_email açılır. Kullanıcı e-postasına
+// gönderilen 6 haneli kodu girince hesap active olur. Cihaz/şirket yetkisi
+// yine otomatik verilmez.
+const registerLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: Number(process.env.REGISTER_RATE_LIMIT) || 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Çok fazla kayıt denemesi — lütfen daha sonra tekrar deneyin' },
+});
+
+app.post('/api/register', registerLimiter, async (req, res) => {
+    const fullName = String(req.body?.fullName || '').trim();
+    const username = String(req.body?.username || '').trim();
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+
+    if (!fullName || !username || !password) {
+        return res.status(400).json({ error: 'Ad soyad, kullanıcı adı ve şifre gerekli' });
+    }
+    if (fullName.length < 2 || fullName.length > 80) {
+        return res.status(400).json({ error: 'Ad soyad 2-80 karakter olmalı' });
+    }
+    if (!/^[a-zA-Z0-9_-]{3,32}$/.test(username)) {
+        return res.status(400).json({ error: 'Kullanıcı adı 3-32 karakter olmalı (harf/rakam/_/-)' });
+    }
+    if (email && !EMAIL_REGEX.test(email)) {
+        return res.status(400).json({ error: 'Geçersiz e-posta adresi' });
+    }
+    const registerPwError = passwordPolicyError(password);
+    if (registerPwError) return res.status(400).json({ error: registerPwError });
+
+    const users = readUsers();
+    const usernameTaken = users.some((u) => String(u.username || '').toLowerCase() === username.toLowerCase());
+    if (usernameTaken) return res.status(409).json({ error: 'Bu kullanıcı adı zaten mevcut' });
+    if (email && users.some((u) => String(u.email || '').toLowerCase() === email)) {
+        return res.status(409).json({ error: 'Bu e-posta zaten kayıtlı' });
+    }
+
+    if (!email) {
+        return res.status(400).json({ error: 'E-posta adresi doğrulama kodu için gerekli' });
+    }
+
+    try {
+        const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+        const verificationCode = String(crypto.randomInt(100000, 1000000));
+        const verificationCodeHash = crypto.createHash('sha256').update(verificationCode).digest('hex');
+
+        // Mail gönderilemezse doğrulanamayacak hesabı users.json'a yazmayalım.
+        await sendRegistrationVerificationEmail(email, fullName, username, verificationCode);
+
+        users.push({
+            username,
+            fullName,
+            passwordHash,
+            role: 'operator',
+            status: 'pending_email',
+            company: null,
+            allowedMacs: [],
+            email,
+            verificationCodeHash,
+            verificationExpiresAt: Date.now() + 10 * 60 * 1000,
+            verificationAttempts: 0,
+            createdAt: new Date().toISOString(),
+        });
+        writeUsers(users);
+        console.log(`[REGISTER] doğrulama maili gönderildi: ${username} -> ${email}`);
+        return res.status(201).json({
+            message: 'Doğrulama kodu e-posta adresinize gönderildi.',
+            username,
+            status: 'pending_email',
+            verificationRequired: true,
+            emailSent: true,
+        });
+    } catch (e) {
+        console.error('[REGISTER] doğrulama maili/kayıt başarısız:', e.message);
+        return res.status(503).json({ error: 'Doğrulama e-postası gönderilemedi. SMTP ayarlarını kontrol edin.' });
+    }
+});
+
+const registerVerifyLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: Number(process.env.REGISTER_VERIFY_RATE_LIMIT) || 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Çok fazla kod denemesi — lütfen daha sonra tekrar deneyin' },
+});
+
+function verificationHash(code) {
+    return crypto.createHash('sha256').update(String(code || '').trim()).digest('hex');
+}
+
+app.post('/api/register/verify', registerVerifyLimiter, (req, res) => {
+    const username = String(req.body?.username || '').trim();
+    const code = String(req.body?.code || '').trim();
+    if (!username || !/^\d{6}$/.test(code)) {
+        return res.status(400).json({ error: '6 haneli doğrulama kodu gerekli' });
+    }
+
+    const users = readUsers();
+    const user = users.find((u) => String(u.username || '').toLowerCase() === username.toLowerCase());
+    if (!user || user.status !== 'pending_email' || !user.verificationCodeHash) {
+        return res.status(400).json({ error: 'Doğrulama kodu geçersiz veya süresi dolmuş' });
+    }
+    if (Number(user.verificationAttempts || 0) >= 5) {
+        return res.status(429).json({ error: 'Çok fazla hatalı kod denemesi. Yeni kod isteyin.' });
+    }
+    if (Number(user.verificationExpiresAt || 0) < Date.now()) {
+        return res.status(410).json({ error: 'Doğrulama kodunun süresi dolmuş. Yeni kod isteyin.' });
+    }
+    if (verificationHash(code) !== user.verificationCodeHash) {
+        user.verificationAttempts = Number(user.verificationAttempts || 0) + 1;
+        writeUsers(users);
+        return res.status(400).json({ error: 'Doğrulama kodu hatalı' });
+    }
+
+    user.status = 'active';
+    delete user.verificationCodeHash;
+    delete user.verificationExpiresAt;
+    delete user.verificationAttempts;
+    writeUsers(users);
+    console.log(`[REGISTER] e-posta doğrulandı: ${user.username}`);
+    return res.json({ message: 'E-posta doğrulandı. Artık giriş yapabilirsiniz.', username: user.username, status: 'active' });
+});
+
+const registerResendLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: Number(process.env.REGISTER_RESEND_RATE_LIMIT) || 3,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Çok fazla kod istemi — lütfen daha sonra tekrar deneyin' },
+});
+
+app.post('/api/register/resend', registerResendLimiter, async (req, res) => {
+    const username = String(req.body?.username || '').trim();
+    const users = readUsers();
+    const user = users.find((u) => String(u.username || '').toLowerCase() === username.toLowerCase());
+    // Eski sürümde yönetici onayı bekleyen kullanıcılar da burada e-posta
+    // kodu alarak yeni akışa geçirilebilir.
+    if (!user || !['pending', 'pending_email'].includes(user.status) || !user.email) {
+        return res.status(400).json({ error: 'Kod gönderilemedi' });
+    }
+
+    try {
+        const code = String(crypto.randomInt(100000, 1000000));
+        await sendRegistrationVerificationEmail(user.email, user.fullName, user.username, code);
+        user.verificationCodeHash = verificationHash(code);
+        user.verificationExpiresAt = Date.now() + 10 * 60 * 1000;
+        user.verificationAttempts = 0;
+        user.status = 'pending_email';
+        writeUsers(users);
+        return res.json({ message: 'Yeni doğrulama kodu gönderildi.' });
+    } catch (e) {
+        console.error(`[REGISTER] yeni doğrulama maili gönderilemedi: ${e.message}`);
+        return res.status(503).json({ error: 'Doğrulama e-postası gönderilemedi. SMTP ayarlarını kontrol edin.' });
+    }
+});
+
 app.get('/api/users', requireAuth(), requireSuperadmin, (_req, res) => {
     const users = readUsers();
     res.json(users.map((u) => ({
@@ -276,6 +1141,7 @@ app.get('/api/users', requireAuth(), requireSuperadmin, (_req, res) => {
         company: u.company || null,
         allowedMacs: Array.isArray(u.allowedMacs) ? u.allowedMacs : [],
         email: u.email || null,
+        status: u.status || 'active',
         createdAt: u.createdAt,
     })));
 });
@@ -326,8 +1192,8 @@ app.post('/api/users', requireAuth(), requireSuperadmin, async (req, res) => {
 });
 
 // ── Kullanicinin sirket / cihaz yetkisini duzenle ── //
-app.put('/api/users/:username', requireAuth(), requireSuperadmin, (req, res) => {
-    const { company, allowedMacs, role, email } = req.body || {};
+app.put('/api/users/:username', requireAuth(), requireSuperadmin, async (req, res) => {
+    const { company, allowedMacs, role, email, status } = req.body || {};
     const users = readUsers();
     const user = users.find((u) => u.username === req.params.username);
     if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
@@ -351,10 +1217,27 @@ app.put('/api/users/:username', requireAuth(), requireSuperadmin, (req, res) => 
         }
         user.email = email || null;
     }
+    const previousStatus = user.status || 'active';
+    if (status !== undefined) {
+        if (!['pending', 'pending_email', 'active', 'disabled'].includes(status)) {
+            return res.status(400).json({ error: 'Geçersiz kullanıcı durumu' });
+        }
+        user.status = status;
+    }
 
     writeUsers(users);
+    let approvalEmailSent = false;
+    if (status === 'active' && previousStatus !== 'active' && user.email) {
+        try {
+            await sendRegistrationApprovedEmail(user.email, user.fullName, user.username);
+            approvalEmailSent = true;
+            console.log(`[USERS] onay maili gönderildi: ${user.username} -> ${user.email}`);
+        } catch (mailError) {
+            console.error(`[USERS] onay maili gönderilemedi: ${mailError.message}`);
+        }
+    }
     console.log(`[USERS] ${req.username} yetki güncelledi: ${user.username} (şirket: ${user.company || '—'}, cihaz: ${(user.allowedMacs || []).length})`);
-    res.json({ message: 'Yetkiler güncellendi' });
+    res.json({ message: 'Yetkiler güncellendi', approvalEmailSent });
 });
 
 app.delete('/api/users/:username', requireAuth(), requireSuperadmin, async (req, res) => {
@@ -913,6 +1796,13 @@ const deviceStatusPoll = initDeviceStatusPoll({
 // ── Cihaz Canlı Log Akışı — frame 3 28/29 (bkz. device-log-stream.js) ──
 const { initDeviceLogStream } = require('./device-log-stream');
 const deviceLog = initDeviceLogStream({ RESPONSES_PATH, readResponses });
+const { initDeviceArchiveLogs } = require('./device-archive-logs');
+const deviceArchiveLogs = initDeviceArchiveLogs({
+    host: process.env.LOG_REMOTE_HOST || OTA_REMOTE_HOST,
+    username: process.env.LOG_REMOTE_USER || OTA_REMOTE_USER,
+    privateKeyPath: process.env.LOG_SSH_KEY_PATH || OTA_SSH_KEY_PATH,
+    root: process.env.LOG_REMOTE_ROOT || '/home/bluetech/platform_mqtt/logs',
+});
 
 // Bağlantı kapanmadan/değişmeden HEMEN ÖNCE çağrılır: cihazda açık bırakılmış log
 // modlarını kapatır (frame 3 28 0 / frame 3 29 0). Bunsuz cihaz, panel bağlantısı
@@ -1131,11 +2021,18 @@ app.post('/api/send-command', requireAuth(), async (req, res) => {
             if (!slot) { notConnected = true; return; }
             const cmdScope = scopeFor(req);
             if (!cmdScope.unrestricted && !allowsMac(cmdScope, slot.target)) { unauthorizedTarget = slot.target; return; }
+            if (isRestrictedTarget(req, slot.target) && !individualCommandAllowed(type, varCode)) {
+                unauthorizedTarget = 'INDIVIDUAL_RESTRICTED_COMMAND';
+                return;
+            }
             slot.send_message = frame;
             await writeJsonRaw(TARGET_PATH, data);
         });
         if (notConnected) return res.status(400).json({ message: 'Önce bir cihaza bağlanmalısınız.' });
         if (unauthorizedTarget) {
+            if (unauthorizedTarget === 'INDIVIDUAL_RESTRICTED_COMMAND') {
+                return res.status(403).json({ message: 'Bireysel cihazda bu OCPP/komut alanına erişim kapalı' });
+            }
             console.warn(`[AUTH] ${req.username} yetkisiz cihaza komut denedi: ${unauthorizedTarget}`);
             return res.status(403).json({ message: 'Bu cihaza komut gönderme yetkiniz yok' });
         }
@@ -1171,6 +2068,9 @@ app.post('/api/send-command', requireAuth(), async (req, res) => {
 // 28: verbose grubu, 29: debug grubu; 0 kapatır. Satırlar responses.json'daki
 // message_response.data üzerinden akar, deviceLog bunları biriktirir.
 app.post('/api/log/command', requireAuth(), async (req, res) => {
+    if (isRestrictedOperator(req)) {
+        return res.status(403).json({ message: 'Bireysel/kısıtlı hesaplarda cihaz logları kapalı' });
+    }
     const sessionId = req.sessionId;
     const group = Number(req.body?.group);
     const level = Number(req.body?.level);
@@ -1226,6 +2126,9 @@ app.post('/api/log/command', requireAuth(), async (req, res) => {
 
 // Biriken log satırları — ?after=<id> ile sadece yeniler
 app.get('/api/log/lines', requireAuth(), async (req, res) => {
+    if (isRestrictedOperator(req)) {
+        return res.status(403).json({ message: 'Bireysel/kısıtlı hesaplarda cihaz logları kapalı' });
+    }
     await deviceLog.watch(req.sessionId);
     // Açık bir log akışını izlemek aktivite sayılır — yoksa kullanıcı komut göndermeden
     // sadece logları izlerken 5 dakikada "inaktivite"den bağlantısı kesiliyordu.
@@ -1234,8 +2137,88 @@ app.get('/api/log/lines', requireAuth(), async (req, res) => {
 });
 
 app.post('/api/log/clear', requireAuth(), (req, res) => {
+    if (isRestrictedOperator(req)) {
+        return res.status(403).json({ message: 'Bireysel/kısıtlı hesaplarda cihaz logları kapalı' });
+    }
     deviceLog.clear(req.sessionId);
     res.json({ message: 'ok' });
+});
+
+// ── Kalıcı cihaz logları — Bluetech sunucusundaki current/history dosyaları ──
+// Bu uçlar dosyaları btcharge diskine yazmaz. Her istekte 85.105 üzerindeki
+// platform_mqtt/logs/<MAC>/ klasörü SFTP ile okunur; böylece arşivin tek kaynağı
+// Bluetech sunucusu olur ve panel sunucusunda log büyümesi yaşanmaz.
+async function archiveMacForRequest(req) {
+    const target = await readTarget();
+    const slot = target.requests.find((r) => r.session_id === req.sessionId && r.control === 'activate');
+    if (!slot || !slot.target) {
+        const err = new Error('Önce bir cihaza bağlanmalısınız.');
+        err.statusCode = 400;
+        throw err;
+    }
+    if (!scopeFor(req).unrestricted && !allowsMac(scopeFor(req), slot.target)) {
+        const err = new Error('Bu cihazın loglarına erişme yetkiniz yok');
+        err.statusCode = 403;
+        throw err;
+    }
+    return slot.target;
+}
+
+function archiveError(res, error) {
+    const status = Number(error?.statusCode) || 502;
+    res.status(status).json({ error: error?.message || 'Uzak log sunucusuna erişilemedi' });
+}
+
+app.get('/api/device-log-archive/catalog', requireAuth(), async (req, res) => {
+    if (isRestrictedOperator(req)) {
+        return res.status(403).json({ error: 'Bireysel/kısıtlı hesaplarda cihaz logları kapalı' });
+    }
+    try {
+        const mac = await archiveMacForRequest(req);
+        res.json(await deviceArchiveLogs.list(mac));
+    } catch (e) {
+        console.error('[DEVICE-LOG-ARCHIVE] listeleme hatası:', e.message);
+        archiveError(res, e);
+    }
+});
+
+async function archiveFileIsAllowed(mac, name) {
+    const catalog = await deviceArchiveLogs.list(mac);
+    return catalog.files.some((file) => file.name === name);
+}
+
+app.get('/api/device-log-archive/preview', requireAuth(), async (req, res) => {
+    if (isRestrictedOperator(req)) {
+        return res.status(403).json({ error: 'Bireysel/kısıtlı hesaplarda cihaz logları kapalı' });
+    }
+    try {
+        const mac = await archiveMacForRequest(req);
+        const name = String(req.query.name || '');
+        if (!await archiveFileIsAllowed(mac, name)) return res.status(404).json({ error: 'Log dosyası bulunamadı' });
+        res.json(await deviceArchiveLogs.preview(mac, name));
+    } catch (e) {
+        console.error('[DEVICE-LOG-ARCHIVE] önizleme hatası:', e.message);
+        archiveError(res, e);
+    }
+});
+
+app.get('/api/device-log-archive/download', requireAuth(), async (req, res) => {
+    if (isRestrictedOperator(req)) {
+        return res.status(403).json({ error: 'Bireysel/kısıtlı hesaplarda cihaz logları kapalı' });
+    }
+    try {
+        const mac = await archiveMacForRequest(req);
+        const name = String(req.query.name || '');
+        if (!await archiveFileIsAllowed(mac, name)) return res.status(404).json({ error: 'Log dosyası bulunamadı' });
+        const result = await deviceArchiveLogs.download(mac, name);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Disposition', `attachment; filename="${result.name.replace(/"/g, '')}"`);
+        res.setHeader('Content-Length', String(result.buffer.length));
+        res.send(result.buffer);
+    } catch (e) {
+        console.error('[DEVICE-LOG-ARCHIVE] indirme hatası:', e.message);
+        archiveError(res, e);
+    }
 });
 
 // Status — bu session'un status'unu döner + başka kullanıcı deactivate ettiyse onu da bildir
@@ -1599,6 +2582,7 @@ app.get("/api/devices", requireAuth(), (req, res) => {
 // durur. Operatör sadece kendi şirketini görebilir, superadmin ?company= ile
 // istediğini sorgulayabilir.
 app.get("/api/device-status", requireAuth(), (req, res) => {
+  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu okuma kapalı" });
   try {
     const scope = scopeFor(req);
     const company = scope.unrestricted ? (req.query.company || null) : scope.company;
@@ -1611,6 +2595,39 @@ app.get("/api/device-status", requireAuth(), (req, res) => {
   } catch (e) {
     console.error("[STATUS-POLL] durum alınamadı:", e.message);
     res.status(500).json({ error: "Durum alınamadı" });
+  }
+});
+
+// Toplu Okuma ekranındaki sektör veya tek cihaz "şimdi oku" düğmesi.
+// Cihaz MAC'i istemciden alınmaz; cihaz ID'si yetki kapsamı içinde çözülür.
+app.post("/api/device-status/refresh", requireAuth(), (req, res) => {
+  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu okuma kapalı" });
+  try {
+    const requestedIds = Array.isArray(req.body?.deviceIds)
+      ? [...new Set(req.body.deviceIds.map((id) => String(id)).filter(Boolean))].slice(0, 100)
+      : [];
+    if (requestedIds.length === 0) return res.status(400).json({ error: "Okunacak cihaz seçilmedi" });
+
+    const scope = scopeFor(req);
+    const all = getDevices({});
+    const devices = requestedIds.map((id) => all.find((device) => String(device.id) === id)).filter(Boolean);
+    if (devices.length !== requestedIds.length) return res.status(404).json({ error: "Cihaz bulunamadı" });
+
+    const unauthorized = devices.find((device) => !allowsDevice(scope, device));
+    if (unauthorized) return res.status(403).json({ error: "Bu cihazı okuma yetkiniz yok" });
+
+    const requestedCompany = String(req.body?.company || "").trim();
+    const company = scope.unrestricted ? (requestedCompany || devices[0].company || "") : (scope.company || "");
+    if (!company) return res.status(400).json({ error: "Şirket kapsamı bulunamadı" });
+    if (devices.some((device) => String(device.company || "").trim() !== company)) {
+      return res.status(403).json({ error: "Aynı şirkete ait cihazlar birlikte okunabilir" });
+    }
+
+    const result = deviceStatusPoll.requestRefresh(company, devices);
+    return res.status(202).json({ queued: result.queued });
+  } catch (e) {
+    console.error("[STATUS-REFRESH] manuel okuma hatası:", e.message);
+    return res.status(500).json({ error: "Okuma başlatılamadı" });
   }
 });
 
@@ -1700,11 +2717,30 @@ app.get("/api/overview", requireAuth(), async (req, res) => {
 // unrestricted); operator ve altı bu uçlara erişemez.
 const DEVICE_MGMT_ROLES = ["superadmin", "admin"];
 
+function parseCoordinate(value, min, max, label) {
+  if (value === undefined || value === null || String(value).trim() === "") return null;
+  const number = Number(String(value).trim().replace(",", "."));
+  if (!Number.isFinite(number) || number < min || number > max) {
+    const error = new Error(`${label} - ${min} ile ${max} arasında geçerli bir sayı olmalı`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return Number(number.toFixed(7));
+}
+
+function parseLocationCoordinates(body) {
+  return {
+    latitude: parseCoordinate(body?.latitude, -90, 90, "Enlem"),
+    longitude: parseCoordinate(body?.longitude, -180, 180, "Boylam"),
+  };
+}
+
 // Cihaz listesi export
 app.get("/api/devices/export", requireAuth(), async (req, res) => {
   if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
-    const devices = getDevices({});
+    const scope = scopeFor(req);
+    const devices = scope.unrestricted ? getDevices({}) : visibleDevices(scope);
     const { execSync } = require("child_process");
     const result = execSync("python3 /root/bluetech-panel/backend/export_devices.py", { input: JSON.stringify(devices), maxBuffer: 20 * 1024 * 1024 });
     res.setHeader("Content-Type", "application/vnd.oasis.opendocument.spreadsheet");
@@ -1748,14 +2784,40 @@ app.post("/api/devices/import", requireAuth(), (req, res) => {
       }
 
       // MAC'e göre eşleştir: varsa güncelle, yoksa yeni ekle (mevcut cihazları silmez)
+      const scope = scopeFor(req);
+      const importingCompany = companyForRequest(req);
       const existing = getDevices({});
+      const sourceUser = readUsers().find((item) => item.username === req.username);
       const byMac = {};
-      existing.forEach((d) => { if (d.mac) byMac[d.mac.toUpperCase()] = d; });
+      existing.forEach((d) => { if (d.mac) byMac[normalizeMacValue(d.mac)] = d; });
 
       let added = 0, updated = 0;
       for (const imp of imported) {
-        const key = imp.mac.toUpperCase();
+        imp.company = normalizeDeviceCompany(imp.company);
+        const key = normalizeMacValue(imp.mac);
+        const current = byMac[key];
+
+        // Şirket yöneticisi başka şirkete ait bir satırı içe aktaramaz.
+        // Boş FIRMA/Bireysel satırlar ise kendi hesabına atanır.
+        if (!scope.unrestricted && importingCompany && imp.company && imp.company !== importingCompany) {
+          return res.status(403).json({ error: `Dosyada ${imp.company} şirketine ait yetkisiz cihaz bulundu` });
+        }
+        if (!scope.unrestricted && current && !allowsDevice(scope, current)) {
+          return res.status(403).json({ error: 'Dosyada erişim kapsamınız dışındaki cihaz bulundu' });
+        }
+        if (sourceUser && importingCompany && isIndividualDeviceCompany(imp.company) && !current) {
+          addOwnedDeviceToUser(sourceUser, imp.mac);
+        }
+
         if (byMac[key]) {
+          // Eski Excel dosyalarında koordinat sütunları yoksa, panelden
+          // kullanıcının verdiği konumu/harita koordinatını silme.
+          if (imp.latitude === null || imp.latitude === undefined || imp.latitude === '') {
+            imp.latitude = byMac[key].latitude ?? null;
+          }
+          if (imp.longitude === null || imp.longitude === undefined || imp.longitude === '') {
+            imp.longitude = byMac[key].longitude ?? null;
+          }
           Object.assign(byMac[key], imp);
           updated++;
         } else {
@@ -1768,6 +2830,7 @@ app.post("/api/devices/import", requireAuth(), (req, res) => {
       }
 
       replaceAllDevices(Object.values(byMac));
+      if (sourceUser && importingCompany) writeUsers(readUsers().map((item) => item.username === sourceUser.username ? sourceUser : item));
       console.log(`[DEVICES-IMPORT] ${req.username}: ${added} yeni, ${updated} güncellendi`);
       res.json({ message: `İçe aktarma tamamlandı: ${added} yeni cihaz, ${updated} güncellendi`, added, updated });
     } catch (e) {
@@ -1799,8 +2862,13 @@ app.get("/api/devices/:code", requireAuth(), (req, res) => {
 app.post("/api/devices", requireAuth(), async (req, res) => {
   if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
-    const { device_code, serial_no, mac, company, location, connection, logo, sw_version, msp_fw, msp_sw, hw_version, note, extra_fields } = req.body || {};
-    if (!mac || !company) return res.status(400).json({ error: "MAC ve şirket zorunlu" });
+    const { device_code, serial_no, mac, location, connection, logo, sw_version, msp_fw, msp_sw, hw_version, note, extra_fields } = req.body || {};
+    const company = normalizeDeviceCompany(req.body?.company);
+    const { latitude, longitude } = parseLocationCoordinates(req.body || {});
+    if (!mac) return res.status(400).json({ error: "MAC zorunlu" });
+    if (!canManageDeviceCompany(req, company)) {
+      return res.status(403).json({ error: "Şirket yöneticisi yalnızca kendi şirketine veya Bireysel sahipliğine cihaz ekleyebilir" });
+    }
     const { replaceAllDevices, getDevices } = require("./db");
     const existing = getDevices({});
 
@@ -1817,6 +2885,8 @@ app.post("/api/devices", requireAuth(), async (req, res) => {
       mac,
       company,
       location: location || null,
+      latitude,
+      longitude,
       connection: connection || null,
       logo: logo || null,
       sw_version: sw_version || null,
@@ -1829,8 +2899,14 @@ app.post("/api/devices", requireAuth(), async (req, res) => {
       is_revision: (location || "").toLowerCase().includes("revizyon") ? 1 : 0,
     });
     replaceAllDevices(existing);
+    if (isIndividualDeviceCompany(company) && req.userRole === 'admin' && companyForRequest(req)) {
+      const users = readUsers();
+      const source = users.find((item) => item.username === req.username);
+      if (source && addOwnedDeviceToUser(source, mac)) writeUsers(users);
+    }
     res.json({ message: "Cihaz eklendi" });
   } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message });
     res.status(500).json({ error: "Cihaz eklenemedi" });
   }
 });
@@ -1840,9 +2916,19 @@ app.delete("/api/devices/:id", requireAuth(), (req, res) => {
   try {
     const { replaceAllDevices, getDevices } = require("./db");
     const existing = getDevices({});
+    const target = existing.find((d) => String(d.id) === String(req.params.id));
+    if (!target) return res.status(404).json({ error: "Cihaz bulunamadı" });
+    if (!scopeFor(req).unrestricted && !allowsDevice(scopeFor(req), target)) {
+      return res.status(403).json({ error: "Bu cihazı silme yetkiniz yok" });
+    }
     const filtered = existing.filter((d) => String(d.id) !== String(req.params.id));
-    if (filtered.length === existing.length) return res.status(404).json({ error: "Cihaz bulunamadı" });
     replaceAllDevices(filtered);
+    if (isIndividualDeviceCompany(target.company)) {
+      const users = readUsers();
+      let changed = false;
+      for (const user of users) changed = removeOwnedDeviceFromUser(user, target.mac) || changed;
+      if (changed) writeUsers(users);
+    }
     res.json({ message: "Cihaz silindi" });
   } catch (e) {
     res.status(500).json({ error: "Cihaz silinemedi" });
@@ -1852,12 +2938,25 @@ app.delete("/api/devices/:id", requireAuth(), (req, res) => {
 app.put("/api/devices/:id", requireAuth(), (req, res) => {
   if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
-    const { device_code, serial_no, mac, company, location, connection, logo, sw_version, msp_fw, msp_sw, hw_version, note, extra_fields } = req.body || {};
-    if (!mac || !company) return res.status(400).json({ error: "MAC ve şirket zorunlu" });
+    const { device_code, serial_no, mac, location, connection, logo, sw_version, msp_fw, msp_sw, hw_version, note, extra_fields } = req.body || {};
+    const company = normalizeDeviceCompany(req.body?.company);
+    const { latitude, longitude } = parseLocationCoordinates(req.body || {});
+    if (!mac) return res.status(400).json({ error: "MAC zorunlu" });
+    if (!canManageDeviceCompany(req, company)) {
+      return res.status(403).json({ error: "Şirket yöneticisi yalnızca kendi şirketini veya Bireysel sahipliğini kullanabilir" });
+    }
     const { replaceAllDevices, getDevices } = require("./db");
     const existing = getDevices({});
     const idx = existing.findIndex((d) => String(d.id) === String(req.params.id));
     if (idx === -1) return res.status(404).json({ error: "Cihaz bulunamadı" });
+    const previousDevice = existing[idx];
+    if (normalizeMacValue(mac) !== normalizeMacValue(previousDevice.mac)) {
+      return res.status(409).json({ error: "MAC adresi değiştirilemez; cihaz kimliği sabittir" });
+    }
+    const scope = scopeFor(req);
+    if (!scope.unrestricted && !allowsDevice(scope, previousDevice)) {
+      return res.status(403).json({ error: "Bu cihazı düzenleme yetkiniz yok" });
+    }
 
     const duplicate = existing.find((d, i) => i !== idx && (d.mac || "").trim().toUpperCase() === mac.trim().toUpperCase());
     if (duplicate) {
@@ -1873,6 +2972,8 @@ app.put("/api/devices/:id", requireAuth(), (req, res) => {
       mac,
       company,
       location: location || null,
+      latitude,
+      longitude,
       connection: connection || null,
       logo: logo || null,
       sw_version: sw_version || null,
@@ -1885,14 +2986,99 @@ app.put("/api/devices/:id", requireAuth(), (req, res) => {
       is_revision: (location || "").toLowerCase().includes("revizyon") ? 1 : 0,
     };
     replaceAllDevices(existing);
+    if (req.userRole === 'admin' && companyForRequest(req)) {
+      const users = readUsers();
+      const source = users.find((item) => item.username === req.username);
+      let changed = false;
+      if (source && isIndividualDeviceCompany(company)) changed = addOwnedDeviceToUser(source, mac) || changed;
+      if (source && !isIndividualDeviceCompany(company) && isIndividualDeviceCompany(previousDevice.company)) {
+        changed = removeOwnedDeviceFromUser(source, previousDevice.mac) || changed;
+      }
+      if (changed) writeUsers(users);
+    }
     res.json({ message: "Cihaz güncellendi" });
   } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message });
     res.status(500).json({ error: "Cihaz güncellenemedi" });
   }
 });
 
+// Kullanıcıların yalnızca kendi erişim kapsamındaki cihazın konum bilgisini
+// güncelleyebilmesi. Şirket/MAC/versiyon/OCPP alanları bu uçtan değiştirilemez.
+app.put("/api/devices/:id/location", requireAuth(), (req, res) => {
+  try {
+    const device = getDevices({}).find((item) => String(item.id) === String(req.params.id));
+    if (!device) return res.status(404).json({ error: "Cihaz bulunamadı" });
+    if (!allowsDevice(scopeFor(req), device)) return res.status(403).json({ error: "Bu cihazın konumunu değiştirme yetkiniz yok" });
+
+    const location = String(req.body?.location || "").trim();
+    if (location.length > 160) return res.status(400).json({ error: "Konum adı 160 karakteri geçemez" });
+    const { latitude, longitude } = parseLocationCoordinates(req.body || {});
+    updateDeviceLocation(device.id, { location, latitude, longitude });
+
+    const updated = getDevices({}).find((item) => String(item.id) === String(device.id));
+    if (req.userRole === "operator" && updated) delete updated.mac;
+    return res.json({ message: "Konum güncellendi", device: updated });
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message });
+    console.error("[DEVICE-LOCATION] güncelleme hatası:", e.message);
+    return res.status(500).json({ error: "Konum güncellenemedi" });
+  }
+});
+
+// Başarılı cihaz okuması veya SET OK sonrası envanterdeki karşılığı güncelle.
+// Eşleştirme yalnızca MAC üzerinden yapılır; MAC'in kendisi ve açıklama alanı
+// bu endpoint ile kesinlikle değiştirilemez. Frontend MAC göndermese bile
+// aktif oturumun target'ından backend çözer.
+app.post("/api/devices/sync-field", requireAuth(), async (req, res) => {
+  try {
+    const variable = Number(req.body?.variable);
+    const rawValue = req.body?.value;
+    const value = rawValue === undefined || rawValue === null ? "" : String(rawValue).trim();
+    const fieldMap = {
+      2: "device_code",   // OCPP ID
+      4: null,             // Maks. güç — envanterde sabit alan değil
+      7: "connection",     // Bağlantı türü
+      33: "sw_version",    // ESP yazılımı
+      44: "serial_no",     // Box/seri no
+      61: "msp_sw",        // MSP yazılımı
+      64: "logo",          // Aktif logo adı
+      68: "hw_version",    // ESP donanımı
+    };
+    const field = fieldMap[variable];
+    if (!field || !value || value === "SET OK") return res.json({ updated: false });
+
+    let mac = String(req.body?.mac || "").trim();
+    if (!mac) {
+      const targetData = await readTarget();
+      mac = targetData.requests.find((item) => item.session_id === req.sessionId && item.control === "activate")?.target || "";
+    }
+    if (!MAC_REGEX.test(mac)) return res.status(400).json({ error: "Aktif cihaz MAC'i bulunamadı" });
+
+    let normalizedValue = value;
+    if (field === "connection") {
+      const connectionMap = { "0": "CommSupported", "1": "GSM", "2": "WiFi", "3": "ETH" };
+      normalizedValue = connectionMap[value] || value;
+    }
+
+    const device = getDevices({}).find((item) =>
+      String(item.mac || "").replace(/[^0-9a-f]/gi, "").toUpperCase() ===
+      mac.replace(/[^0-9a-f]/gi, "").toUpperCase()
+    );
+    if (!device) return res.status(404).json({ error: "Cihaz kayıtlı değil" });
+    if (!allowsDevice(scopeFor(req), device)) return res.status(403).json({ error: "Bu cihazı güncelleme yetkiniz yok" });
+
+    const { changes } = { changes: { [field]: normalizedValue } };
+    const updated = updateDeviceInventoryByMac(mac, changes);
+    return res.json({ updated: updated > 0, field, value: normalizedValue });
+  } catch (e) {
+    console.error("[DEVICE-SYNC] envanter güncelleme hatası:", e.message);
+    return res.status(500).json({ error: "Envanter güncellenemedi" });
+  }
+});
+
 // ── Toplu cihaz düzenleme — seçilen cihazlara aynı değeri atar, ya da bul-değiştir yapar ── //
-const BULK_EDITABLE_FIELDS = ["company", "location", "connection", "logo", "sw_version", "msp_fw", "msp_sw", "hw_version", "note"];
+const BULK_EDITABLE_FIELDS = ["company", "location", "latitude", "longitude", "connection", "logo", "sw_version", "msp_fw", "msp_sw", "hw_version", "note"];
 
 app.post("/api/devices/bulk-update", requireAuth(), (req, res) => {
   if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
@@ -1903,6 +3089,19 @@ app.post("/api/devices/bulk-update", requireAuth(), (req, res) => {
     if (!isCustom && !BULK_EDITABLE_FIELDS.includes(field)) return res.status(400).json({ error: "Geçersiz alan" });
     if (!["set", "replace"].includes(mode)) return res.status(400).json({ error: "Geçersiz mod" });
     if (mode === "replace" && !find) return res.status(400).json({ error: "'Bul' değeri boş olamaz" });
+    if (!isCustom && ["latitude", "longitude"].includes(field) && mode !== "set") {
+      return res.status(400).json({ error: "Koordinatlarda yalnızca değer ata modu kullanılabilir" });
+    }
+    const normalizedBulkValue = !isCustom && field === "company"
+      ? normalizeDeviceCompany(value)
+      : !isCustom && field === "latitude"
+        ? parseCoordinate(value, -90, 90, "Enlem")
+        : !isCustom && field === "longitude"
+          ? parseCoordinate(value, -180, 180, "Boylam")
+          : value;
+    if (!isCustom && field === "company" && !canManageDeviceCompany(req, normalizedBulkValue)) {
+      return res.status(403).json({ error: "Şirket yöneticisi yalnızca kendi şirketine veya Bireysel sahipliğine geçiş yapabilir" });
+    }
 
     const { getDevices, replaceAllDevices } = require("./db");
     const existing = getDevices({});
@@ -1912,6 +3111,9 @@ app.post("/api/devices/bulk-update", requireAuth(), (req, res) => {
     let updated = 0;
     for (const d of existing) {
       if (!idSet.has(String(d.id))) continue;
+      if (!scopeFor(req).unrestricted && !allowsDevice(scopeFor(req), d)) {
+        return res.status(403).json({ error: "Seçilen cihazlardan biri erişim kapsamınız dışında" });
+      }
 
       if (isCustom) {
         d.extra_fields = d.extra_fields && typeof d.extra_fields === "object" ? { ...d.extra_fields } : {};
@@ -1931,7 +3133,7 @@ app.post("/api/devices/bulk-update", requireAuth(), (req, res) => {
       }
 
       if (mode === "set") {
-        d[field] = value || null;
+        d[field] = normalizedBulkValue ?? null;
         d.updated_at = today;
         updated++;
       } else {
@@ -1945,10 +3147,20 @@ app.post("/api/devices/bulk-update", requireAuth(), (req, res) => {
     }
 
     replaceAllDevices(existing);
+    if (!isCustom && field === "company" && isIndividualDeviceCompany(normalizedBulkValue) && req.userRole === 'admin' && companyForRequest(req)) {
+      const users = readUsers();
+      const source = users.find((item) => item.username === req.username);
+      let changed = false;
+      if (source) {
+        for (const d of existing) if (idSet.has(String(d.id))) changed = addOwnedDeviceToUser(source, d.mac) || changed;
+      }
+      if (changed) writeUsers(users);
+    }
     console.log(`[DEVICES-BULK] ${req.username}: ${updated} cihaz güncellendi (alan: ${field}, mod: ${mode})`);
     res.json({ message: `${updated} cihaz güncellendi`, updated });
   } catch (e) {
     console.error("[DEVICES-BULK] hata:", e.message);
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message });
     res.status(500).json({ error: "Toplu güncelleme başarısız: " + e.message });
   }
 });
@@ -1961,6 +3173,7 @@ app.post("/api/devices/bulk-update", requireAuth(), (req, res) => {
 const BULK_JOB_ROLES = ["superadmin", "admin", "operator"];
 
 app.post("/api/bulk-jobs", requireAuth(), (req, res) => {
+  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu işlemler kapalı" });
   if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const { company, deviceIds, workerCount, autoRetryMinutes, autoRetryMax } = req.body || {};
@@ -1977,10 +3190,11 @@ app.post("/api/bulk-jobs", requireAuth(), (req, res) => {
       const paramIdNum = Number(rp.paramId);
       const def = bulkJobs.BULK_PARAMS[paramIdNum];
       if (!def) return res.status(400).json({ error: `Geçersiz parametre: ${rp.paramId}` });
-      if (rp.value === undefined || rp.value === null || rp.value === "") {
+      const operation = rp.operation === "read" ? "read" : "set";
+      if (operation === "set" && (rp.value === undefined || rp.value === null || rp.value === "")) {
         return res.status(400).json({ error: `"${def.label}" için değer boş olamaz` });
       }
-      params.push({ id: paramIdNum, value: String(rp.value) });
+      params.push({ id: paramIdNum, value: operation === "read" ? "" : String(rp.value), operation });
     }
     if (!Array.isArray(deviceIds) || deviceIds.length === 0) return res.status(400).json({ error: "Cihaz seçilmedi" });
     // Üst sınır 8 — uzaktaki köprü (85.105.100.7:9001) tek TCP bağlantısı
@@ -1999,7 +3213,7 @@ app.post("/api/bulk-jobs", requireAuth(), (req, res) => {
     const jobId = bulkJobs.startJob({
       company: company || null, params, devices, createdBy: req.username, workerCount: clampedWorkerCount, ...autoRetry,
     });
-    const paramSummary = params.map((p) => `${bulkJobs.BULK_PARAMS[p.id].label}=${p.value}`).join(", ");
+    const paramSummary = params.map((p) => `${bulkJobs.BULK_PARAMS[p.id].label} ${p.operation === "read" ? "(READ)" : `=${p.value}`}`).join(", ");
     const autoRetryNote = autoRetry.autoRetryMinutes ? `, oto-tekrar=${autoRetry.autoRetryMinutes}dk×${autoRetry.autoRetryMax}` : "";
     console.log(`[BULK-JOB] ${req.username} başlattı: ${jobId} (${paramSummary}, ${devices.length} cihaz, ${clampedWorkerCount} paralel${autoRetryNote})`);
     res.json({ id: jobId });
@@ -2010,6 +3224,7 @@ app.post("/api/bulk-jobs", requireAuth(), (req, res) => {
 });
 
 app.get("/api/bulk-jobs/:id", requireAuth(), (req, res) => {
+  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu işlemler kapalı" });
   if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const job = bulkJobs.getJob(req.params.id);
@@ -2029,6 +3244,7 @@ app.get("/api/bulk-jobs/:id", requireAuth(), (req, res) => {
 });
 
 app.get("/api/bulk-jobs", requireAuth(), (req, res) => {
+  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu işlemler kapalı" });
   if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const scope = scopeFor(req);
@@ -2042,6 +3258,7 @@ app.get("/api/bulk-jobs", requireAuth(), (req, res) => {
 });
 
 app.post("/api/bulk-jobs/:id/stop", requireAuth(), (req, res) => {
+  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu işlemler kapalı" });
   if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const job = bulkJobs.getJob(req.params.id);
@@ -2057,6 +3274,7 @@ app.post("/api/bulk-jobs/:id/stop", requireAuth(), (req, res) => {
 
 // "Kapat" — işi listeden gizle (veri silinmiyor, sadece otomatik yakalamadan çıkarılıyor)
 app.post("/api/bulk-jobs/:id/dismiss", requireAuth(), (req, res) => {
+  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu işlemler kapalı" });
   if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const job = bulkJobs.getJob(req.params.id);
@@ -2071,6 +3289,7 @@ app.post("/api/bulk-jobs/:id/dismiss", requireAuth(), (req, res) => {
 });
 
 app.post("/api/bulk-jobs/:id/retry", requireAuth(), (req, res) => {
+  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu işlemler kapalı" });
   if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const oldJob = bulkJobs.getJob(req.params.id);
@@ -2100,7 +3319,7 @@ app.post("/api/bulk-jobs/:id/retry", requireAuth(), (req, res) => {
 
     const jobId = bulkJobs.startJob({
       company: oldJob.company,
-      params: oldJob.params.map((p) => ({ id: p.id, value: p.value })),
+      params: oldJob.params.map((p) => ({ id: p.id, value: p.value, operation: p.operation || "set" })),
       devices, createdBy: req.username, workerCount: oldJob.worker_count || 1,
       // Başta seçilen oto-tekrar ayarları elle tekrar denendiğinde de korunur —
       // "used" sayacı TAŞINMAZ, bu elle tetiklenen bir deneme (otomatik
@@ -2399,9 +3618,44 @@ const otaUpload = multer({
 });
 
 const OTA_LOGO_COMPANIES = ["celikler", "ctg", "sepas", "acrapol", "estasyon", "otopriz"];
+const OTA_LOG_EVENTS_PATH = process.env.OTA_LOG_EVENTS_PATH || path.join(__dirname, "logo_upload_events.json");
+
+function logoCompanySlug(value) {
+  const key = String(value || "").trim().toLocaleLowerCase("tr-TR")
+    .replace(/[şŞ]/g, "s").replace(/[ğĞ]/g, "g").replace(/[ıİ]/g, "i")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/ı/g, "i").replace(/[^a-z0-9]+/g, "");
+  const aliases = { celikler: "celikler", celik: "celikler", ctg: "ctg", sepas: "sepas", sepaş: "sepas", acrapol: "acrapol", estasyon: "estasyon", otopriz: "otopriz" };
+  if (aliases[key]) return aliases[key];
+  if (["bireysel", "individual", "kisisel", "private", "ozel"].includes(key)) return "";
+  return key;
+}
+
+function logoRemoteFileName(value) {
+  const clean = String(value || "").trim().replace(/\.bin$/i, "").replace(/[^a-zA-Z0-9_\-]/g, "_");
+  if (!clean) return "";
+  return clean.endsWith("_logo") || /_logo_\d+$/i.test(clean) ? `${clean}.bin` : `${clean}_logo.bin`;
+}
+
+function logoScopeForRequest(req) {
+  if (req.userRole === "superadmin" || req.userRole === "admin") return { unrestricted: true, company: null, slug: null };
+  const user = readUsers().find((u) => u.username === req.username);
+  const company = user?.company || null;
+  return { unrestricted: false, company, slug: logoCompanySlug(company) };
+}
+
+function appendLogoUploadEvent(event) {
+  try {
+    let events = [];
+    if (fs.existsSync(OTA_LOG_EVENTS_PATH)) events = JSON.parse(fs.readFileSync(OTA_LOG_EVENTS_PATH, "utf8")) || [];
+    events.unshift({ ...event, time: new Date().toISOString() });
+    fs.writeFileSync(OTA_LOG_EVENTS_PATH, JSON.stringify(events.slice(0, 200), null, 2), "utf8");
+  } catch (e) { console.error("[OTA-SERVER] logo bildirimi yazılamadı:", e.message); }
+}
 
 app.post("/api/ota-server/upload", requireAuth(), (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  const logoScope = logoScopeForRequest(req);
+  if (!logoScope.unrestricted && !logoScope.slug) return res.status(403).json({ error: "Bu hesap için logo şirketi tanımlı değil" });
 
   otaUpload.single("file")(req, res, async (err) => {
     if (err) {
@@ -2411,16 +3665,20 @@ app.post("/api/ota-server/upload", requireAuth(), (req, res) => {
       return res.status(400).json({ error: "Dosya yüklenemedi: " + err.message });
     }
 
-    const { fileType, company, customName, hwVersion, swVersion } = req.body || {};
+    const { fileType, company, customName, hwVersion, swVersion, logoFormat } = req.body || {};
     const file = req.file;
 
     if (!file) return res.status(400).json({ error: "Dosya bulunamadı" });
     if (!["bin", "txt", "logo"].includes(fileType)) {
       return res.status(400).json({ error: "Geçersiz dosya tipi" });
     }
+    if (!logoScope.unrestricted && fileType !== "logo") {
+      return res.status(403).json({ error: "Şirket hesapları yalnızca kendi logosunu yükleyebilir" });
+    }
 
     let uploadBuffer = file.buffer;
     let remoteFileName;
+    let logoBaseName = "";
 
     // hw/sw versiyonlarını dosya adında güvenle kullanabilmek için temizle (sadece harf/rakam)
     const cleanHw = (hwVersion || "").trim().replace(/[^a-zA-Z0-9]/g, "");
@@ -2446,21 +3704,20 @@ app.post("/api/ota-server/upload", requireAuth(), (req, res) => {
     }
 
     if (fileType === "logo") {
-      const converted = convertCtoBin(file.buffer);
-      if (!converted.valid) return res.status(400).json({ error: converted.reason });
-      uploadBuffer = converted.buffer;
-
-      // İsimlendirme: özel isim girildiyse o öncelikli, yoksa dropdown'dan seçilen şirket kullanılır
-      let baseName = "";
-      const trimmedCustom = (customName || "").trim();
-      if (trimmedCustom) {
-        baseName = trimmedCustom.replace(/[^a-zA-Z0-9_\-]/g, "_");
-      } else if (OTA_LOGO_COMPANIES.includes(company)) {
-        baseName = company;
+      if (logoFormat === "indexed4") {
+        const check = validateIndexed4Logo(file.buffer);
+        if (!check.valid) return res.status(400).json({ error: check.reason });
+        uploadBuffer = file.buffer;
       } else {
-        return res.status(400).json({ error: "Şirket seçin veya özel bir isim girin" });
+        const converted = convertCtoBin(file.buffer);
+        if (!converted.valid) return res.status(400).json({ error: converted.reason });
+        uploadBuffer = converted.buffer;
       }
-      remoteFileName = `${baseName}_logo.bin`;
+
+      // Logo adı şirket + sıra numarasıdır: sepas_logo_1.bin, sepas_logo_2.bin...
+      logoBaseName = logoScope.unrestricted ? logoCompanySlug(company) : logoScope.slug;
+      if (!logoBaseName) return res.status(400).json({ error: "Firma seçin" });
+      remoteFileName = `${logoBaseName}_logo_1.bin`;
     }
 
     // ── SFTP ile şirket sunucusuna gönder ──
@@ -2471,6 +3728,15 @@ app.post("/api/ota-server/upload", requireAuth(), (req, res) => {
         username: OTA_REMOTE_USER,
         privateKey: fs.readFileSync(OTA_SSH_KEY_PATH),
       });
+
+      if (fileType === "logo") {
+        const existing = await sftp.list(`${OTA_REMOTE_PATH}/logos`).catch(() => []);
+        const prefix = `${logoBaseName}_logo_`;
+        const used = new Set(existing.filter((x) => x.type === "-").map((x) => x.name));
+        let seq = 1;
+        while (used.has(`${prefix}${seq}.bin`)) seq++;
+        remoteFileName = `${prefix}${seq}.bin`;
+      }
 
       const remotePath = fileType === "logo"
         ? `${OTA_REMOTE_PATH}/logos/${remoteFileName}`
@@ -2489,6 +3755,10 @@ app.post("/api/ota-server/upload", requireAuth(), (req, res) => {
       }
 
       console.log(`[OTA-SERVER] ${req.username} -> ${remotePath} (${uploadBuffer.length} byte, sha256:${checksumLocal.slice(0, 12)}…)`);
+      if (fileType === "logo") {
+        appendLogoUploadEvent({ username: req.username, fullName: req.userFullName || req.username,
+          company: logoScope.company || (company || null), fileName: remoteFileName, size: uploadBuffer.length });
+      }
 
       // ── firmware.json'u güncelle (yalnızca bin/txt — logo bu dosyanın kapsamında değil) ──
       let firmwareJsonInfo = null;
@@ -2515,6 +3785,8 @@ app.post("/api/ota-server/upload", requireAuth(), (req, res) => {
         remotePath,
         size: uploadBuffer.length,
         checksum: checksumLocal,
+        logoName: fileType === "logo" ? remoteFileName.replace(/\.bin$/i, "") : null,
+        notification: fileType === "logo" ? "Logo yüklendi; yetkili yöneticiler bildirim kaydında görebilir" : null,
         firmwareJson: firmwareJsonInfo,
       });
     } catch (e) {
@@ -2527,7 +3799,7 @@ app.post("/api/ota-server/upload", requireAuth(), (req, res) => {
 
 // ── Sunucudaki mevcut dosyaları listele (VS Code'a bakmadan panelden görmek için) ──
 app.get("/api/ota-server/list", requireAuth(), async (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  const logoScope = logoScopeForRequest(req);
 
   const sftp = new SftpClient();
   try {
@@ -2551,13 +3823,48 @@ app.get("/api/ota-server/list", requireAuth(), async (req, res) => {
     const firmware = rootList.filter((i) => i.type === "-" && i.name.startsWith("fw")).map(toEntry);
     const msp      = rootList.filter((i) => i.type === "-" && i.name.startsWith("msp")).map(toEntry);
     const other    = rootList.filter((i) => i.type === "-" && !i.name.startsWith("fw") && !i.name.startsWith("msp")).map(toEntry);
-    const logos    = logoList.filter((i) => i.type === "-").map(toEntry);
+    let logos = logoList.filter((i) => i.type === "-").map(toEntry);
+    if (!logoScope.unrestricted) logos = logos.filter((i) =>
+      i.name === `${logoScope.slug}_logo.bin` || i.name.startsWith(`${logoScope.slug}_logo_`));
 
-    res.json({ firmware, msp, other, logos });
+    let notifications = [];
+    if (logoScope.unrestricted && fs.existsSync(OTA_LOG_EVENTS_PATH)) {
+      try { notifications = JSON.parse(fs.readFileSync(OTA_LOG_EVENTS_PATH, "utf8")).slice(0, 20); } catch {}
+    }
+
+    res.json({
+      firmware: logoScope.unrestricted ? firmware : [],
+      msp: logoScope.unrestricted ? msp : [],
+      other: logoScope.unrestricted ? other : [],
+      logos, notifications,
+      logoScope: { company: logoScope.company, slug: logoScope.slug, canUpload: logoScope.unrestricted || !!logoScope.slug },
+    });
   } catch (e) {
     try { await sftp.end(); } catch {}
     console.error("[OTA-SERVER] Listeleme hata:", e.message);
     res.status(500).json({ error: "Dosya listesi alınamadı: " + e.message });
+  }
+});
+
+// Logo önizlemesi için ham dosyayı döndürür. Şirket hesabı yalnızca kendi
+// canonical logosunu isteyebilir; admin/superadmin tüm logolara erişebilir.
+app.get("/api/ota-server/logo/:logoName", requireAuth(), async (req, res) => {
+  const logoScope = logoScopeForRequest(req);
+  const cleanLogoName = String(req.params.logoName || "").replace(/\.bin$/i, "").replace(/[^a-zA-Z0-9_\-]/g, "_");
+  if (!cleanLogoName) return res.status(400).json({ error: "Logo adı gerekli" });
+  if (!logoScope.unrestricted && cleanLogoName !== logoScope.slug && !cleanLogoName.startsWith(`${logoScope.slug}_logo_`)) {
+    return res.status(403).json({ error: "Bu logoyu görüntüleme yetkiniz yok" });
+  }
+  const remotePath = `${OTA_REMOTE_PATH}/logos/${logoRemoteFileName(cleanLogoName)}`;
+  const sftp = new SftpClient();
+  try {
+    await sftp.connect({ host: OTA_REMOTE_HOST, username: OTA_REMOTE_USER, privateKey: fs.readFileSync(OTA_SSH_KEY_PATH) });
+    const buffer = await sftp.get(remotePath);
+    await sftp.end();
+    res.type("application/octet-stream").send(buffer);
+  } catch (e) {
+    try { await sftp.end(); } catch {}
+    res.status(404).json({ error: "Logo önizlemesi alınamadı" });
   }
 });
 
@@ -2705,7 +4012,7 @@ app.get("/api/ota-server/update-status", requireAuth(), async (req, res) => {
 
 // ── Yüklenmiş bir ESP/MSP firmware'ini sil — hem 85.105'teki dosyayı hem firmware.json kaydını ── //
 app.post("/api/ota-server/delete", requireAuth(), async (req, res) => {
-  if (req.userRole !== "superadmin") return res.status(403).json({ error: "Yetkisiz" });
+  const logoScope = logoScopeForRequest(req);
 
   const { fileType, hwVersion, swVersion, logoName } = req.body || {};
   if (!["bin", "txt", "logo"].includes(fileType)) {
@@ -2718,9 +4025,13 @@ app.post("/api/ota-server/delete", requireAuth(), async (req, res) => {
   if (fileType === "logo") {
     const cleanLogoName = (logoName || "").trim().replace(/[^a-zA-Z0-9_\-]/g, "_");
     if (!cleanLogoName) return res.status(400).json({ error: "Logo adı gerekli" });
-    remoteFileName = `${cleanLogoName}_logo.bin`;
+    if (!logoScope.unrestricted && cleanLogoName !== logoScope.slug && !cleanLogoName.startsWith(`${logoScope.slug}_logo_`)) {
+      return res.status(403).json({ error: "Yalnızca kendi şirket logonuzu silebilirsiniz" });
+    }
+    remoteFileName = logoRemoteFileName(cleanLogoName);
     remotePath = `${OTA_REMOTE_PATH}/logos/${remoteFileName}`;
   } else {
+    if (req.userRole !== "superadmin") return res.status(403).json({ error: "Firmware silme yetkisi yok" });
     cleanHw = (hwVersion || "").trim().replace(/[^a-zA-Z0-9]/g, "");
     cleanSw = (swVersion || "").trim().replace(/[^a-zA-Z0-9]/g, "");
     if (!cleanHw || !cleanSw) {

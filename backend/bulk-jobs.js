@@ -167,7 +167,10 @@ function initBulkJobs(deps) {
     if (!sinceTs) return arr;
     return arr.filter((msg) => {
       const t = parseResponseTime(msg?.time);
-      return t !== null && t >= sinceTs - RESPONSE_STALE_MARGIN_MS;
+      // Bazı köprü sürümlerinde time alanı farklı biçimde gelebiliyor.
+      // Cevap alanı komuttan hemen önce temizlendiği için parse edilemeyen
+      // zamanı tamamen elemek, gerçek READ cevabını kaybetmeye neden olur.
+      return t === null || t >= sinceTs - RESPONSE_STALE_MARGIN_MS;
     });
   };
 
@@ -343,6 +346,29 @@ function initBulkJobs(deps) {
   // bağlantıyla art arda birden fazla parametre uygulanabilsin diye).
   // Döner: { ok: true (doğrulandı) | false (kesin başarısız) | null (belirsiz/doğrulanamadı), note }
   async function applyParam(jobId, sessionId, device, param, setPhase) {
+    if (param.operation === "read") {
+      const readId = param.id === 64 ? 65 : param.id;
+      const readLabel = param.id === 64 ? "Aktif Logo Adı" : param.label;
+      for (let readAttempt = 1; readAttempt <= 2; readAttempt++) {
+        // Önceki parametrenin cevabı bu okumaya karışmasın.
+        await clearMessageResponse(sessionId);
+        const sinceTs = Date.now();
+        setPhase("sending", `${readLabel} okunuyor (${readAttempt}/2)...`);
+        await sendRead(sessionId, readId);
+        for (let i = 0; i < 10; i++) {
+          await sleep(1000);
+          const msgs = await getMessageResponses(sessionId, sinceTs);
+          const found = msgs.find((m) => {
+            const cmd = Number(m.cmd ?? m.command);
+            const msg = Number(m.msg ?? m.variable ?? m.id);
+            return cmd === 2 && msg === readId && m.data !== undefined && m.data !== null;
+          });
+          if (found) return { ok: true, note: `okundu: ${String(found.data)}` };
+        }
+      }
+      return { ok: null, note: "okuma cevabı alınamadı" };
+    }
+
     if (param.resetId) {
       setPhase("sending", `${param.label} için şarj durumu kontrol ediliyor...`);
       const chargeStatus = await checkCharging(sessionId, device.mac);
@@ -440,7 +466,10 @@ function initBulkJobs(deps) {
     const results = [];
     for (const param of params) {
       const outcome = await applyParam(jobId, sessionId, device, param, setPhase);
-      results.push({ label: param.label, ...outcome });
+      const resultLabel = param.operation === "read" && param.id === 64
+        ? "Aktif Logo Adı"
+        : param.label;
+      results.push({ label: resultLabel, ...outcome });
     }
     try { await removeSlot(sessionId); } catch {}
 
@@ -502,7 +531,7 @@ function initBulkJobs(deps) {
     const resolvedParams = params.map((p) => {
       const def = BULK_PARAMS[p.id];
       if (!def) throw new Error(`Geçersiz parametre: ${p.id}`);
-      return { id: p.id, value: String(p.value), ...def };
+      return { id: p.id, value: p.operation === "read" ? "" : String(p.value ?? ""), operation: p.operation === "read" ? "read" : "set", ...def };
     });
 
     const id = crypto.randomBytes(8).toString("hex");
@@ -576,7 +605,7 @@ function initBulkJobs(deps) {
     const nextUsed = (job.auto_retry_used || 0) + 1;
     const newId = startJob({
       company: job.company,
-      params: job.params.map((p) => ({ id: p.id, value: p.value })),
+      params: job.params.map((p) => ({ id: p.id, value: p.value, operation: p.operation || "set" })),
       devices: freshDevices,
       createdBy: job.created_by,
       workerCount: job.worker_count || 1,

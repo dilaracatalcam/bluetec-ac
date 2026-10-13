@@ -3,6 +3,7 @@ import {
   HiOutlinePencilSquare, HiOutlineCheckCircle, HiOutlineExclamationCircle,
   HiOutlineXMark, HiOutlineArrowPath, HiOutlineBolt, HiOutlineClock, HiOutlinePlus,
 } from "react-icons/hi2";
+import { encodeLogoImageToIndexed4 } from "../utils/logoEncoder.js";
 
 /* ── Toplu gönderilebilecek parametreler ──
    Gerçek akış (bağlan → şarj kontrolü → set → aktifleştir → mod → reset →
@@ -57,6 +58,38 @@ const BULK_PARAMS = [
 ];
 
 const POLL_MS = 2000;
+const LOGO_W = 238;
+const LOGO_H = 88;
+
+function decodeLogoPreview(buffer) {
+  const bytes = new Uint8Array(buffer);
+  if (bytes.length !== 10536 && bytes.length !== 62832) return "";
+  const canvas = document.createElement("canvas");
+  canvas.width = LOGO_W; canvas.height = LOGO_H;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+  const image = ctx.createImageData(LOGO_W, LOGO_H);
+  for (let y = 0; y < LOGO_H; y += 1) for (let x = 0; x < LOGO_W; x += 1) {
+    let r = 0, g = 0, b = 0, a = 255;
+    if (bytes.length === 10536) {
+      const packed = bytes[64 + y * ((LOGO_W + 1) >> 1) + (x >> 1)];
+      const index = (x & 1) ? (packed & 0x0f) : (packed >> 4);
+      const p = index * 4;
+      b = bytes[p]; g = bytes[p + 1]; r = bytes[p + 2]; a = bytes[p + 3];
+    } else {
+      const p = (y * LOGO_W + x) * 3;
+      const rgb565 = bytes[p] | (bytes[p + 1] << 8);
+      r = Math.round(((rgb565 >> 11) & 0x1f) * 255 / 31);
+      g = Math.round(((rgb565 >> 5) & 0x3f) * 255 / 63);
+      b = Math.round((rgb565 & 0x1f) * 255 / 31);
+      a = bytes[p + 2];
+    }
+    const i = (y * LOGO_W + x) * 4;
+    image.data[i] = r; image.data[i + 1] = g; image.data[i + 2] = b; image.data[i + 3] = a;
+  }
+  ctx.putImageData(image, 0, 0);
+  return canvas.toDataURL("image/png");
+}
 
 const PHASE_LABELS = {
   queued: "Sırada", connecting: "Bağlanıyor", sending: "Gönderiliyor",
@@ -227,16 +260,19 @@ export default function BulkParamUpdate({ token }) {
   }, []);
 
   const allRowsFilled = rows.every((r) => r.value);
-  const startBulk = async () => {
+  const startBulk = async (rowOverride = null) => {
     const devices = Object.values(selectedDevices);
-    if (devices.length === 0 || !allRowsFilled) return;
+    const effectiveRows = rowOverride
+      ? rows.map((r) => r.key === rowOverride.key ? { ...r, value: rowOverride.value } : r)
+      : rows;
+    if (devices.length === 0 || effectiveRows.some((r) => !r.value)) return false;
     setStarting(true);
     try {
       const r = await authFetch("/api/bulk-jobs", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           company: selectedCompany,
-          params: rows.map((row) => ({ paramId: row.paramId, value: row.value })),
+          params: effectiveRows.map((row) => ({ paramId: row.paramId, value: row.value })),
           deviceIds: devices.map((d) => d.id),
           workerCount,
           autoRetryMinutes: autoRetryEnabled ? autoRetryMinutes : 0,
@@ -244,9 +280,10 @@ export default function BulkParamUpdate({ token }) {
         }),
       });
       const d = await r.json();
-      if (r.ok && d.id) startPolling(d.id);
+      if (r.ok && d.id) { startPolling(d.id); setStarting(false); return true; }
     } catch {}
     setStarting(false);
+    return false;
   };
 
   const stopBulk = async () => {
@@ -277,46 +314,95 @@ export default function BulkParamUpdate({ token }) {
     setJob(null);
   };
 
-  // null = kapalı, aksi halde "hangi satırın" logo yükleme paneli açık
-  const [showLogoUploadForRow, setShowLogoUploadForRow] = useState(null);
-  const [logoFile, setLogoFile] = useState(null);
-  const [logoCustomName, setLogoCustomName] = useState("");
-  const [logoUploading, setLogoUploading] = useState(false);
-  const [logoUploadResult, setLogoUploadResult] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   useEffect(() => {
     authFetch("/api/me").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setCurrentUser(d); }).catch(() => {});
   }, [authFetch]);
-  const isSuperadmin = currentUser?.role === "superadmin";
+  const isUnrestrictedLogoUser = currentUser?.role === "superadmin" || currentUser?.role === "admin";
+  const canUploadLogo = isUnrestrictedLogoUser || !!currentUser?.company;
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoUploadResult, setLogoUploadResult] = useState(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState("");
+  const [logoRemotePreviewUrl, setLogoRemotePreviewUrl] = useState("");
+  const [logoPreviewName, setLogoPreviewName] = useState("");
+  const [logoPreviewLoading, setLogoPreviewLoading] = useState(false);
+  const [logoPreviewError, setLogoPreviewError] = useState("");
+
+  useEffect(() => {
+    if (!logoFile) { setLogoPreviewUrl(""); return undefined; }
+    const url = URL.createObjectURL(logoFile);
+    setLogoPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [logoFile]);
+
+  const previewSelectedLogo = useCallback(async (logoName) => {
+    if (!logoName) return;
+    setLogoPreviewName(logoName);
+    setLogoRemotePreviewUrl("");
+    setLogoPreviewError("");
+    setLogoPreviewLoading(true);
+    try {
+      const r = await authFetch(`/api/ota-server/logo/${encodeURIComponent(logoName)}?t=${Date.now()}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const dataUrl = decodeLogoPreview(await r.arrayBuffer());
+      if (!dataUrl) throw new Error("Logo formatı tanınmadı");
+      setLogoRemotePreviewUrl(dataUrl);
+    } catch {
+      setLogoPreviewError("Seçili logo sunucudan okunamadı");
+    } finally {
+      setLogoPreviewLoading(false);
+    }
+  }, [authFetch]);
+
+  const deleteSelectedLogo = async (rowKey, logoName) => {
+    if (!logoName || !window.confirm(`${logoName} logosunu silmek istediğinize emin misiniz?`)) return;
+    setLogoUploadResult(null);
+    try {
+      const r = await authFetch("/api/ota-server/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileType: "logo", logoName }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.fileDeleted) throw new Error(d.error || d.fileError || "Logo silinemedi");
+      updateRow(rowKey, { value: "" });
+      setLogoPreviewName("");
+      setLogoRemotePreviewUrl("");
+      await refreshLogoOptions();
+      setLogoUploadResult({ ok: true, message: "Seçili logo silindi." });
+    } catch (e) {
+      setLogoUploadResult({ ok: false, message: e?.message || "Logo silinemedi" });
+    }
+  };
 
   const uploadNewLogo = async (rowKey) => {
-    if (!logoFile || !logoCustomName.trim()) return;
+    if (!logoFile || !canUploadLogo || !selectedCompany) return;
     setLogoUploading(true);
     setLogoUploadResult(null);
     try {
+      const isRasterLogo = /\.(png|jpe?g|webp)$/i.test(logoFile.name);
+      const uploadFile = isRasterLogo ? await encodeLogoImageToIndexed4(logoFile) : logoFile;
       const fd = new FormData();
-      fd.append("file", logoFile);
+      fd.append("file", uploadFile, uploadFile.name);
       fd.append("fileType", "logo");
-      fd.append("customName", logoCustomName.trim());
+      fd.append("company", selectedCompany);
+      if (isRasterLogo) fd.append("logoFormat", "indexed4");
       const r = await authFetch("/api/ota-server/upload", { method: "POST", body: fd });
-      const d = await r.json();
-      if (!r.ok) {
-        setLogoUploadResult({ ok: false, message: d.error || "Yükleme başarısız" });
-      } else {
-        const newValue = `${logoCustomName.trim().replace(/[^a-zA-Z0-9_-]/g, "_")}_logo`;
-        await refreshLogoOptions();
-        updateRow(rowKey, { value: newValue });
-        setLogoFile(null);
-        setLogoCustomName("");
-        setShowLogoUploadForRow(null);
-      }
-    } catch {
-      setLogoUploadResult({ ok: false, message: "Sunucuya ulaşılamadı" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Logo yüklenemedi");
+      const newValue = d.logoName || "";
+      await refreshLogoOptions();
+      updateRow(rowKey, { value: newValue });
+      setLogoUploadResult({ ok: true, message: `${d.fileName || newValue} yüklendi ve seçildi.` });
+      setLogoFile(null);
+      if (newValue) previewSelectedLogo(newValue);
+    } catch (e) {
+      setLogoUploadResult({ ok: false, message: e?.message || "Logo hazırlanamadı" });
     } finally {
       setLogoUploading(false);
     }
   };
-
   const selectedList = Object.values(selectedDevices);
   const jobDevices = job?.devices || [];
   const counts = jobDevices.reduce((acc, d) => {
@@ -397,48 +483,54 @@ export default function BulkParamUpdate({ token }) {
                       )}
                     </div>
 
-                    {rowParam.type === "logo" && isSuperadmin && (
+                    {rowParam.type === "logo" && (
                       <div className="mt-2 border border-dashed border-[var(--border-subtle)] rounded-lg p-3">
-                        {showLogoUploadForRow !== row.key ? (
-                          <button type="button" onClick={() => setShowLogoUploadForRow(row.key)}
-                            className="flex items-center gap-1.5 text-[12px] font-semibold text-[var(--accent)] hover:underline cursor-pointer">
-                            <HiOutlinePlus className="text-[14px]" /> Listede yok — yeni logo ekle
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button type="button" disabled={!row.value || logoPreviewLoading}
+                            onClick={() => previewSelectedLogo(row.value)}
+                            className="text-[12px] font-semibold px-3 py-1.5 rounded-md border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50">
+                            {logoPreviewLoading && logoPreviewName === row.value ? "Okunuyor…" : "Seçili logoyu önizle"}
                           </button>
-                        ) : (
-                          <div className="flex flex-col gap-2">
-                            <p className="text-[11px] text-[var(--text-muted)]">
-                              .c dosyası — OTA sunucusuna otomatik .bin'e çevrilerek yüklenir (OTA Sunucu Kontrolü'ndeki ile aynı işlem)
-                            </p>
-                            <input type="file" accept=".c"
-                              onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
-                              className="text-[12px] text-[var(--text-primary)] file:mr-2 file:px-3 file:py-1.5 file:rounded-md file:border-0
-                                         file:bg-[var(--accent-soft)] file:text-[var(--accent)] file:text-[11px] file:font-bold file:cursor-pointer cursor-pointer" />
-                            <input type="text" value={logoCustomName} onChange={(e) => setLogoCustomName(e.target.value)}
-                              placeholder="logo ismi (örn: otopriz)"
-                              className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                                         px-3 py-1.5 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition
-                                         placeholder:text-[var(--text-muted)]" />
-                            <div className="flex items-center gap-2">
-                              <button type="button" onClick={() => uploadNewLogo(row.key)} disabled={!logoFile || !logoCustomName.trim() || logoUploading}
-                                className={`text-[12px] font-bold px-3 py-1.5 rounded-md border transition
-                                  ${!logoFile || !logoCustomName.trim() || logoUploading
-                                    ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
-                                    : "bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer"}`}>
-                                {logoUploading ? "Yükleniyor..." : "Yükle"}
-                              </button>
-                              <button type="button"
-                                onClick={() => { setShowLogoUploadForRow(null); setLogoFile(null); setLogoCustomName(""); setLogoUploadResult(null); }}
-                                className="text-[12px] font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition cursor-pointer">
-                                Vazgeç
-                              </button>
+                          <button type="button" disabled={!row.value}
+                            onClick={() => deleteSelectedLogo(row.key, row.value)}
+                            className="text-[12px] font-semibold px-3 py-1.5 rounded-md border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 disabled:opacity-50">
+                            Seçili logoyu sil
+                          </button>
+                        </div>
+                        {logoPreviewName === row.value && logoRemotePreviewUrl && (
+                          <div className="mt-3">
+                            <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)] mb-1">Seçili logo: {row.value} (238×88)</div>
+                            <div className="rounded-md bg-slate-700 p-2 flex justify-center overflow-hidden">
+                              <img src={logoRemotePreviewUrl} alt="Seçili logo önizleme" className="max-w-full h-auto max-h-[88px] object-contain" />
                             </div>
-                            {logoUploadResult && (
-                              <p className={`text-[11px] font-medium ${logoUploadResult.ok ? "text-emerald-500" : "text-rose-500"}`}>
-                                {logoUploadResult.message}
-                              </p>
-                            )}
                           </div>
                         )}
+                        {logoPreviewName === row.value && logoPreviewError && (
+                          <p className="mt-2 text-[11px] text-rose-500">{logoPreviewError}</p>
+                        )}
+                        {canUploadLogo && (
+                          <div className="mt-3 border-t border-[var(--border-subtle)] pt-3">
+                            <p className="text-[11px] text-[var(--text-muted)] mb-2">
+                              Yeni logo ekle — dosya adı {selectedCompany ? `${selectedCompany}_logo_ sıra numarası` : "şirket hesabına göre"} olarak otomatik atanır.
+                            </p>
+                            <input type="file" accept=".c,.png,.jpg,.jpeg,.webp"
+                              onChange={(e) => { setLogoFile(e.target.files?.[0] || null); setLogoUploadResult(null); }}
+                              className="text-[12px] text-[var(--text-primary)] file:mr-2 file:px-3 file:py-1.5 file:rounded-md file:border-0 file:bg-[var(--accent-soft)] file:text-[var(--accent)] file:text-[11px] file:font-bold file:cursor-pointer cursor-pointer" />
+                            {logoPreviewUrl && /\.(png|jpe?g|webp)$/i.test(logoFile?.name || "") && (
+                              <div className="mt-2 rounded-md bg-slate-700 p-2 flex justify-center">
+                                <img src={logoPreviewUrl} alt="Yeni logo önizleme" className="max-w-full max-h-[88px] object-contain" />
+                              </div>
+                            )}
+                            <div className="mt-2 flex items-center gap-2">
+                              <button type="button" onClick={() => uploadNewLogo(row.key)} disabled={!logoFile || !selectedCompany || logoUploading}
+                                className="text-[12px] font-bold px-3 py-1.5 rounded-md border bg-[var(--accent)] text-white border-[var(--accent)] disabled:opacity-50 disabled:cursor-not-allowed">
+                                {logoUploading ? "Yükleniyor…" : "Logoyu yükle"}
+                              </button>
+                              {logoFile && <button type="button" onClick={() => setLogoFile(null)} className="text-[12px] text-[var(--text-muted)] hover:text-[var(--text-primary)]">Vazgeç</button>}
+                            </div>
+                          </div>
+                        )}
+                        {logoUploadResult && <p className={`mt-2 text-[11px] font-medium ${logoUploadResult.ok ? "text-emerald-500" : "text-rose-500"}`}>{logoUploadResult.message}</p>}
                       </div>
                     )}
                   </div>

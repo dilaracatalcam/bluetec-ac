@@ -11,6 +11,7 @@ import DeviceManagement from "../components/DeviceManagement.jsx";
 import DeviceSetup from "../components/DeviceSetup.jsx";
 import BulkUpdate from "../components/BulkUpdate.jsx";
 import BulkParamUpdate from "../components/BulkParamUpdate.jsx";
+import LogoUploadPanel from "../components/LogoUploadPanel.jsx";
 import DeviceStatusBoard from "../components/DeviceStatusBoard.jsx";
 import TelemetryHero from "../components/TelemetryHero.jsx";
 import AccountSettings from "../components/AccountSettings.jsx";
@@ -35,11 +36,22 @@ import {
   HiOutlineFingerPrint, HiOutlineCircleStack, HiOutlineBars3,
   HiOutlineSignal, HiOutlineUsers, HiOutlineDocumentMagnifyingGlass, HiOutlineUserCircle,
   HiOutlineSquares2X2, HiOutlineSun, HiOutlineMoon, HiOutlineArrowRightOnRectangle,
-  HiOutlineViewColumns, HiOutlineChevronDown, HiOutlineEllipsisVertical, HiOutlineXMark
+  HiOutlineViewColumns, HiOutlineChevronDown, HiOutlineEllipsisVertical, HiOutlineXMark, HiOutlinePlus
 } from "react-icons/hi2";
 import { TbPlugConnected, TbBrandApple, TbBrandGooglePlay, TbGauge, TbColorSwatch, TbTargetArrow, TbActivity, TbAlertCircle, TbTemperature, TbDroplet, TbEngine } from "react-icons/tb";
 import { BsLightningCharge, BsBattery, BsUsbSymbol, BsShieldLock, BsThermometer, BsSpeedometer } from "react-icons/bs";
 import { MdOutlineRestartAlt, MdSignalCellularAlt, MdOutlineElectricalServices, MdOutlinePower } from "react-icons/md";
+
+// Cihaz cevabı bazı eski daemon sürümlerinde dizi, bazılarında tek nesne
+// olarak gelir. Logo okuma/aktivasyon akışı her iki biçimi de kabul eder.
+function responseMessages(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  return value && typeof value === "object" ? [value] : [];
+}
+
+function normalizeLogoName(value) {
+  return String(value ?? "").trim().replace(/\.bin$/i, "");
+}
 
 /* ── Parametre Tanımları ── */
 const OCPP_WIFI = [
@@ -67,12 +79,6 @@ const UI_PARAMS = [
   { id: 10, icon: <HiOutlineGlobeAlt />,       label: "Site" },
   { id: 11, icon: <TbBrandApple />,            label: "Appstore" },
   { id: 12, icon: <TbBrandGooglePlay />,       label: "Play Store" },
-  { id: 13, icon: <HiOutlinePhoto />,          label: "Logo / Yazı",
-    type: "dropdown", options: [
-      { value: "1", label: "Logo" },
-      { value: "0", label: "Yazı" },
-    ]},
-  { id: 14, icon: <HiOutlineTag />,            label: "Şirket Adı", dependsOn: 13, dependsValue: "0" },
   { id: 35, icon: <TbColorSwatch />,           label: "Gradient/Renk",
     type: "dropdown", options: [
       { value: "0", label: "Gradient" },
@@ -83,6 +89,12 @@ const UI_PARAMS = [
     depMessage: "Renk seçimi yapabilmek için lütfen Gradient seçmeyin" },
   // Tarama
   { id: 62, icon: <HiOutlineWifi />,           label: "Scan List" },
+  { id: 13, icon: <HiOutlinePhoto />,          label: "Logo / Yazı",
+    type: "dropdown", options: [
+      { value: "1", label: "Logo" },
+      { value: "0", label: "Yazı" },
+    ]},
+  { id: 14, icon: <HiOutlineTag />,            label: "Şirket Adı", dependsOn: 13, dependsValue: "0" },
 ];
 
 const MSP_CONFIG_BASE = [
@@ -247,6 +259,15 @@ const SECTIONS = [
 // Kendi kartlarını çizen bölümler — dış beyaz kart olmadan, doğrudan zemine oturur
 const BARE_SECTIONS = ["overview", "logs", "ota-server"];
 
+function isIndividualDeviceRecord(device) {
+  const normalized = String(device?.company || "")
+    .trim()
+    .toLocaleLowerCase("tr-TR")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return !normalized || ["bireysel", "individual", "kisisel", "private", "ozel"].includes(normalized);
+}
+
 /* ── Main ── */
 export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   const authFetch = useCallback((url, options = {}) => {
@@ -284,18 +305,21 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   // ── OTA sunucusundaki gerçek logo dosyalarını "Logo Adı" dropdown'ı için çek ──
   // Sabit/elle yazılan liste yerine, OTA Sunucu Kontrolü'nde yüklenen logolar ne ise onlar gösterilir.
   const [logoOptions, setLogoOptions] = useState([]);
+  const [logoNotifications, setLogoNotifications] = useState([]);
   const [espSwVersionOptions, setEspSwVersionOptions] = useState([]);
   const [espHwVersionOptions, setEspHwVersionOptions] = useState([]);
+  const refreshLogoOptions = useCallback(async () => {
+    try {
+      const r = await authFetch("/api/ota-server/list");
+      const d = await r.json();
+      const opts = (d.logos || []).map((f) => f.name.replace(/\.bin$/i, ""))
+        .map((val) => ({ value: val, label: val.replace(/_logo$/i, "").replace(/_/g, " ") }));
+      setLogoOptions(opts);
+      setLogoNotifications(d.notifications || []);
+    } catch {}
+  }, [authFetch]);
   useEffect(() => {
-    authFetch("/api/ota-server/list")
-      .then((r) => r.json())
-      .then((d) => {
-        const opts = (d.logos || [])
-          .map((f) => f.name.replace(/\.bin$/i, ""))
-          .map((val) => ({ value: val, label: val.replace(/_logo$/i, "").replace(/_/g, " ") }));
-        setLogoOptions(opts);
-      })
-      .catch(() => {});
+    refreshLogoOptions();
 
     // OTA Sunucu Kontrolü'ndeki firmware.json'da gerçekten var olan versiyonlar/hw'ler —
     // software (v@4.0.4 gibi) ve hardware (13, 31, 61 gibi) ayrı listeler
@@ -306,7 +330,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
         setEspHwVersionOptions((d.espHardware || []).map((v) => ({ value: v, label: v })));
       })
       .catch(() => {});
-  }, [authFetch]);
+  }, [authFetch, refreshLogoOptions]);
 
   /* ── Sidebar / UI state ── */
   const [theme, setTheme] = useState(() => {
@@ -386,12 +410,21 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   const [myDevices, setMyDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [connectedLabel, setConnectedLabel] = useState("");
+  const [deviceSelectClaimOpen, setDeviceSelectClaimOpen] = useState(false);
+  const selectedDevice = useMemo(
+    () => myDevices.find((device) => String(device.id) === String(selectedDeviceId)) || null,
+    [myDevices, selectedDeviceId]
+  );
+  // Bireysel cihaz seçilmişken operator görünümü daraltılır. Admin/superadmin
+  // için bu kısıt uygulanmaz; onlar yönetici kapsamını korur.
+  const restrictedIndividualView = isOperator && !!selectedDevice && isIndividualDeviceRecord(selectedDevice);
 
   // DeviceSelect (Cihaz Seç) VE DeviceStatusBoard (Toplu Okuma popover'ındaki
   // "Cihaza Bağlan" butonu) AYNI akışı kullanıyor — bağlantı kurulunca cihaz
   // ekranına geçiş tek bir yerden yönetilsin diye ortak bir handler.
   const handleDeviceConnected = useCallback((mac, device) => {
     if (mac) setMac(mac);
+    if (device?.id !== undefined && device?.id !== null) setSelectedDeviceId(String(device.id));
     setConnectedLabel(device?.location || device?.device_code || mac || "Cihaz");
     setIsConnected(true);
     navigateToSection("ocpp-wifi");
@@ -422,9 +455,14 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       if (s.adminOnly && !isAdmin) return false;
       if (s.superadminOnly && currentUser?.role !== "superadmin") return false;
       if (s.roles && !s.roles.includes(currentUser?.role)) return false;
+      if (restrictedIndividualView && [
+        "ocpp-creds", "logs", "device-status", "bulk-param", "bulk-update",
+      ].includes(s.key)) return false;
       return true;
-    }),
-    [isAdmin, currentUser]
+    }).map((s) => restrictedIndividualView && s.key === "ocpp-wifi"
+      ? { ...s, label: "WiFi Ayarları", title: "WiFi Ayarları", desc: "Kablosuz ağ ayarları ve salt okunur Box bilgisi" }
+      : s),
+    [isAdmin, currentUser, restrictedIndividualView]
   );
 
   // Dashboard/Panel arası geçişte, o an açık olan bölüm artık sidebar'da görünmüyorsa
@@ -513,7 +551,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
         const j = await r.json();
         const ok = {}, rv = {};
 
-        const msgs = j.message_response || [];
+        const msgs = responseMessages(j.message_response);
         const now = Date.now();
         msgs.forEach((entry) => {
           if (!entry) return;
@@ -592,6 +630,19 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       return true;
     } catch { if (!silent) setMessage("Sunucuya ulaşılamadı"); return false; }
   }, [isActive, authFetch]);
+
+  // Başarılı okuma/SET OK değerini cihazın MAC'iyle sunucu envanterine işler.
+  // Sunucu MAC'i aktif oturumdan çözer; frontend tarafında MAC ifşa edilmez.
+  const syncDeviceField = useCallback(async (variable, value) => {
+    if (value === undefined || value === null || value === "" || value === "SET OK") return;
+    try {
+      await authFetch("/api/devices/sync-field", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ variable, value: String(value) }),
+      });
+    } catch {}
+  }, [authFetch]);
 
   const fireOneShot = useCallback(async (id, value, successMsg) => {
     if (!isActive) return;
@@ -700,15 +751,19 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     }
 
     let success = false;
-    for (let retry = 0; retry < 4; retry++) {
+    // Logo değişkeni reset sonrası cevap verdiği için normal parametrelerden
+    // daha geç gelebilir; 65 için daha uzun bir bekleme penceresi kullanılır.
+    const maxRetries = id === 65 ? 12 : 4;
+    for (let retry = 0; retry < maxRetries; retry++) {
       await new Promise((r) => setTimeout(r, 500));
       try {
         const resp = await authFetch("/api/responses");
         const j = await resp.json();
-        const msgs = j.message_response || [];
+        const msgs = responseMessages(j.message_response);
         const found = msgs.find((m) => Number(m.cmd) === 2 && Number(m.msg) === id);
         if (found && found.data !== undefined && found.data !== null) {
           setReadValues((prev) => ({ ...prev, [id]: found.data }));
+          syncDeviceField(id, found.data);
           success = true;
           break;
         }
@@ -720,7 +775,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       setReadFeedback((prev) => ({ ...prev, [id]: "Yanıt alınamadı ✕" }));
       setTimeout(() => setReadFeedback((prev) => ({ ...prev, [id]: null })), 4000);
     }
-  }, [isActive, authFetch]);
+  }, [isActive, authFetch, syncDeviceField]);
 
   const handleSubmit = async (e, force = false) => {
     e?.preventDefault?.(); setMessage("");
@@ -824,12 +879,21 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
         const found = msgs.find((m) => Number(m.cmd) === 2 && Number(m.msg) === p.id);
         if (found && found.data !== undefined && found.data !== null && found.data !== "") {
           setReadValues((prev) => ({ ...prev, [p.id]: found.data }));
+          syncDeviceField(p.id, found.data);
           return true;
         }
       } catch {}
     }
     return false;
   };
+
+  // Bireysel RFID cihazında ESP modu menüde gösterilmez; ancak Main RFID
+  // satırının doğru görünüp görünmeyeceği bu değere göre belirlenir.
+  useEffect(() => {
+    if (!isActive || !restrictedIndividualView) return;
+    readOneValue({ id: 19 }, { keepStale: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, restrictedIndividualView]);
 
   // "Cihaz Tanılama" üst bardaki (…) menüsünden HERHANGİ bir sekmedeyken
   // açılabiliyor — o yüzden Canlı Telemetri sekmesine özel arka plan
@@ -959,9 +1023,10 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
           const j = await resp.json();
           const msgs = j.message_response || [];
           const found = msgs.find((m) => Number(m.msg) === p.id && m.data === "SET OK");
-          if (found) {
+      if (found) {
             success = true;
             setSetOkMap((prev) => ({ ...prev, [p.id]: true }));
+          syncDeviceField(p.id, val);
             break;
           }
         } catch {}
@@ -1001,6 +1066,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
             if (found) {
               success = true;
               setSetOkMap((prev) => ({ ...prev, [p.id]: true }));
+              syncDeviceField(p.id, val);
               break;
             }
           } catch {}
@@ -1105,28 +1171,44 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
 
   const renderOcppWifi = () => (
     <>
-      <SectionHeader icon={<HiOutlineGlobeAlt />} title="OCPP & WiFi Ayarları" subtitle="OCPP endpoint ve kablosuz ağ konfigürasyonu" />
+      <SectionHeader icon={<HiOutlineGlobeAlt />}
+        title={restrictedIndividualView ? "WiFi Ayarları" : "OCPP & WiFi Ayarları"}
+        subtitle={restrictedIndividualView ? "Kablosuz ağ ayarları ve salt okunur Box bilgisi" : "OCPP endpoint ve kablosuz ağ konfigürasyonu"} />
       <div className="px-1">
-        {OCPP_WIFI.map((p, i) => (
+        {(restrictedIndividualView ? OCPP_WIFI.filter((p) => [5, 6, 44].includes(p.id)) : OCPP_WIFI).map((p, i, list) => (
           <EditableRow key={p.id} icon={p.icon} label={p.label} id={p.id}
             value={V(p.id)} setOk={setOkMap[p.id]} disabled={!isActive}
             failed={failedReads[p.id]} setFailed={failedSets[p.id]}
+            readOnly={restrictedIndividualView && p.id === 44}
             bulkEditing={bulkEditingId === "ocpp"}
             bulkDraft={bulkDrafts[p.id] ?? ""} onBulkDraftChange={updateBulkDraft}
             onSet={(id, val) => sendCommand("set", id, val)}
             onRead={(id) => { setFailedReads((prev) => ({ ...prev, [id]: false })); sendCommand("read", id); }}
-            last={i === OCPP_WIFI.length - 1} />
+            last={i === list.length - 1} />
         ))}
       </div>
-      <BatchControls params={OCPP_WIFI} panelId="ocpp" />
+      {!restrictedIndividualView && <BatchControls params={OCPP_WIFI} panelId="ocpp" />}
     </>
   );
 
   const renderUI = () => (
     <>
       <SectionHeader icon={<TbPlugConnected />} title="Bağlantı & UI Ayarları" subtitle="İstasyon görünümü ve haberleşme tercihleri" />
+      {(currentUser?.role === "superadmin" || currentUser?.role === "admin") && logoNotifications.length > 0 && (
+        <div className="mb-3 px-3 py-2 rounded-lg border border-amber-400/30 bg-amber-400/10 text-[11px] text-amber-700 dark:text-amber-300">
+          <b>Logo bildirimi:</b> {logoNotifications[0].company || "Şirket"} hesabı {logoNotifications[0].fileName || "bir logo"} yükledi ({new Date(logoNotifications[0].time).toLocaleString("tr-TR")}).
+        </div>
+      )}
       <div className="px-1">
-        {UI_PARAMS.map((p, i) => {
+        {(restrictedIndividualView ? UI_PARAMS.filter((p) => [7, 62].includes(p.id)) : UI_PARAMS)
+          .filter((p) => {
+            const logoMode = bulkEditingId === "ui"
+              ? String(bulkDrafts[13] ?? readValues[13] ?? "")
+              : String(readValues[13] ?? "");
+            // Şirket Adı yalnızca Yazı modunda gösterilir.
+            return p.id !== 14 || logoMode === "0";
+          })
+          .map((p, i, list) => {
           let depDisabled = false;
           if (p.dependsOn !== undefined) {
             const parentVal = bulkEditingId === "ui"
@@ -1146,12 +1228,66 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
               bulkDraft={bulkDrafts[p.id] ?? ""} onBulkDraftChange={updateBulkDraft}
               onSet={(id, val) => sendCommand("set", id, val)}
               onRead={(id) => { setFailedReads((prev) => ({ ...prev, [id]: false })); sendCommand("read", id); }}
-              last={false} />
+              last={i === list.length - 1} />
           );
-        })}
+          })}
+
+        {!restrictedIndividualView && String(bulkEditingId === "ui" ? (bulkDrafts[13] ?? readValues[13] ?? "") : (readValues[13] ?? "")) === "1" && (
+          <LogoUploadPanel
+            token={token}
+            currentUser={currentUser}
+            logoOptions={logoOptions}
+            selectedLogo={String(bulkDrafts[64] ?? readValues[64] ?? "")}
+            activeLogo={String(readValues[65] ?? "")}
+            onSelectLogo={(logo) => {
+              if (bulkEditingId === "ui") updateBulkDraft(64, logo);
+              else setReadValues((prev) => ({ ...prev, 64: logo }));
+            }}
+            onReadActiveLogo={() => fireRead(65)}
+            readingActiveLogo={!!readLoading[65]}
+            onApply={async (logo, progress) => {
+              if (!isActive) throw new Error("ESP aktif değil");
+              progress?.("Logo adı cihaza atanıyor…");
+              if (!await sendCommand("set", 64, logo)) throw new Error("Logo adı gönderilemedi");
+              progress?.("Logo aktifleştiriliyor…");
+              if (!await sendCommand("set", 63, "1")) throw new Error("Logo güncelleme başlatılamadı");
+              // Güncelleme bayrağı ESP boot akışında işlenir; cihazın indirip
+              // servera logo_report gönderebilmesi için reset başlatılır.
+              progress?.("Cihaz yeniden başlatılıyor…");
+              await new Promise((r) => setTimeout(r, 1200));
+              if (!await sendCommand("set", 20, "1", { silent: true })) throw new Error("Cihaz reset komutu gönderilemedi");
+              // ESP logo indirdikten sonra yeniden bağlanır. Aktif logo (65)
+              // cevabı gelmeden işlemi tamamlanmış sayma.
+              for (let i = 0; i < 45; i++) {
+                await new Promise((r) => setTimeout(r, 1000));
+                try {
+                  if (i % 3 === 0) {
+                    await authFetch("/api/send-command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "read", variable: 65, value: "" }) });
+                  }
+                  const resp = await authFetch("/api/responses");
+                  const data = await resp.json();
+                  const found = responseMessages(data.message_response).find((m) =>
+                    Number(m.cmd) === 2 && Number(m.msg) === 65 &&
+                    normalizeLogoName(m.data) === normalizeLogoName(logo));
+                  if (found) {
+                    progress?.("Sunucu bildirimi alındı; aktif logo kontrol ediliyor…");
+                    setReadValues((prev) => ({ ...prev, 64: logo, 65: logo }));
+                    return;
+                  }
+                } catch {}
+              }
+              throw new Error("Cihaz resetlendi ancak aktif logo doğrulaması alınamadı");
+            }}
+            onUploaded={async (d) => {
+              await refreshLogoOptions();
+              if (d?.logoName) setReadValues((prev) => ({ ...prev, 64: d.logoName }));
+            }}
+            onDeleted={() => { updateBulkDraft(64, ""); setReadValues((prev) => ({ ...prev, 64: "" })); refreshLogoOptions(); }}
+          />
+        )}
 
       </div>
-      <BatchControls params={UI_PARAMS} panelId="ui" />
+      {!restrictedIndividualView && <BatchControls params={UI_PARAMS} panelId="ui" />}
     </>
   );
 
@@ -1243,7 +1379,8 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     const isRfidCharge = String(readValues[19] ?? "") === "1";
     const visibleEspCtrl = ESP_CTRL.filter((p) => {
       if (p.id === 19 && !isAdmin) return false; // ESP Modu sadece Panel'de (Dashboard'da gizli)
-      if ((p.id === 66 || p.id === 67) && !isRfidCharge) return false; // sadece "RFID Charge" iken
+      if (restrictedIndividualView && (p.id === 19 || p.id === 38 || p.id === 45)) return false; // OCPP alanları bireysel cihazda yok
+      if ((p.id === 66 || p.id === 67) && !isRfidCharge) return false; // sadece RFID Charge iken
       return true;
     });
 
@@ -1470,10 +1607,10 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
           <button type="button" title="Oku"
             disabled={!isActive || !!batchReadingId}
             onClick={() => readSingleTelemetry(p)}
-            className={`shrink-0 p-0.5 rounded text-[13px] transition
+            className={`shrink-0 w-5 h-5 rounded-full border flex items-center justify-center text-[12px] transition
               ${(!isActive || !!batchReadingId)
-                ? "text-[var(--text-muted)] opacity-50 cursor-not-allowed"
-                : "text-[var(--text-secondary)] hover:text-[var(--accent)] hover:bg-[var(--bg-hover)] cursor-pointer"}`}>
+                ? "text-[var(--text-muted)] border-[var(--border-subtle)] opacity-50 cursor-not-allowed"
+                : "text-[var(--accent)] border-[var(--accent-border)] hover:bg-[var(--accent-soft)] cursor-pointer"}`}>
             <HiOutlineArrowPath className={batchReadingId === `single-${p.id}` ? "animate-spin" : ""} />
           </button>
         )}
@@ -1654,15 +1791,23 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     </>
   );
 
-  const activeMeta = SECTIONS.find((x) => x.key === activeSection);
+  const activeMetaBase = SECTIONS.find((x) => x.key === activeSection);
+  const activeMeta = restrictedIndividualView && activeSection === "ocpp-wifi"
+    ? { ...activeMetaBase, title: "WiFi Ayarları", desc: "Kablosuz ağ ayarları ve salt okunur Box bilgisi" }
+    : activeMetaBase;
 
   const renderSection = () => {
     switch (activeSection) {
       case "overview": return <Overview token={token} currentUser={currentUser} onNavigate={navigateToSection}
         canOpen={(key) => visibleSections.some((s) => s.key === key)} />;
       case "device-select": return <DeviceSelect token={token}
+        autoOpenClaim={deviceSelectClaimOpen}
+        onClaimOpenHandled={() => setDeviceSelectClaimOpen(false)}
         isSuperadmin={currentUser?.role === "superadmin"}
-        onSelect={(device) => { if (device?.mac) setMac(device.mac); }}
+        onSelect={(device) => {
+          if (device?.id !== undefined && device?.id !== null) setSelectedDeviceId(String(device.id));
+          if (device?.mac) setMac(device.mac);
+        }}
         onConnect={handleDeviceConnected} />;
       case "ocpp-wifi":  return renderOcppWifi();
       case "ui":         return renderUI();
@@ -1670,26 +1815,26 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       case "esp-ctrl":   return renderEspCtrl();
       case "telemetry":  return renderTelemetry();
       case "msp-tele":   return renderMspTelemetry();
-      case "ocpp-creds": return renderOcppCreds();
-      case "logs":       return <DeviceLogs token={token} isConnected={isConnected} isActive={isActive} mac={mac} />;
+      case "ocpp-creds": return restrictedIndividualView ? renderOcppWifi() : renderOcppCreds();
+      case "logs":       return restrictedIndividualView ? renderOcppWifi() : <DeviceLogs token={token} isConnected={isConnected} isActive={isActive} mac={mac} />;
       case "ota":        return currentUser?.role === "superadmin" ? renderOTA() : renderOcppWifi();
       case "connections": return isAdmin
                            ? <Connections token={token} isSuperadmin={currentUser?.role === "superadmin"} />
                            : renderOcppWifi();
       case "device-setup": return (currentUser?.role === "superadmin" || currentUser?.role === "admin")
-                           ? <DeviceSetup token={token} isActive={isActive} sendCommand={sendCommand} setReadValues={setReadValues} />
+                           ? <DeviceSetup token={token} isActive={isActive} sendCommand={sendCommand} setReadValues={setReadValues} syncDeviceField={syncDeviceField} />
                            : renderOcppWifi();
       case "bulk-update": return (currentUser?.role === "superadmin" || currentUser?.role === "admin")
                            ? <BulkUpdate token={token} />
                            : renderOcppWifi();
-      case "bulk-param":  return (currentUser?.role === "superadmin" || currentUser?.role === "admin" || currentUser?.role === "operator")
+      case "bulk-param":  return restrictedIndividualView ? renderOcppWifi() : (currentUser?.role === "superadmin" || currentUser?.role === "admin" || currentUser?.role === "operator")
                            ? <BulkParamUpdate token={token} />
                            : renderOcppWifi();
-      case "device-status": return (currentUser?.role === "superadmin" || currentUser?.role === "admin" || currentUser?.role === "operator")
+      case "device-status": return restrictedIndividualView ? renderOcppWifi() : (currentUser?.role === "superadmin" || currentUser?.role === "admin" || currentUser?.role === "operator")
                            ? <DeviceStatusBoard token={token} currentUser={currentUser} onConnect={handleDeviceConnected} />
                            : renderOcppWifi();
       case "device-mgmt": return (currentUser?.role === "superadmin" || currentUser?.role === "admin")
-                           ? <DeviceManagement token={token} />
+                           ? <DeviceManagement token={token} currentUser={currentUser} />
                            : renderOcppWifi();
       case "ota-server": return currentUser?.role === "superadmin"
                            ? <OtaServerControl token={token} />
@@ -1802,6 +1947,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
         mobileOpen={sidebarMobileOpen}
         onCloseMobile={() => setSidebarMobileOpen(false)}
         currentUser={currentUser}
+        canOpenPanel={currentUser?.role !== "operator"}
         onOpenAccount={() => navigateToSection("account")}
       />
 
@@ -1854,20 +2000,27 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
             {/* Masaüstünde form sağda — mobilde GİZLİ, aşağıda 2. satıra düşer */}
             <form onSubmit={handleSubmit} className="hidden sm:flex gap-2 items-center shrink-0">
               {isOperator ? (
-                <select value={selectedDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)} required
-                  className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                             px-3 py-1.5 rounded-lg text-[13px] outline-none
-                             focus:border-[var(--accent)] transition w-56 cursor-pointer">
-                  <option value="">
-                    {myDevices.length === 0 ? "Atanmış cihaz yok" : "Cihaz seçin…"}
-                  </option>
-                  {myDevices.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.location || d.device_code || `#${d.id}`}
-                      {d.company ? ` — ${d.company}` : ""}
+                <>
+                  <select value={selectedDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)} required
+                    className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                               px-3 py-1.5 rounded-lg text-[13px] outline-none
+                               focus:border-[var(--accent)] transition w-56 cursor-pointer">
+                    <option value="">
+                      {myDevices.length === 0 ? "Atanmış cihaz yok" : "Cihaz seçin…"}
                     </option>
-                  ))}
-                </select>
+                    {myDevices.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.location || d.device_code || `#${d.id}`}
+                        {d.company ? ` — ${d.company}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={() => { setDeviceSelectClaimOpen(true); navigateToSection("device-select"); }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--accent-border)] bg-[var(--accent-soft)] px-2.5 py-1.5 text-[12px] font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft-hover)]"
+                    title="Cihaz ekle">
+                    <HiOutlinePlus className="text-[14px]" /> Ekle
+                  </button>
+                </>
               ) : (
                 <input value={mac} onChange={(e) => setMac(e.target.value)}
                   placeholder="AA:BB:CC:DD:EE:FF" required
@@ -1925,19 +2078,26 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
           {/* ── 2. Satır: Mobilde MAC input + butonlar ── */}
           <form onSubmit={handleSubmit} className="sm:hidden flex gap-2 items-center px-4 pb-3">
             {isOperator ? (
-              <select value={selectedDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)} required
-                className="flex-1 min-w-0 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
-                           px-3 py-2 rounded-lg text-[14px] outline-none
-                           focus:border-[var(--accent)] transition">
-                <option value="">
-                  {myDevices.length === 0 ? "Atanmış cihaz yok" : "Cihaz seçin…"}
-                </option>
-                {myDevices.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.location || d.device_code || `#${d.id}`}
+              <>
+                <select value={selectedDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)} required
+                  className="flex-1 min-w-0 bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                             px-3 py-2 rounded-lg text-[14px] outline-none
+                             focus:border-[var(--accent)] transition">
+                  <option value="">
+                    {myDevices.length === 0 ? "Atanmış cihaz yok" : "Cihaz seçin…"}
                   </option>
-                ))}
-              </select>
+                  {myDevices.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.location || d.device_code || `#${d.id}`}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" onClick={() => { setDeviceSelectClaimOpen(true); navigateToSection("device-select"); }}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[var(--accent-border)] bg-[var(--accent-soft)] px-2.5 py-2 text-[12px] font-semibold text-[var(--accent)] transition hover:bg-[var(--accent-soft-hover)]"
+                  title="Cihaz ekle">
+                  <HiOutlinePlus className="text-[14px]" /> Ekle
+                </button>
+              </>
             ) : (
               <input value={mac} onChange={(e) => setMac(e.target.value)}
                 placeholder="AA:BB:CC:DD:EE:FF" required
@@ -2055,7 +2215,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                 </div>
                 <div>
                   <h3 className="text-[14px] font-bold text-[var(--text-primary)] font-display tracking-tight leading-tight">Cihaz Tanılama</h3>
-                  <p className="text-[11px] text-[var(--text-muted)]">GSM sinyal, hata ve UART durumu</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">GSM sinyali, hata ve UART durumu</p>
                 </div>
               </div>
               <button onClick={() => setDiagOpen(false)}
@@ -2065,7 +2225,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
             </div>
             {isConnected ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {TELEMETRY.filter((p) => ![22, 23, 24, 25].includes(p.id)).map((p) => renderTelemetryCard(p, true))}
+                {TELEMETRY.filter((p) => ![22, 23, 24, 25].includes(p.id)).map((p) => renderTelemetryCard(p, true, true))}
               </div>
             ) : (
               <p className="text-[13px] text-[var(--text-muted)] text-center py-6">Önce bir cihaza bağlanın.</p>

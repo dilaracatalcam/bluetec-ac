@@ -17,6 +17,15 @@
 
 const { getDevices } = require("./db");
 
+function isIndividualCompany(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLocaleLowerCase("tr-TR")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return !normalized || ["bireysel", "individual", "kisisel", "private", "ozel"].includes(normalized);
+}
+
 /* Kullanicinin kapsamini cikar.
    - superadmin           : her zaman serbest
    - admin, kisit yok     : serbest (geriye donuk uyumluluk — mevcut
@@ -27,7 +36,7 @@ const { getDevices } = require("./db");
 function buildScope(user, role) {
   if (role === "superadmin") return { unrestricted: true };
 
-  const company = user?.company || null;
+  const company = isIndividualCompany(user?.company) ? null : (user?.company || null);
   const macs = Array.isArray(user?.allowedMacs)
     ? user.allowedMacs.map((m) => String(m).trim().toUpperCase()).filter(Boolean)
     : [];

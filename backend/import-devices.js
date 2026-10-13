@@ -57,15 +57,24 @@ def norm_location(v):
         return ' '.join(w.capitalize() for w in loc.split())
     return loc
 
+def coord(v):
+    value = safe(v)
+    if not value: return None
+    try:
+        return float(str(value).replace(',', '.'))
+    except: return None
+
 out = []
 for _, r in active.iterrows():
     loc = norm_location(r.get('KONUM'))
     out.append({
-        'device_code': safe(r.get('ID')),
+        'device_code': safe(r.get('OCPP ID')) or safe(r.get('ID')),
         'serial_no':   safe(r.get('SERİ NO')),
         'mac':         safe(r.get('MAC ADRESİ')),
         'company':     safe(r.get('FİRMA')),
         'location':    loc,
+        'latitude':    coord(safe(r.get('ENLEM')) or safe(r.get('LATITUDE'))),
+        'longitude':   coord(safe(r.get('BOYLAM')) or safe(r.get('LONGITUDE'))),
         'connection':  safe(r.get('GSM/WiFi')),
         'logo':        safe(r.get('Logo')),
         'sw_version':  safe(r.get('YAZILIM VERSİYONU')),

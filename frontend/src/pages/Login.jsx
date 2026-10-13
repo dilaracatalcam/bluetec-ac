@@ -25,10 +25,24 @@ export default function Login({ page, onLogin }) {
   const passwordRef = useRef(null);
 
   // ── Şifremi unuttum ──
-  const [mode, setMode] = useState("login"); // "login" | "forgot"
+  const [mode, setMode] = useState("login"); // "login" | "forgot" | "register" | "verify"
   const [forgotUsername, setForgotUsername] = useState("");
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotMessage, setForgotMessage] = useState("");
+
+  const [registerFullName, setRegisterFullName] = useState("");
+  const [registerUsername, setRegisterUsername] = useState("");
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
+  const [registerPassword2, setRegisterPassword2] = useState("");
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [showRegisterPassword2, setShowRegisterPassword2] = useState(false);
+  const [registerLoading, setRegisterLoading] = useState(false);
+  const [registerMessage, setRegisterMessage] = useState("");
+  const [registerCode, setRegisterCode] = useState("");
+  const [verificationMessage, setVerificationMessage] = useState("");
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
 
   const goToForgot = () => {
     setError("");
@@ -39,7 +53,17 @@ export default function Login({ page, onLogin }) {
   const goToLogin = () => {
     setError("");
     setForgotMessage("");
+    setRegisterMessage("");
+    setVerificationMessage("");
     setMode("login");
+  };
+
+  const goToRegister = () => {
+    setError("");
+    setForgotMessage("");
+    setRegisterMessage("");
+    setVerificationMessage("");
+    setMode("register");
   };
 
   const handleForgotSubmit = async (e) => {
@@ -59,6 +83,107 @@ export default function Login({ page, onLogin }) {
       setError("Sunucuya ulaşılamadı");
     } finally {
       setForgotLoading(false);
+    }
+  };
+
+  const handleRegisterSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setRegisterMessage("");
+
+    if (!registerFullName.trim() || !registerUsername.trim() || !registerEmail.trim() || !registerPassword) {
+      setError("Ad soyad, kullanıcı adı, e-posta ve şifre gerekli");
+      return;
+    }
+    if (registerPassword !== registerPassword2) {
+      setError("Şifreler aynı olmalı");
+      return;
+    }
+
+    setRegisterLoading(true);
+    try {
+      const r = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: registerFullName.trim(),
+          username: registerUsername.trim(),
+          email: registerEmail.trim(),
+          password: registerPassword,
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setError(data.error || "Kayıt başarısız");
+        return;
+      }
+
+      setUsername(registerUsername.trim());
+      setPassword("");
+      setRegisterPassword("");
+      setRegisterPassword2("");
+      setShowRegisterPassword(false);
+      setShowRegisterPassword2(false);
+      setRegisterCode("");
+      setVerificationMessage(data.message || "Doğrulama kodu e-posta adresinize gönderildi.");
+      setMode("verify");
+    } catch {
+      setError("Sunucuya ulaşılamadı");
+    } finally {
+      setRegisterLoading(false);
+    }
+  };
+
+  const handleVerifySubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!registerCode.trim() || !/^\d{6}$/.test(registerCode.trim())) {
+      setError("6 haneli doğrulama kodunu girin");
+      return;
+    }
+
+    setVerifyLoading(true);
+    try {
+      const r = await fetch("/api/register/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: registerUsername.trim(), code: registerCode.trim() }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setError(data.error || "Doğrulama başarısız");
+        return;
+      }
+      setUsername(registerUsername.trim());
+      setRegisterMessage(data.message || "E-posta doğrulandı. Artık giriş yapabilirsiniz.");
+      setRegisterCode("");
+      setMode("login");
+    } catch {
+      setError("Sunucuya ulaşılamadı");
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    setError("");
+    setResendLoading(true);
+    try {
+      const r = await fetch("/api/register/resend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: registerUsername.trim() }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setError(data.error || "Kod tekrar gönderilemedi");
+        return;
+      }
+      setVerificationMessage(data.message || "Yeni doğrulama kodu gönderildi.");
+    } catch {
+      setError("Sunucuya ulaşılamadı");
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -115,9 +240,17 @@ export default function Login({ page, onLogin }) {
   const isAdmin = page === "admin";
   const title = mode === "forgot"
     ? "Şifre Sıfırlama"
+    : mode === "register"
+      ? "Kayıt Ol"
+      : mode === "verify"
+        ? "E-posta Doğrulama"
     : isAdmin ? "Admin Panel Girişi" : "Dashboard Girişi";
   const subtitle = mode === "forgot"
     ? "Kullanıcı adınızı girin, size bir sıfırlama linki gönderelim"
+    : mode === "register"
+      ? "Hesabınızı oluşturmak için bilgilerinizi girin"
+      : mode === "verify"
+        ? "E-posta adresinize gelen 6 haneli kodu girin"
     : isAdmin ? "Yönetici yetkisi gerektirir" : "İzleme ve temel kontrol paneli";
 
   return (
@@ -228,7 +361,7 @@ export default function Login({ page, onLogin }) {
 
       {/* Center card */}
       <main className="relative z-10 flex-1 flex items-center justify-center px-4 pb-8">
-        <form onSubmit={mode === "forgot" ? handleForgotSubmit : handleSubmit}
+        <form onSubmit={mode === "forgot" ? handleForgotSubmit : mode === "register" ? handleRegisterSubmit : mode === "verify" ? handleVerifySubmit : handleSubmit}
           className="w-full max-w-sm fade-up">
 
           {/* Rol etiketi */}
@@ -261,6 +394,11 @@ export default function Login({ page, onLogin }) {
               <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[13px]">
                 <HiOutlineExclamationCircle className="text-[14px] shrink-0 mt-[1px]" />
                 <span className="font-medium leading-snug">{error}</span>
+              </div>
+            )}
+            {registerMessage && mode === "login" && (
+              <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[13px]">
+                <span className="font-medium leading-snug">{registerMessage}</span>
               </div>
             )}
 
@@ -351,8 +489,18 @@ export default function Login({ page, onLogin }) {
                     </span>
                   ) : "Giriş Yap"}
                 </button>
+
+                {!isAdmin && (
+                  <button
+                    type="button"
+                    onClick={goToRegister}
+                    className="text-[12px] font-semibold text-[var(--accent)] hover:underline transition cursor-pointer text-center mt-1"
+                  >
+                    Hesabın yok mu? Kayıt Ol
+                  </button>
+                )}
               </div>
-            ) : (
+            ) : mode === "forgot" ? (
               <div className="flex flex-col gap-3">
                 {forgotMessage ? (
                   <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[13px]">
@@ -404,6 +552,211 @@ export default function Login({ page, onLogin }) {
                   type="button"
                   onClick={goToLogin}
                   className="text-[12px] font-semibold text-[var(--text-muted)] hover:text-[var(--accent)] transition cursor-pointer text-center mt-1"
+                >
+                  ← Girişe dön
+                </button>
+              </div>
+            ) : mode === "register" ? (
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
+                    Ad Soyad
+                  </label>
+                  <input
+                    type="text"
+                    value={registerFullName}
+                    onChange={(e) => setRegisterFullName(e.target.value)}
+                    placeholder="Ad Soyad"
+                    autoComplete="name"
+                    autoFocus
+                    className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                               px-3 py-2.5 rounded-lg text-[14px] outline-none
+                               placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
+                    Kullanıcı Adı
+                  </label>
+                  <input
+                    type="text"
+                    value={registerUsername}
+                    onChange={(e) => setRegisterUsername(e.target.value)}
+                    placeholder="kullanici_adi"
+                    autoComplete="username"
+                    className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                               px-3 py-2.5 rounded-lg text-[14px] font-mono outline-none
+                               placeholder:text-[var(--text-muted)] placeholder:font-sans
+                               focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
+                    E-posta <span className="normal-case font-normal tracking-normal">(doğrulama kodu için gerekli)</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={registerEmail}
+                    onChange={(e) => setRegisterEmail(e.target.value)}
+                    placeholder="ornek@mail.com"
+                    autoComplete="email"
+                    className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                               px-3 py-2.5 rounded-lg text-[14px] outline-none
+                               placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
+                    Şifre
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showRegisterPassword ? "text" : "password"}
+                      value={registerPassword}
+                      onChange={(e) => setRegisterPassword(e.target.value)}
+                      placeholder="En az 6 karakter, A/a ve özel karakter"
+                      autoComplete="new-password"
+                      className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                                 px-3 pr-10 py-2.5 rounded-lg text-[14px] font-mono outline-none
+                                 placeholder:text-[var(--text-muted)] placeholder:font-sans
+                                 focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRegisterPassword((s) => !s)}
+                      tabIndex={-1}
+                      title={showRegisterPassword ? "Şifreyi gizle" : "Şifreyi göster"}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md
+                                 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition"
+                    >
+                      {showRegisterPassword ? <HiOutlineEyeSlash className="text-[15px]" /> : <HiOutlineEye className="text-[15px]" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
+                    Şifre Tekrar
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showRegisterPassword2 ? "text" : "password"}
+                      value={registerPassword2}
+                      onChange={(e) => setRegisterPassword2(e.target.value)}
+                      placeholder="Şifreyi tekrar yazın"
+                      autoComplete="new-password"
+                      className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                                 px-3 pr-10 py-2.5 rounded-lg text-[14px] font-mono outline-none
+                                 placeholder:text-[var(--text-muted)] placeholder:font-sans
+                                 focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRegisterPassword2((s) => !s)}
+                      tabIndex={-1}
+                      title={showRegisterPassword2 ? "Şifreyi gizle" : "Şifreyi göster"}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md
+                                 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition"
+                    >
+                      {showRegisterPassword2 ? <HiOutlineEyeSlash className="text-[15px]" /> : <HiOutlineEye className="text-[15px]" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={registerLoading}
+                  className={`w-full py-2.5 rounded-lg text-[14px] font-bold transition mt-2
+                    ${registerLoading
+                      ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border-subtle)] cursor-not-allowed"
+                      : "bg-[var(--accent)] hover:brightness-110 text-white shadow-md shadow-blue-500/30 cursor-pointer"
+                    }`}
+                >
+                  {registerLoading ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Kaydediliyor…
+                    </span>
+                  ) : "Kayıt Ol"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={goToLogin}
+                  className="text-[12px] font-semibold text-[var(--text-muted)] hover:text-[var(--accent)] transition cursor-pointer text-center mt-1"
+                >
+                  ← Girişe dön
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {verificationMessage && (
+                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-400 text-[13px]">
+                    <span className="font-medium leading-snug">{verificationMessage}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
+                    Kullanıcı Adı
+                  </label>
+                  <input
+                    type="text"
+                    value={registerUsername}
+                    readOnly
+                    className="w-full bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-secondary)]
+                               px-3 py-2.5 rounded-lg text-[14px] font-mono outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-[var(--text-muted)] mb-1.5 ml-0.5">
+                    Doğrulama Kodu
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={registerCode}
+                    onChange={(e) => setRegisterCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="123456"
+                    autoComplete="one-time-code"
+                    autoFocus
+                    className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                               px-3 py-2.5 rounded-lg text-[20px] font-mono tracking-[0.3em] text-center outline-none
+                               placeholder:text-[var(--text-muted)] placeholder:tracking-normal
+                               focus:border-[var(--accent)] focus:bg-[var(--bg-sunken)] transition"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={verifyLoading || registerCode.length !== 6}
+                  className={`w-full py-2.5 rounded-lg text-[14px] font-bold transition mt-2
+                    ${verifyLoading || registerCode.length !== 6
+                      ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border border-[var(--border-subtle)] cursor-not-allowed"
+                      : "bg-[var(--accent)] hover:brightness-110 text-white shadow-md shadow-blue-500/30 cursor-pointer"
+                    }`}
+                >
+                  {verifyLoading ? "Doğrulanıyor…" : "Kodu Doğrula"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResendCode}
+                  disabled={resendLoading}
+                  className="text-[12px] font-semibold text-[var(--accent)] hover:underline transition cursor-pointer text-center mt-1 disabled:opacity-50"
+                >
+                  {resendLoading ? "Kod gönderiliyor…" : "Kodu tekrar gönder"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={goToLogin}
+                  className="text-[12px] font-semibold text-[var(--text-muted)] hover:text-[var(--accent)] transition cursor-pointer text-center"
                 >
                   ← Girişe dön
                 </button>

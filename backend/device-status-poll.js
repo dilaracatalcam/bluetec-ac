@@ -53,6 +53,8 @@ function initDeviceStatusPoll(deps) {
     removeSlot, readResponses, isPythonRunning, TARGET_PATH, touchSlot, getDevices, withLock,
   } = deps;
   const dbFns = require("./db");
+  const normalizeMac = (value) => String(value || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
+  const pollingDevices = new Map();
 
   // withLock ŞART — bkz. server.js'teki aynı gerekçe: kilitsiz "oku→değiştir→
   // yaz" dizisi paralel şeritler arasında kayıp güncelleme yaratır.
@@ -136,25 +138,27 @@ function initDeviceStatusPoll(deps) {
   };
 
   async function pollOne(sessionId, device) {
-    const occupierSessionId = await findOccupyingSession(sessionId, device.mac);
-    if (occupierSessionId) {
-      try {
-        const peek = await peekOccupiedState(occupierSessionId, device.mac);
-        if (peek && peek.active && peek.raw !== undefined) {
-          const { state, label } = classify(true, peek.raw);
-          dbFns.upsertDeviceLiveStatus({
-            mac: device.mac, company: device.company, location: device.location,
-            deviceCode: device.device_code, state, label, raw: peek.raw,
-            swVersion: device.sw_version, maxPower: null, // meşgulken Maks. Güç okunamıyor — önceki değer korunur (bkz. upsertDeviceLiveStatus COALESCE)
-          });
-        }
-      } catch (e) {
-        console.error(`[STATUS-POLL] ${device.mac} meşgul-gözlem hatası:`, e.message);
-      }
-      return;
-    }
-
+    const pollingKey = normalizeMac(device.mac);
+    pollingDevices.set(pollingKey, (pollingDevices.get(pollingKey) || 0) + 1);
     try {
+      const occupierSessionId = await findOccupyingSession(sessionId, device.mac);
+      if (occupierSessionId) {
+        try {
+          const peek = await peekOccupiedState(occupierSessionId, device.mac);
+          if (peek && peek.active && peek.raw !== undefined) {
+            const { state, label } = classify(true, peek.raw);
+            dbFns.upsertDeviceLiveStatus({
+              mac: device.mac, company: device.company, location: device.location,
+              deviceCode: device.device_code, state, label, raw: peek.raw,
+              swVersion: device.sw_version, maxPower: null, // meşgulken Maks. Güç okunamıyor — önceki değer korunur
+            });
+          }
+        } catch (e) {
+          console.error(`[STATUS-POLL] ${device.mac} meşgul-gözlem hatası:`, e.message);
+        }
+        return;
+      }
+
       try { await deactivateThenActivateForSlot(sessionId, device.mac); touchSlot(sessionId); } catch {}
 
       let active = false;
@@ -179,6 +183,9 @@ function initDeviceStatusPoll(deps) {
     } catch (e) {
       console.error(`[STATUS-POLL] ${device.mac} okuma hatası:`, e.message);
     } finally {
+      const remaining = (pollingDevices.get(pollingKey) || 1) - 1;
+      if (remaining > 0) pollingDevices.set(pollingKey, remaining);
+      else pollingDevices.delete(pollingKey);
       try { await removeSlot(sessionId); } catch {}
     }
   }
@@ -192,10 +199,34 @@ function initDeviceStatusPoll(deps) {
   const ALL_COMPANIES = "tümü";
   const devicesFor = (company) => (company === ALL_COMPANIES ? getDevices({}) : getDevices({ company }));
 
+  const manualQueues = new Map(); // company -> cihazlar (öncelikli manuel okumalar)
+  const enqueueManual = (company, devices) => {
+    const queue = manualQueues.get(company) || [];
+    const queued = new Set(queue.map((d) => normalizeMac(d.mac)));
+    for (const device of devices) {
+      const key = normalizeMac(device.mac);
+      if (key && !queued.has(key)) {
+        queue.push(device);
+        queued.add(key);
+      }
+    }
+    manualQueues.set(company, queue);
+  };
+  const takeManual = (company) => {
+    const queue = manualQueues.get(company);
+    if (!queue?.length) return null;
+    const device = queue.shift();
+    if (queue.length === 0) manualQueues.delete(company);
+    return device;
+  };
+
   async function runCompanyLoop(company) {
     const isStillWatched = () => {
       const loop = activeLoops.get(company);
-      return !!loop && Date.now() - loop.lastRequestedAt <= WATCH_IDLE_TIMEOUT_MS;
+      return !!loop && (
+        Date.now() - loop.lastRequestedAt <= WATCH_IDLE_TIMEOUT_MS ||
+        (manualQueues.get(company)?.length || 0) > 0
+      );
     };
 
     while (isStillWatched()) {
@@ -207,8 +238,18 @@ function initDeviceStatusPoll(deps) {
       const lane = async (laneIndex) => {
         await sleep(laneIndex * 800);
         const sessionId = `status:${company}:w${laneIndex}`;
-        while (queue.length > 0 && isStillWatched()) {
-          const device = queue.shift();
+        while (isStillWatched()) {
+          let device = takeManual(company);
+          if (device) {
+            const duplicateIndex = queue.findIndex((item) => normalizeMac(item.mac) === normalizeMac(device.mac));
+            if (duplicateIndex >= 0) queue.splice(duplicateIndex, 1);
+          } else {
+            device = queue.shift();
+          }
+          if (!device) {
+            if ((manualQueues.get(company)?.length || 0) > 0) continue;
+            break;
+          }
           if (!device || !device.mac) continue;
           await pollOne(sessionId, device);
         }
@@ -231,6 +272,13 @@ function initDeviceStatusPoll(deps) {
     });
   }
 
+  function requestRefresh(company, devices) {
+    const list = Array.isArray(devices) ? devices.filter((device) => device?.mac) : [];
+    enqueueManual(company, list);
+    ensureWatching(company);
+    return { queued: list.map((device) => device.id).filter((id) => id !== undefined && id !== null) };
+  }
+
   // Henüz hiç okunmamış (ilk tur süren) cihazlar device_live_status'ta yok
   // diye ekrandan kaybolmasınlar — tüm cihaz listesini temel al, bilineni
   // üzerine bindir, bilinmeyeni "kontrol ediliyor" olarak göster.
@@ -246,18 +294,19 @@ function initDeviceStatusPoll(deps) {
         // henüz tazelenmemiş olsa bile bayat sürüm görünmesin (bkz.
         // db.js updateDeviceVersion). id, "Cihaza Bağlan" butonu için gerekli
         // (bkz. DeviceStatusBoard.jsx) — operatörden MAC gizlense de id kalır.
+        const polling = (pollingDevices.get(normalizeMac(d.mac)) || 0) > 0;
         return live
-          ? { ...live, id: d.id, sw_version: d.sw_version }
+          ? { ...live, id: d.id, sw_version: d.sw_version, polling }
           : {
               id: d.id, mac: d.mac, company: d.company, location: d.location || null,
               device_code: d.device_code, state: "checking", label: "Kontrol ediliyor",
-              raw: null, updated_at: null, sw_version: d.sw_version, max_power: null,
+              raw: null, updated_at: null, sw_version: d.sw_version, max_power: null, polling,
             };
       })
       .sort((a, b) => (a.location || "").localeCompare(b.location || "", "tr") || (a.mac || "").localeCompare(b.mac || ""));
   }
 
-  return { ensureWatching, getStatuses, ALL_COMPANIES };
+  return { ensureWatching, requestRefresh, getStatuses, ALL_COMPANIES };
 }
 
 module.exports = { initDeviceStatusPoll };

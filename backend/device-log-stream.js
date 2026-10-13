@@ -20,7 +20,11 @@ const MAX_LINES_PER_SESSION = 5000;
 // kullanıcı başka bölüme geçip dönünce aradaki loglar kaybolmasın.
 const IDLE_TTL_MS = 10 * 60 * 1000;
 
-const LOG_GROUPS = [28, 29];
+// 28/29 canlı RAM akışı; 30 cihazdaki kalıcı OCL1 arşivinin sunucuya
+// aktarımını başlatır. 30, canlı satır gibi kapatılmaz; cihazın ACK'li
+// aktarım protokolü kendi tamamlanma durumunu yönetir.
+const LOG_GROUPS = [28, 29, 30];
+const LIVE_LOG_GROUPS = [28, 29];
 const MAX_LEVEL = 5;
 
 function firstMessage(resp) {
@@ -122,7 +126,7 @@ function initDeviceLogStream({ RESPONSES_PATH, readResponses }) {
         // Cihazda hâlâ açık olan log grupları (28/29)
         activeGroups(sessionId) {
             const m = modesOf(sessionId);
-            return LOG_GROUPS.filter((g) => m[g] !== 0);
+            return LIVE_LOG_GROUPS.filter((g) => m[g] !== 0);
         },
         clearModes(sessionId) {
             modesBySession.delete(sessionId);

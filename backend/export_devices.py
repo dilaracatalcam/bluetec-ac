@@ -18,10 +18,13 @@ COLUMNS = [
     ("MSP430 SW VER", "msp_sw"),
     ("FIRMA", "company"),
     ("Logo", "logo"),
+    # Broker/Excel şablonundaki "ID" alanı paneldeki OCPP ID'ye karşılık gelir.
     ("ID", "device_code"),
     ("SERI NO", "serial_no"),
     ("MAC ADRESI", "mac"),
     ("KONUM", "location"),
+    ("ENLEM", "latitude"),
+    ("BOYLAM", "longitude"),
     ("CONN TYPE", "connection"),
     ("ACIKLAMA", "note"),
     ("TARIH", "updated_at"),

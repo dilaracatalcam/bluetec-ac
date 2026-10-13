@@ -135,6 +135,7 @@ export default function UserManagement({ token, currentUsername }) {
   const [scopeUser, setScopeUser] = useState(null); // { username, company, allowedMacs }
   const [scopeSaving, setScopeSaving] = useState(false);
   const [scopeError, setScopeError] = useState("");
+  const [statusSaving, setStatusSaving] = useState("");
 
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -249,6 +250,24 @@ export default function UserManagement({ token, currentUsername }) {
       await loadUsers();
     } catch { setScopeError("Sunucuya ulaşılamadı"); }
     finally { setScopeSaving(false); }
+  };
+
+  const handleStatusChange = async (username, status) => {
+    setError("");
+    setStatusSaving(username);
+    try {
+      const r = await authFetch(`/api/users/${encodeURIComponent(username)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setError(d.error || "Kullanıcı durumu güncellenemedi"); return; }
+      setInfo(`${username} ${status === "active" ? "onaylandı" : "devre dışı bırakıldı"}`);
+      setTimeout(() => setInfo(""), 4000);
+      await loadUsers();
+    } catch { setError("Sunucuya ulaşılamadı"); }
+    finally { setStatusSaving(""); }
   };
 
   const handleDelete = async () => {
@@ -410,6 +429,7 @@ export default function UserManagement({ token, currentUsername }) {
           {users.map((u) => {
             const isMe = u.username === currentUsername;
             const isSuperadmin = u.role === "superadmin";
+            const userStatus = u.status || "active";
             const created = u.createdAt ? new Date(u.createdAt).toLocaleDateString("tr-TR") : "—";
             const macCount = (u.allowedMacs || []).length;
             const noScope = u.role === "operator" && !u.company && macCount === 0;
@@ -446,6 +466,21 @@ export default function UserManagement({ token, currentUsername }) {
                         yetki yok
                       </span>
                     )}
+                    {userStatus === "pending" && (
+                      <span className="text-[10px] font-bold tracking-wider uppercase px-1.5 py-[1px] rounded border bg-amber-500/10 text-amber-400 border-amber-500/20">
+                        onay bekliyor
+                      </span>
+                    )}
+                    {userStatus === "pending_email" && (
+                      <span className="text-[10px] font-bold tracking-wider uppercase px-1.5 py-[1px] rounded border bg-sky-500/10 text-sky-400 border-sky-500/20">
+                        e-posta doğrulanıyor
+                      </span>
+                    )}
+                    {userStatus === "disabled" && (
+                      <span className="text-[10px] font-bold tracking-wider uppercase px-1.5 py-[1px] rounded border bg-rose-500/10 text-rose-400 border-rose-500/20">
+                        devre dışı
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 text-[11px] font-mono text-[var(--text-muted)]">
                     <span>@{u.username}</span>
@@ -460,6 +495,14 @@ export default function UserManagement({ token, currentUsername }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
+                  {!isSuperadmin && userStatus === "pending" && (
+                    <button onClick={() => handleStatusChange(u.username, "active")}
+                      disabled={statusSaving === u.username}
+                      title="Kullanıcıyı onayla"
+                      className="text-[11px] font-semibold px-2 py-1.5 rounded-md border bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/20 transition cursor-pointer disabled:opacity-50">
+                      {statusSaving === u.username ? "…" : "Onayla"}
+                    </button>
+                  )}
                   {!isSuperadmin && (
                     <button onClick={() => { setScopeUser({ username: u.username, company: u.company || "", allowedMacs: [...(u.allowedMacs || [])], email: u.email || "" }); setScopeError(""); }}
                       title="Cihaz yetkisini düzenle"

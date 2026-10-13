@@ -76,4 +76,19 @@ function convertCtoBin(buffer) {
     return { valid: true, buffer: data };
 }
 
-module.exports = { validateBin, validateTxt, convertCtoBin };
+// ── LVGL indexed 4-bit logo ──
+// 238x88 için 64 byte BGRA palet + satır başına 119 packed pixel byte.
+// ESP dynamicLogo.h bu formatı doğrudan LV_IMG_CF_INDEXED_4BIT olarak açar.
+const INDEXED4_LOGO_SIZE = 64 + Math.ceil(238 / 2) * 88;
+
+function validateIndexed4Logo(buffer) {
+    if (!buffer || buffer.length !== INDEXED4_LOGO_SIZE) {
+        return {
+            valid: false,
+            reason: `Geçersiz 4-bit logo boyutu (beklenen ${INDEXED4_LOGO_SIZE} byte)`,
+        };
+    }
+    return { valid: true };
+}
+
+module.exports = { validateBin, validateTxt, convertCtoBin, validateIndexed4Logo };
