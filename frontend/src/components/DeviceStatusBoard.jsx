@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useRef, createContext, useCo
 import {
   HiOutlineViewColumns, HiOutlineMapPin, HiOutlineArrowPath,
   HiOutlineBolt, HiOutlineBoltSlash, HiOutlinePauseCircle, HiOutlineFlag, HiOutlineExclamationTriangle,
-  HiOutlineMoon, HiOutlineSignalSlash, HiOutlineQuestionMarkCircle,
+  HiOutlineMoon, HiOutlineSignalSlash, HiOutlineQuestionMarkCircle, HiOutlineMagnifyingGlass,
+  HiOutlineChevronDown, HiOutlineArrowsPointingIn, HiOutlineArrowsPointingOut, HiOutlineServerStack,
 } from "react-icons/hi2";
 import { TbPlugConnected } from "react-icons/tb";
 import OcppLiveConsole from "./OcppLiveConsole.jsx";
@@ -24,54 +25,61 @@ const isRefreshing = (refreshingIds, d) => !!d.polling || !!refreshingIds[String
 
 const POLL_MS = 4000;
 
+// Renkler Echargo "Bağlantı Renkleri" açıklamasıyla aynı anlamda:
+// yeşil bağlantı var/müsait, mavi şarj, sarı araç bağlı, mor şarj bitti,
+// gri arıza, kırmızı bağlantı yok, beyaz erişim yok / henüz okunmadı.
+const tone = (hex, text, extra = {}) => ({
+  hex, text, dot: "", bar: "",
+  chip: `border-transparent text-white`,
+  ...extra,
+});
 const STATE_META = {
-  charging: {
-    dot: "bg-emerald-500", text: "text-emerald-500", label: "Şarj Oluyor", icon: HiOutlineBolt,
-    chip: "bg-emerald-500/10 text-emerald-500 border-emerald-500/25",
-    bar: "bg-emerald-500",
-  },
-  waiting_rfid: {
-    dot: "bg-amber-500", text: "text-amber-500", label: "Soket Takılı, Şarj Yok", icon: HiOutlinePauseCircle,
-    chip: "bg-amber-500/10 text-amber-500 border-amber-500/25",
-    bar: "bg-amber-500",
-  },
-  charge_ended: {
-    dot: "bg-indigo-500", text: "text-indigo-500", label: "Şarj Bitti, Soket Takılı", icon: HiOutlineFlag,
-    chip: "bg-indigo-500/10 text-indigo-500 border-indigo-500/25",
-    bar: "bg-indigo-500",
-  },
-  not_plugged: {
-    dot: "bg-sky-500", text: "text-sky-500", label: "Soket Takılı Değil", icon: HiOutlineBoltSlash,
-    chip: "bg-sky-500/10 text-sky-500 border-sky-500/25",
-    bar: "bg-sky-500",
-  },
-  idle: {
-    dot: "bg-sky-500", text: "text-sky-500", label: "Boşta", icon: HiOutlineMoon,
-    chip: "bg-sky-500/10 text-sky-500 border-sky-500/25",
-    bar: "bg-sky-500",
-  },
-  error: {
-    dot: "bg-red-500", text: "text-red-500", label: "Hata", icon: HiOutlineExclamationTriangle,
-    chip: "bg-red-500/10 text-red-500 border-red-500/25",
-    bar: "bg-red-500",
-  },
-  offline: {
-    dot: "bg-rose-500", text: "text-rose-500", label: "Çevrimdışı", icon: HiOutlineSignalSlash,
-    chip: "bg-rose-500/10 text-rose-500 border-rose-500/25",
-    bar: "bg-rose-500",
-  },
-  unknown: {
-    dot: "bg-[var(--text-muted)]", text: "text-[var(--text-muted)]", label: "Bilinmiyor", icon: HiOutlineQuestionMarkCircle,
-    chip: "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)]",
-    bar: "bg-[var(--text-muted)]",
-  },
-  checking: {
-    dot: "bg-[var(--text-muted)]", text: "text-[var(--text-muted)]", label: "Kontrol ediliyor", icon: HiOutlineArrowPath,
-    chip: "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)]",
-    bar: "bg-[var(--text-muted)]",
-  },
+  charging:     { ...tone("#2f80ed", "text-[#2f80ed]"), label: "Şarj Oluyor", icon: HiOutlineBolt },
+  waiting_rfid: { ...tone("#f2c037", "text-[#c99a0e]"), label: "Araç Bağlı, Şarj Yok", icon: HiOutlinePauseCircle },
+  charge_ended: { ...tone("#9b51e0", "text-[#9b51e0]"), label: "Şarj Bitti, Soket Takılı", icon: HiOutlineFlag },
+  not_plugged:  { ...tone("#4caf50", "text-[#3d9a41]"), label: "Müsait (Soket Takılı Değil)", icon: HiOutlineBoltSlash },
+  idle:         { ...tone("#4caf50", "text-[#3d9a41]"), label: "Müsait", icon: HiOutlineMoon },
+  error:        { ...tone("#7d7d7d", "text-[#6b6b6b]"), label: "Arıza", icon: HiOutlineExclamationTriangle },
+  offline:      { ...tone("#e0245e", "text-[#e0245e]"), label: "Bağlantı Yok", icon: HiOutlineSignalSlash },
+  unknown:      { ...tone("#ffffff", "text-[var(--text-muted)]"), label: "Erişim Yok", icon: HiOutlineQuestionMarkCircle },
+  checking:     { ...tone("#ffffff", "text-[var(--text-muted)]"), label: "Kontrol ediliyor", icon: HiOutlineArrowPath },
 };
-const STATE_ORDER = ["charging", "waiting_rfid", "charge_ended", "not_plugged", "idle", "error", "offline", "unknown", "checking"];
+const STATE_ORDER = ["idle", "not_plugged", "charging", "waiting_rfid", "charge_ended", "error", "offline", "unknown", "checking"];
+
+// Alttaki "Bağlantı Renkleri" açıklaması ve üstteki sayaç kutuları
+const LEGEND = [
+  { label: "Cihazda Bağlantı Var", hex: "#4caf50" },
+  { label: "Cihazda Bağlantı Yok", hex: "#e0245e" },
+  { label: "Cihazda Araç Bağlı", hex: "#f2c037" },
+  { label: "Cihazda Şarj Oluyor", hex: "#2f80ed" },
+  { label: "Cihazda Şarj Bitti", hex: "#9b51e0" },
+  { label: "Cihazda Arıza", hex: "#7d7d7d" },
+  { label: "Cihazda Erişim Yok", hex: "#ffffff" },
+];
+const STAT_CARDS = [
+  { key: "online",   label: "Çevrimiçi",   sub: "Online",   hex: "#4caf50", states: ["idle", "not_plugged", "charging", "waiting_rfid", "charge_ended", "error"] },
+  { key: "charging", label: "Şarjda",      sub: "Charging", hex: "#2f80ed", states: ["charging"] },
+  { key: "vehicle",  label: "Araç Bağlı",  sub: "Vehicle",  hex: "#f2c037", states: ["waiting_rfid"] },
+  { key: "ended",    label: "Şarj Bitti",  sub: "Ended",    hex: "#9b51e0", states: ["charge_ended"] },
+  { key: "faulted",  label: "Arızalı",     sub: "Faulted",  hex: "#7d7d7d", states: ["error"] },
+  { key: "offline",  label: "Çevrimdışı",  sub: "Offline",  hex: "#e0245e", states: ["offline"] },
+  { key: "idle",     label: "Boşta",       sub: "Idle",     hex: "#94a3b8", states: ["idle", "not_plugged"] },
+];
+
+// Soket tipi: konumda / kodda "DC" geçiyorsa DC, yoksa AC
+const socketType = (d) => (/\bDC\b/i.test(`${d.location || ""} ${d.device_code || ""}`) ? "DC" : "AC");
+
+function timeAgo(value) {
+  if (!value) return "—";
+  const ms = Date.now() - new Date(value).getTime();
+  if (!Number.isFinite(ms)) return "—";
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return "az önce";
+  if (min < 60) return `${min} dakika`;
+  const h = Math.floor(min / 60);
+  return h < 24 ? `${h} saat` : `${Math.floor(h / 24)} gün`;
+}
+
 const metaFor = (state) => STATE_META[state] || STATE_META.unknown;
 
 // Aynı sitedeki cihazlar çoğu zaman "... - 1", "...-2", "... AC 01" (sonda)
@@ -145,16 +153,41 @@ function buildSiteGroups(devices, company) {
     .sort((a, b) => a.site.localeCompare(b.site, "tr"));
 }
 
-function SegmentedBar({ devices, className = "" }) {
-  const total = devices.length || 1;
+function countStates(devices) {
   const counts = {};
   for (const d of devices) counts[d.state] = (counts[d.state] || 0) + 1;
+  return counts;
+}
+
+function SegmentedBar({ devices, className = "" }) {
+  const total = devices.length || 1;
+  const counts = countStates(devices);
   return (
     <div className={`h-1.5 rounded-full overflow-hidden flex bg-[var(--border-subtle)] ${className}`}>
       {STATE_ORDER.filter((s) => counts[s]).map((s) => (
-        <div key={s} className={metaFor(s).bar} style={{ width: `${(counts[s] / total) * 100}%` }} />
+        <div key={s} style={{ width: `${(counts[s] / total) * 100}%`, background: metaFor(s).hex === "#ffffff" ? "#d4d4d8" : metaFor(s).hex }} />
       ))}
     </div>
+  );
+}
+
+// Renkli nokta + adet (şehir / ilçe başlıklarında)
+function StateCounts({ devices }) {
+  const counts = countStates(devices);
+  const groups = new Map();
+  for (const s of STATE_ORDER) {
+    if (!counts[s]) continue;
+    const hex = metaFor(s).hex;
+    groups.set(hex, (groups.get(hex) || 0) + counts[s]);
+  }
+  return (
+    <span className="flex items-center gap-2.5 flex-wrap">
+      {[...groups].map(([hex, n]) => (
+        <span key={hex} className="flex items-center gap-1 text-[12px] font-semibold text-[var(--text-secondary)] tabular-nums">
+          <span className="w-2 h-2 rounded-full border border-black/10" style={{ background: hex }} />{n}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -213,11 +246,13 @@ function DeviceTile({ d, tileKey, isOpen, onToggle, onConnectDevice, connecting,
         ref={btnRef}
         type="button"
         onClick={(e) => { e.stopPropagation(); onToggle(); }}
-        className={`w-12 h-12 rounded-xl border flex items-center justify-center shrink-0
-                    transition hover:-translate-y-0.5 hover:shadow-md active:scale-95 ${meta.chip}
+        title={`${(d.device_code || "Cihaz").trim()} — ${meta.label}`}
+        className={`w-[26px] h-[46px] rounded-[3px] overflow-hidden border border-black/20 flex flex-col shrink-0
+                    transition hover:-translate-y-0.5 hover:shadow-md active:scale-95
                     ${isOpen ? "ring-2 ring-offset-1 ring-[var(--accent)] ring-offset-[var(--bg-page,transparent)]" : ""}`}
       >
-        <Icon className={`text-[19px] ${d.state === "checking" ? "animate-spin" : ""}`} />
+        <span className="h-[13px] bg-[#2e7d32] text-white text-[7.5px] font-bold leading-[13px] text-center tracking-tight">{socketType(d)}</span>
+        <span className="flex-1" style={{ background: meta.hex }} />
         {(d.polling || refreshing) && (
           <span className="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-[var(--bg-elevated,#fff)] border border-[var(--accent-border)] text-[var(--accent)] flex items-center justify-center shadow-sm">
             <HiOutlineArrowPath className="text-[10px] animate-spin" />
@@ -235,7 +270,8 @@ function DeviceTile({ d, tileKey, isOpen, onToggle, onConnectDevice, connecting,
           className="z-30 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated,#fff)] shadow-2xl p-3.5 text-left"
         >
           <div className="flex items-center gap-2 mb-2.5 pb-2.5 border-b border-[var(--border-subtle)]">
-            <span className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 ${meta.chip}`}>
+            <span className="w-7 h-7 rounded-lg border border-black/10 flex items-center justify-center shrink-0 text-white"
+              style={{ background: meta.hex === "#ffffff" ? "#a1a1aa" : meta.hex }}>
               <Icon className={`text-[14px] ${d.state === "checking" ? "animate-spin" : ""}`} />
             </span>
             <span className={`text-[13px] font-bold truncate flex-1 ${meta.text}`}>
@@ -295,6 +331,14 @@ function DeviceTile({ d, tileKey, isOpen, onToggle, onConnectDevice, connecting,
               <dt className="text-[var(--text-muted)] font-medium shrink-0">Versiyon</dt>
               <dd className={`font-mono text-[11px] font-bold ${meta.text}`}>{d.sw_version || "—"}</dd>
             </div>
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-[var(--text-muted)] font-medium shrink-0">Son veri</dt>
+              <dd className="font-semibold text-[var(--text-secondary)]">{timeAgo(d.updated_at)}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-[var(--text-muted)] font-medium shrink-0">İlçe / Şehir</dt>
+              <dd className="font-semibold text-right text-[var(--text-secondary)]">{[d.district, d.city].filter(Boolean).join(" / ") || "—"}</dd>
+            </div>
           </dl>
           {connectError && (
             <p className="mt-2 text-[11px] font-semibold text-rose-500">{connectError}</p>
@@ -322,7 +366,7 @@ function DeviceTile({ d, tileKey, isOpen, onToggle, onConnectDevice, connecting,
 
 function DeviceTileRow({ devices, openKey, setOpenKey, onConnectDevice, connecting, connectError }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-1.5">
       {devices.map((d) => {
         const key = d.mac || d.device_code;
         return (
@@ -358,13 +402,11 @@ function RefreshButton({ devices, title, small = false }) {
 
 function LocationCard({ site, devices, blocks, openKey, setOpenKey, onConnectDevice, connecting, connectError }) {
   return (
-    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated,transparent)] p-4 flex flex-col gap-3.5">
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="w-7 h-7 rounded-lg bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)] text-[14px] shrink-0">
-          <HiOutlineMapPin />
-        </span>
-        <span className="text-[13.5px] font-bold text-[var(--text-primary)] truncate flex-1" title={site}>{site}</span>
-        <RefreshButton devices={devices} title="Bu sektörü şimdi oku" />
+    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3.5 flex flex-col gap-3 hover:shadow-sm transition">
+      <div className="flex items-center gap-1.5 min-w-0">
+        <HiOutlineMapPin className="text-[var(--accent)] text-[15px] shrink-0" />
+        <span className="text-[13px] font-bold text-[var(--text-primary)] leading-snug break-words flex-1 min-w-0" title={site}>{site}</span>
+        <RefreshButton devices={devices} title="Bu sektörü şimdi oku" small />
       </div>
 
       {blocks ? (
@@ -385,9 +427,107 @@ function LocationCard({ site, devices, blocks, openKey, setOpenKey, onConnectDev
           onConnectDevice={onConnectDevice} connecting={connecting} connectError={connectError} />
       )}
 
-      <div className="flex items-center gap-2.5 pt-3 border-t border-[var(--border-subtle)]">
-        <SegmentedBar devices={devices} className="h-1 flex-1" />
-        <span className="shrink-0 text-[11px] font-bold text-[var(--text-muted)]">{devices.length} cihaz</span>
+      <div className="flex items-center gap-2.5 pt-2.5 border-t border-dashed border-[var(--border-subtle)] text-[11px] font-bold text-[var(--text-muted)]">
+        {["AC", "DC"].map((t) => {
+          const n = devices.filter((d) => socketType(d) === t).length;
+          return n ? <span key={t}>{t} <span className="text-[var(--text-secondary)]">{n}</span></span> : null;
+        })}
+        <SegmentedBar devices={devices} className="h-1 flex-1 ml-1" />
+      </div>
+    </div>
+  );
+}
+
+const NO_CITY = "Şehir belirtilmemiş";
+const NO_DISTRICT = "İlçe belirtilmemiş";
+
+// Şehir → İlçe → Lokasyon (site) ağacı. Şehir/ilçe Cihaz Yönetimi'nden girilir;
+// boş olanlar "belirtilmemiş" grubunda en sonda toplanır.
+function buildHierarchy(devices, company) {
+  const cities = new Map();
+  for (const d of devices) {
+    const city = d.city || NO_CITY;
+    const district = d.district || NO_DISTRICT;
+    if (!cities.has(city)) cities.set(city, new Map());
+    const districts = cities.get(city);
+    if (!districts.has(district)) districts.set(district, []);
+    districts.get(district).push(d);
+  }
+  const lastIf = (name, empty) => (a, b) => (a[0] === empty) - (b[0] === empty) || a[0].localeCompare(b[0], "tr");
+  return [...cities].sort(lastIf(null, NO_CITY)).map(([city, districts]) => {
+    const list = [...districts].sort(lastIf(null, NO_DISTRICT)).map(([district, devs]) => ({
+      district, devices: devs, sites: buildSiteGroups(devs, company),
+    }));
+    return { city, districts: list, devices: list.flatMap((x) => x.devices) };
+  });
+}
+
+function StatCard({ label, sub, hex, value, pct, active, onClick }) {
+  return (
+    <button type="button" onClick={onClick}
+      className={`relative text-left rounded-xl border bg-[var(--bg-surface)] px-4 py-3 transition hover:shadow-sm overflow-hidden
+        ${active ? "border-[var(--accent)] ring-2 ring-[var(--accent)]/30" : "border-[var(--border-subtle)]"}`}>
+      {hex && <span className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: hex }} />}
+      <div className="flex items-start gap-1.5">
+        {hex && <span className="mt-[5px] w-2 h-2 rounded-full shrink-0" style={{ background: hex }} />}
+        <div className="min-w-0">
+          <div className={hex ? "text-[12.5px] font-semibold text-[var(--text-primary)] leading-tight" : "text-[11px] font-bold tracking-[0.12em] uppercase text-[var(--text-muted)]"}>{label}</div>
+          {sub && <div className="text-[10px] text-[var(--text-muted)] leading-tight">{sub}</div>}
+        </div>
+      </div>
+      <div className="flex items-baseline gap-2 mt-1.5">
+        <span className="text-[28px] leading-none font-bold font-display text-[var(--text-primary)] tabular-nums">{value}</span>
+        {pct !== undefined && <span className="text-[11px] font-medium text-[var(--text-muted)] tabular-nums">{pct}%</span>}
+      </div>
+    </button>
+  );
+}
+
+function DistrictSection({ district, devices, sites, open, onToggle, tileProps }) {
+  return (
+    <div className="border-t border-[var(--border-subtle)] first:border-t-0">
+      <button type="button" onClick={onToggle} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--bg-hover)] transition text-left">
+        <HiOutlineChevronDown className={`text-[13px] text-[var(--text-muted)] transition ${open ? "" : "-rotate-90"}`} />
+        <span className="text-[12px] font-bold uppercase tracking-wide text-[var(--text-secondary)] w-[180px] truncate shrink-0">{district}</span>
+        <StateCounts devices={devices} />
+        <SegmentedBar devices={devices} className="h-1 flex-1 min-w-[60px]" />
+      </button>
+      {open && (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] items-start gap-3 px-3 pb-3">
+          {sites.map((g) => (
+            <LocationCard key={g.site} site={g.site} devices={g.devices} blocks={g.blocks} {...tileProps} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CityCard({ city, districts, devices, open, onToggle, openDistricts, toggleDistrict, tileProps }) {
+  const header = (
+    <button type="button" onClick={onToggle} className="w-full text-left flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <HiOutlineChevronDown className={`text-[13px] text-[var(--text-muted)] transition ${open ? "" : "-rotate-90"}`} />
+        <span className="text-[13px] font-bold uppercase tracking-wide text-[var(--text-primary)] truncate">{city}</span>
+      </div>
+      <div className="pl-5 text-[11px] text-[var(--accent)] font-medium">
+        {districts.length} ilçe · {devices.length} istasyon
+      </div>
+      <div className="pl-5"><StateCounts devices={devices} /></div>
+      <SegmentedBar devices={devices} className="h-1.5 mt-1" />
+    </button>
+  );
+  if (!open) {
+    return <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3.5 hover:shadow-sm transition">{header}</div>;
+  }
+  return (
+    <div className="col-span-full rounded-xl border border-[var(--border-strong)] bg-[var(--bg-subtle)] overflow-hidden">
+      <div className="p-3.5 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)]">{header}</div>
+      <div className="bg-[var(--bg-surface)]">
+        {districts.map((x) => (
+          <DistrictSection key={x.district} {...x} open={openDistricts.has(`${city}|${x.district}`)}
+            onToggle={() => toggleDistrict(`${city}|${x.district}`)} tileProps={tileProps} />
+        ))}
       </div>
     </div>
   );
@@ -414,6 +554,17 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
   // Popover değişince önceki denemenin hata mesajı yeni cihaza taşınmasın diye.
   const setOpenKey = useCallback((key) => { setConnectError(""); setOpenKeyRaw(key); }, []);
   const [historyDevice, setHistoryDevice] = useState(null); // { deviceId, name }
+  const [search, setSearch] = useState("");
+  const [statFilter, setStatFilter] = useState(null); // STAT_CARDS key
+  const [openCities, setOpenCities] = useState(() => new Set());
+  const [openDistricts, setOpenDistricts] = useState(() => new Set());
+  const [showConsole, setShowConsole] = useState(false);
+  const diagramRef = useRef(null);
+  const toggleIn = (setter) => (key) => setter((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
   // "Şimdi oku" istenen cihazlar: yeni bir okuma (updated_at değişimi) gelene ya da
   // 45 sn dolana kadar dönen simgeyle gösterilir.
   const [refreshingIds, setRefreshingIds] = useState({});
@@ -559,14 +710,51 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
   // Cihaz kayıtları kendi "company" alanını taşıyor — superadmin'in seçtiği
   // değeri değil, gerçek veriyi esas alıyoruz (operatörde selectedCompany zaten boş).
   const activeCompany = devices[0]?.company || selectedCompany;
-  const grouped = useMemo(() => buildSiteGroups(devices, activeCompany), [devices, activeCompany]);
-
-  const counts = useMemo(() => {
-    const c = {};
-    for (const d of devices) c[d.state] = (c[d.state] || 0) + 1;
-    return c;
-  }, [devices]);
   const total = devices.length;
+
+  const counts = useMemo(() => countStates(devices), [devices]);
+  const countOf = (states) => states.reduce((n, st) => n + (counts[st] || 0), 0);
+  const pctOf = (n) => (total ? Math.round((n / total) * 1000) / 10 : 0);
+
+  // Arama + sayaç kutusu filtresi
+  const visible = useMemo(() => {
+    const q = search.trim().toLocaleLowerCase("tr-TR");
+    const states = statFilter ? STAT_CARDS.find((c) => c.key === statFilter)?.states : null;
+    return devices.filter((d) => {
+      if (states && !states.includes(d.state)) return false;
+      if (!q) return true;
+      return [d.location, d.device_code, d.city, d.district, d.mac, d.serial_no]
+        .some((v) => String(v || "").toLocaleLowerCase("tr-TR").includes(q));
+    });
+  }, [devices, search, statFilter]);
+
+  const hierarchy = useMemo(() => buildHierarchy(visible, activeCompany), [visible, activeCompany]);
+  // Arama ya da filtre varken eşleşen tüm şehir ve ilçeler açık gösterilir
+  const filtering = !!search.trim() || !!statFilter;
+  const isCityOpen = (city) => filtering || openCities.has(city);
+  const districtSetFor = filtering
+    ? new Set(hierarchy.flatMap((c) => c.districts.map((x) => `${c.city}|${x.district}`)))
+    : openDistricts;
+  const anyOpen = openCities.size > 0 || openDistricts.size > 0;
+
+  const toggleCity = (city) => {
+    toggleIn(setOpenCities)(city);
+    // Şehir ilk açıldığında tek ilçesi varsa onu da aç
+    const entry = hierarchy.find((c) => c.city === city);
+    if (entry && entry.districts.length === 1 && !openCities.has(city)) {
+      setOpenDistricts((prev) => new Set(prev).add(`${city}|${entry.districts[0].district}`));
+    }
+  };
+
+  const toggleFullscreen = () => {
+    const el = diagramRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else el.requestFullscreen?.().catch(() => {});
+  };
+
+  const tileProps = { openKey, setOpenKey, onConnectDevice: handleConnectDevice, connecting, connectError };
+  const btn = "flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-md border transition";
 
   return (
     <OpenHistoryContext.Provider value={openHistory}>
@@ -601,32 +789,86 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
         </div>
       ) : (
         <>
-          <div className="mb-6 px-4 py-3.5 rounded-2xl bg-[var(--bg-subtle)] border border-[var(--border-subtle)]">
-            <div className="flex items-center gap-2.5 flex-wrap mb-3">
-              {STATE_ORDER.filter((s) => counts[s]).map((s) => (
-                <span key={s} className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-bold ${metaFor(s).chip}`}>
-                  <span className="tabular-nums">{counts[s]}</span> {metaFor(s).label}
+          {/* ── Sayaç kutuları — tıklayınca diyagram o duruma süzülür ── */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3 mb-4">
+            <StatCard label="Toplam İstasyon" value={total} sub="Anlık durum özeti"
+              active={!statFilter} onClick={() => setStatFilter(null)} />
+            {STAT_CARDS.map((c) => {
+              const n = countOf(c.states);
+              return (
+                <StatCard key={c.key} label={c.label} sub={c.sub} hex={c.hex} value={n} pct={pctOf(n)}
+                  active={statFilter === c.key} onClick={() => setStatFilter(statFilter === c.key ? null : c.key)} />
+              );
+            })}
+          </div>
+
+          <div className="relative mb-4">
+            <HiOutlineMagnifyingGlass className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-[16px]" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="İstasyon, lokasyon, şehir/ilçe veya kod ara..."
+              className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                         pl-10 pr-3 py-2.5 rounded-xl text-[14px] outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--text-muted)]" />
+          </div>
+
+          {/* ── Bağlantı Diyagramı ── */}
+          <div ref={diagramRef} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] overflow-auto">
+            <div className="flex items-center justify-between gap-2 flex-wrap px-4 py-3 border-b border-[var(--border-subtle)]">
+              <span className="text-[15px] font-semibold text-[var(--text-primary)]">Bağlantı Diyagramı</span>
+              <div className="flex items-center gap-2">
+                {anyOpen && !filtering && (
+                  <button type="button" onClick={() => { setOpenCities(new Set()); setOpenDistricts(new Set()); }}
+                    className={`${btn} border-[var(--accent-border)] text-[var(--accent)] hover:bg-[var(--accent-soft)]`}>
+                    <HiOutlineArrowsPointingIn /> Hepsini Daralt
+                  </button>
+                )}
+                <button type="button" onClick={() => setShowConsole((v) => !v)}
+                  title="Açıkken Toplu Okuma her cihazda kısa süre canlı OCPP logu toplar (3 28 3 / 3 28 0)"
+                  className={`${btn} ${showConsole
+                    ? "bg-amber-400 border-amber-400 text-slate-900"
+                    : "border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"}`}>
+                  <HiOutlineServerStack /> Cihaz Mesajları
+                </button>
+                <button type="button" onClick={toggleFullscreen} title="Tam ekran"
+                  className="p-2 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]">
+                  <HiOutlineArrowsPointingOut />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4">
+              {hierarchy.length === 0 ? (
+                <p className="text-center text-[13px] text-[var(--text-muted)] py-8">Aramaya / filtreye uyan istasyon yok.</p>
+              ) : (
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
+                  {hierarchy.map((c) => (
+                    <CityCard key={c.city} {...c} open={isCityOpen(c.city)} onToggle={() => toggleCity(c.city)}
+                      openDistricts={districtSetFor} toggleDistrict={toggleIn(setOpenDistricts)} tileProps={tileProps} />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Konsol açık kaldıkça Toplu Okuma her cihazda 3 28 3 ile OCPP logu toplar, çıkarken 3 28 0 gönderir */}
+            {showConsole && (
+              <div className="px-4 pb-4">
+                <OcppLiveConsole token={token} company={isSuperadmin ? selectedCompany : undefined}
+                  onPickDevice={(l) => l.deviceId != null && setHistoryDevice({
+                    deviceId: l.deviceId, name: [l.location, l.deviceCode].filter(Boolean).join(" ") || "Cihaz",
+                  })}
+                  emptyText="Canlı OCPP mesajı bekleniyor… Toplu Okuma her cihaza uğradığında kısa süre log toplar." />
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4">
+            <div className="text-[12px] font-semibold text-[var(--text-secondary)] mb-2">Bağlantı Renkleri</div>
+            <div className="flex flex-wrap gap-x-5 gap-y-2">
+              {LEGEND.map((l) => (
+                <span key={l.label} className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]">
+                  <span className="w-7 h-4 rounded-sm border border-black/15" style={{ background: l.hex }} />{l.label}
                 </span>
               ))}
-              <span className="text-[12px] text-[var(--text-muted)] ml-auto font-semibold">Toplam {total} cihaz</span>
             </div>
-            <SegmentedBar devices={devices} className="h-2" />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {grouped.map((g) => (
-              <LocationCard key={g.site} site={g.site} devices={g.devices} blocks={g.blocks} openKey={openKey} setOpenKey={setOpenKey}
-                onConnectDevice={handleConnectDevice} connecting={connecting} connectError={connectError} />
-            ))}
-          </div>
-
-          {/* Konsol açık kaldıkça Toplu Okuma her cihazda 3 28 3 ile OCPP logu toplar, çıkarken 3 28 0 gönderir */}
-          <div className="mt-6">
-            <OcppLiveConsole token={token} company={isSuperadmin ? selectedCompany : undefined}
-              onPickDevice={(l) => l.deviceId != null && setHistoryDevice({
-                deviceId: l.deviceId, name: [l.location, l.deviceCode].filter(Boolean).join(" ") || "Cihaz",
-              })}
-              emptyText="Canlı OCPP mesajı bekleniyor… Toplu Okuma her cihaza uğradığında kısa süre log toplar." />
           </div>
         </>
       )}

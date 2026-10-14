@@ -24,8 +24,11 @@ export default function OcppLiveConsole({ token, company, session = false, onPic
   const [paused, setPaused] = useState(false);
   const [error, setError] = useState("");
   const afterRef = useRef(0);
+  const inFlightRef = useRef(false); // yavaş bağlantıda istekler üst üste binip aynı satırları iki kez eklemesin
 
   const poll = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     const qs = new URLSearchParams({ after: String(afterRef.current) });
     if (session) qs.set("session", "1");
     else if (company) qs.set("company", company);
@@ -39,10 +42,15 @@ export default function OcppLiveConsole({ token, company, session = false, onPic
       afterRef.current = d.lastId;
       if (d.lines?.length) {
         const fresh = d.lines.slice().reverse();
-        setLines((prev) => fresh.concat(prev).slice(0, MAX_LINES));
+        setLines((prev) => {
+          const seen = new Set(prev.map((l) => l.id));
+          return fresh.filter((l) => !seen.has(l.id)).concat(prev).slice(0, MAX_LINES);
+        });
       }
     } catch {
       setError("Sunucuya ulaşılamadı");
+    } finally {
+      inFlightRef.current = false;
     }
   }, [token, company, session]);
 

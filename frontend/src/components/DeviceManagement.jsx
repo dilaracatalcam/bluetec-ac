@@ -7,7 +7,7 @@ import {
 import ScrollableTable from "./ScrollableTable.jsx";
 
 const EMPTY_FORM = {
-  company: "", location: "", latitude: "", longitude: "", device_code: "", serial_no: "", mac: "",
+  company: "", location: "", city: "", district: "", latitude: "", longitude: "", device_code: "", serial_no: "", mac: "",
   connection: "", sw_version: "", msp_fw: "", msp_sw: "", hw_version: "", logo: "", note: "",
   extra_fields: {},
 };
@@ -15,6 +15,8 @@ const EMPTY_FORM = {
 const BULK_FIELD_LABELS = {
   company: "Şirket",
   location: "Konum",
+  city: "Şehir",
+  district: "İlçe",
   latitude: "Enlem",
   longitude: "Boylam",
   connection: "Bağlantı",
@@ -118,6 +120,12 @@ export default function DeviceManagement({ token, currentUser }) {
 
   useEffect(() => { loadDevices(); loadCompanies(); loadCustomFields(); }, [loadDevices, loadCompanies, loadCustomFields]);
 
+  // Şehir / İlçe seçimi için Türkiye il-ilçe listesi
+  const [turkey, setTurkey] = useState({});
+  useEffect(() => {
+    authFetch("/api/locations/turkey").then((r) => r.json()).then((d) => setTurkey(d.iller || {})).catch(() => {});
+  }, [authFetch]);
+
   const [sortBy, setSortBy] = useState("newest"); // newest | oldest | az | za
 
   const filtered = devices
@@ -127,6 +135,8 @@ export default function DeviceManagement({ token, currentUser }) {
       const q = search.toLowerCase();
       return (
         (d.location || "").toLowerCase().includes(q) ||
+        (d.city || "").toLowerCase().includes(q) ||
+        (d.district || "").toLowerCase().includes(q) ||
         (d.device_code || "").toLowerCase().includes(q) ||
         (d.serial_no || "").toLowerCase().includes(q) ||
         (d.mac || "").toLowerCase().includes(q) ||
@@ -220,7 +230,8 @@ export default function DeviceManagement({ token, currentUser }) {
     setEditingId(d.id);
     setTemplateSourceId(null);
     setForm({
-      company: d.company || "", location: d.location || "", latitude: d.latitude ?? "", longitude: d.longitude ?? "",
+      company: d.company || "", location: d.location || "", city: d.city || "", district: d.district || "",
+      latitude: d.latitude ?? "", longitude: d.longitude ?? "",
       device_code: d.device_code || "",
       serial_no: d.serial_no || "", mac: d.mac || "", connection: d.connection || "",
       sw_version: d.sw_version || "", msp_fw: d.msp_fw || "", msp_sw: d.msp_sw || "", hw_version: d.hw_version || "",
@@ -239,7 +250,8 @@ export default function DeviceManagement({ token, currentUser }) {
   const startFromTemplate = (d) => {
     if (!showForm || editingId !== null) return; // form kapalıysa veya düzenleme modundaysa hiçbir şey yapma
     setForm({
-      company: d.company || "", location: d.location || "", latitude: d.latitude ?? "", longitude: d.longitude ?? "",
+      company: d.company || "", location: d.location || "", city: d.city || "", district: d.district || "",
+      latitude: d.latitude ?? "", longitude: d.longitude ?? "",
       device_code: d.device_code || "",
       serial_no: d.serial_no || "", mac: d.mac || "", connection: d.connection || "",
       sw_version: d.sw_version || "", msp_fw: d.msp_fw || "", msp_sw: d.msp_sw || "", hw_version: d.hw_version || "",
@@ -453,6 +465,24 @@ export default function DeviceManagement({ token, currentUser }) {
               <Field label="Firma / Sahiplik" value={form.company} onChange={setField("company")} placeholder="Bireysel veya boş = Atanabilir" list="companies-list" />
             )}
             <Field label="Konum" value={form.location} onChange={setField("location")} placeholder="İstanbul Merkez" />
+            <div>
+              <label className="block text-[11px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Şehir</label>
+              <select value={form.city || ""} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value, district: "" }))}
+                className="w-full bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)] px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
+                <option value="">Seçin...</option>
+                {form.city && !turkey[form.city] && <option value={form.city}>{form.city}</option>}
+                {Object.keys(turkey).map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">İlçe</label>
+              <select value={form.district || ""} onChange={setField("district")} disabled={!form.city}
+                className="w-full bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)] px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer disabled:opacity-50">
+                <option value="">{form.city ? "Seçin..." : "Önce şehir seçin"}</option>
+                {form.district && !(turkey[form.city] || []).includes(form.district) && <option value={form.district}>{form.district}</option>}
+                {(turkey[form.city] || []).map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
             <Field label="Enlem" value={form.latitude} onChange={setField("latitude")} placeholder="41.0422" mono />
             <Field label="Boylam" value={form.longitude} onChange={setField("longitude")} placeholder="29.0010" mono />
             <Field label="OCPP ID" value={form.device_code} onChange={setField("device_code")} placeholder="AKBAT1AC" mono />
@@ -589,6 +619,9 @@ export default function DeviceManagement({ token, currentUser }) {
                       {d.location || "—"}
                       {d.device_code && <span className="text-[var(--text-muted)]"> — {d.device_code}</span>}
                     </div>
+                    {(d.city || d.district) && (
+                      <div className="text-[11px] text-[var(--accent)] mt-0.5">{[d.district, d.city].filter(Boolean).join(" / ")}</div>
+                    )}
                     {d.serial_no && <div className="text-[11px] text-[var(--text-muted)] font-mono mt-0.5">{d.serial_no}</div>}
                   </div>
                   <div className="text-[13px] text-[var(--text-secondary)] truncate pr-2">{d.company || "—"}</div>
@@ -685,6 +718,8 @@ export default function DeviceManagement({ token, currentUser }) {
                 ["MAC Adresi", selectedDetail.mac],
                 ["Şirket", selectedDetail.company || "Atanabilir"],
                 ["Konum", selectedDetail.location],
+                ["Şehir", selectedDetail.city],
+                ["İlçe", selectedDetail.district],
                 ["Enlem", selectedDetail.latitude],
                 ["Boylam", selectedDetail.longitude],
                 ["Bağlantı", selectedDetail.connection],
