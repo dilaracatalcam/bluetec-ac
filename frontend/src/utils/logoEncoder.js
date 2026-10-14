@@ -1,118 +1,105 @@
 /* ── Logo kodlayıcı: PNG/JPG/WEBP → cihazın 4-bit indeksli logo .bin dosyası ──
+   Canlıdaki build'den (13.10.2026) birebir geri çıkarıldı.
    Biçim (LVGL LV_IMG_CF_INDEXED_4BIT, 238×88):
-   - 64 byte palet: 16 renk × [B, G, R, A]
+   - 64 byte palet: 16 renk × [B, G, R, A]; 0. renk saydam (hepsi 0)
    - piksel verisi: satır başına ceil(238/2) = 119 byte, byte başına 2 piksel,
      soldaki piksel üst 4 bitte
-   Toplam 10536 byte — backend validateIndexed4Logo ve önizleme kodu
-   (LogoUploadPanel/BulkParamUpdate decodeLogoPreview) bununla birebir aynı.
+   Toplam 10536 byte — backend validateIndexed4Logo ve önizleme kodu ile aynı.
 */
 
-export const LOGO_W = 238;
-export const LOGO_H = 88;
-const PALETTE_SIZE = 16;
-const ROW_BYTES = (LOGO_W + 1) >> 1;
-const ALPHA_CUTOFF = 128;
+const LOGO_W = 238;
+const LOGO_H = 88;
+const LOGO_SIZE = 64 + Math.ceil(LOGO_W / 2) * LOGO_H;
 
-async function loadImage(file) {
+function loadImage(file) {
   if (typeof createImageBitmap === "function") return createImageBitmap(file);
-  const url = URL.createObjectURL(file);
-  try {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
     const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Logo resmi okunamadı")); };
     img.src = url;
-    await img.decode();
-    return img;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-// Görseli oranını bozmadan 238×88 alana ortalar (kalan alan saydam).
-function rasterize(source) {
-  const canvas = document.createElement("canvas");
-  canvas.width = LOGO_W; canvas.height = LOGO_H;
-  const ctx = canvas.getContext("2d");
-  const sw = source.width, sh = source.height;
-  const scale = Math.min(LOGO_W / sw, LOGO_H / sh);
-  const w = Math.round(sw * scale), h = Math.round(sh * scale);
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(source, Math.floor((LOGO_W - w) / 2), Math.floor((LOGO_H - h) / 2), w, h);
-  return ctx.getImageData(0, 0, LOGO_W, LOGO_H).data;
-}
-
-// Median-cut: renk kutusunu en geniş kanalından ikiye bölerek `count` renge indirir.
-function medianCut(colors, count) {
-  if (colors.length === 0) return [];
-  let boxes = [colors];
-  while (boxes.length < count) {
-    let best = -1, bestRange = 0, bestCh = 0;
-    boxes.forEach((box, i) => {
-      if (box.length < 2) return;
-      for (let ch = 0; ch < 3; ch++) {
-        let lo = 255, hi = 0;
-        for (const c of box) { if (c[ch] < lo) lo = c[ch]; if (c[ch] > hi) hi = c[ch]; }
-        if (hi - lo > bestRange) { bestRange = hi - lo; best = i; bestCh = ch; }
-      }
-    });
-    if (best < 0) break; // kalan kutuların hepsi tek renk
-    const box = boxes[best].sort((a, b) => a[bestCh] - b[bestCh]);
-    // Aynı renk iki kutuya bölünmesin: kesim, medyan değerin başladığı yerde
-    // (o başa denk gelirse bittiği yerde) yapılır.
-    const m = box[box.length >> 1][bestCh];
-    let cut = box.findIndex((c) => c[bestCh] >= m);
-    if (cut === 0) cut = box.findIndex((c) => c[bestCh] > m);
-    boxes.splice(best, 1, box.slice(0, cut), box.slice(cut));
-  }
-  return boxes.map((box) => {
-    const sum = [0, 0, 0];
-    for (const c of box) { sum[0] += c[0]; sum[1] += c[1]; sum[2] += c[2]; }
-    return sum.map((s) => Math.round(s / box.length));
   });
 }
 
-export function encodeIndexed4(rgba) {
-  const opaque = [];
-  let hasTransparent = false;
-  for (let i = 0; i < LOGO_W * LOGO_H; i++) {
-    if (rgba[i * 4 + 3] < ALPHA_CUTOFF) hasTransparent = true;
-    else opaque.push([rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]]);
-  }
-
-  const palette = medianCut(opaque, hasTransparent ? PALETTE_SIZE - 1 : PALETTE_SIZE);
-  const transparentIndex = hasTransparent ? palette.length : -1;
-
-  const out = new Uint8Array(64 + ROW_BYTES * LOGO_H);
-  palette.forEach(([r, g, b], i) => { out[i * 4] = b; out[i * 4 + 1] = g; out[i * 4 + 2] = r; out[i * 4 + 3] = 255; });
-  // saydam giriş 0,0,0,0 olarak kalır
-
-  const cache = new Map();
-  const nearest = (r, g, b) => {
-    const key = (r << 16) | (g << 8) | b;
-    let idx = cache.get(key);
-    if (idx !== undefined) return idx;
-    let bestD = Infinity;
-    palette.forEach(([pr, pg, pb], i) => {
-      const d = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2;
-      if (d < bestD) { bestD = d; idx = i; }
-    });
-    cache.set(key, idx);
-    return idx;
-  };
-
-  for (let y = 0; y < LOGO_H; y++) {
-    for (let x = 0; x < LOGO_W; x++) {
-      const p = (y * LOGO_W + x) * 4;
-      const index = rgba[p + 3] < ALPHA_CUTOFF ? transparentIndex : nearest(rgba[p], rgba[p + 1], rgba[p + 2]);
-      const o = 64 + y * ROW_BYTES + (x >> 1);
-      out[o] |= (x & 1) ? (index & 0x0f) : ((index & 0x0f) << 4);
-    }
-  }
-  return out;
+// Alfa farkı renk farkından iki kat ağır sayılır
+function colorDistance(a, b) {
+  const dr = a.r - b.r, dg = a.g - b.g, db = a.b - b.b, da = a.a - b.a;
+  return dr * dr + dg * dg + db * db + da * da * 2;
 }
 
 export async function encodeLogoImageToIndexed4(file) {
-  const source = await loadImage(file);
-  const bytes = encodeIndexed4(rasterize(source));
-  source.close?.();
-  const name = String(file.name || "logo").replace(/\.[^.]+$/, "") + ".bin";
-  return new File([bytes], name, { type: "application/octet-stream" });
+  if (!file) throw new Error("Logo dosyası seçilmedi");
+  const image = await loadImage(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = LOGO_W;
+  canvas.height = LOGO_H;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Logo çizim alanı oluşturulamadı");
+  ctx.clearRect(0, 0, LOGO_W, LOGO_H);
+  ctx.imageSmoothingEnabled = true;
+
+  const srcW = image.width || image.naturalWidth;
+  const srcH = image.height || image.naturalHeight;
+  if (!srcW || !srcH) throw new Error("Logo resmi boş");
+  // Oranı koruyarak 238×88 alana ortala; kalan alan saydam
+  const scale = Math.min(LOGO_W / srcW, LOGO_H / srcH);
+  const w = srcW * scale, h = srcH * scale;
+  ctx.drawImage(image, (LOGO_W - w) / 2, (LOGO_H - h) / 2, w, h);
+  if (typeof image.close === "function") image.close();
+
+  const px = ctx.getImageData(0, 0, LOGO_W, LOGO_H).data;
+
+  // Renkleri kaba kovalara topla (RGB 5 bit, alfa 4 bit); en sık 15 kova palet olur
+  const buckets = new Map();
+  for (let i = 0; i < px.length; i += 4) {
+    const a = px[i + 3];
+    if (a < 8) continue;
+    const key = `${px[i] & 248},${px[i + 1] & 248},${px[i + 2] & 248},${a >> 4}`;
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.count += 1; bucket.r += px[i]; bucket.g += px[i + 1]; bucket.b += px[i + 2]; bucket.a += a;
+    } else {
+      buckets.set(key, { count: 1, r: px[i], g: px[i + 1], b: px[i + 2], a });
+    }
+  }
+  const palette = Array.from(buckets.values())
+    .sort((x, y) => y.count - x.count)
+    .slice(0, 15)
+    .map((c) => ({ r: Math.round(c.r / c.count), g: Math.round(c.g / c.count), b: Math.round(c.b / c.count), a: Math.round(c.a / c.count) }));
+  while (palette.length < 15) palette.push({ r: 0, g: 0, b: 0, a: 0 });
+
+  const out = new Uint8Array(LOGO_SIZE);
+  // 0. renk saydam kalır; 1..15 paletten
+  for (let i = 0; i < 15; i += 1) {
+    const c = palette[i], o = (i + 1) * 4;
+    out[o] = c.b; out[o + 1] = c.g; out[o + 2] = c.r; out[o + 3] = c.a;
+  }
+
+  const indices = new Uint8Array(LOGO_W * LOGO_H);
+  for (let y = 0; y < LOGO_H; y += 1) {
+    for (let x = 0; x < LOGO_W; x += 1) {
+      const p = (y * LOGO_W + x) * 4, a = px[p + 3];
+      if (a < 8) continue;
+      const color = { r: px[p], g: px[p + 1], b: px[p + 2], a };
+      let best = 1, bestD = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < palette.length; i += 1) {
+        const d = colorDistance(color, palette[i]);
+        if (d < bestD) { bestD = d; best = i + 1; }
+      }
+      indices[y * LOGO_W + x] = best;
+    }
+  }
+
+  let o = 64;
+  for (let y = 0; y < LOGO_H; y += 1) {
+    for (let x = 0; x < LOGO_W; x += 2) {
+      const hi = indices[y * LOGO_W + x] & 15;
+      const lo = x + 1 < LOGO_W ? indices[y * LOGO_W + x + 1] & 15 : 0;
+      out[o++] = (hi << 4) | lo;
+    }
+  }
+
+  const base = file.name.replace(/\.[^.]+$/, "") || "logo";
+  return new File([out], `${base}_logo.bin`, { type: "application/octet-stream" });
 }
