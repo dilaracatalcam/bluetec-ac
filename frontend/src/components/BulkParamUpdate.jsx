@@ -129,14 +129,15 @@ export default function BulkParamUpdate({ token }) {
   // parametresini ve değerini taşır (aynı cihazlara, tek bağlantı üzerinden
   // art arda uygulanır, bkz. backend'deki processDevice).
   const rowKeySeq = useRef(0);
-  const newRow = () => ({ key: ++rowKeySeq.current, paramId: 64, value: "" });
+  // operation: "set" (yaz) ya da "read" (oku — değer gerekmez, her cihazın değeri sonuçta görünür)
+  const newRow = () => ({ key: ++rowKeySeq.current, paramId: 64, value: "", operation: "set" });
   const [rows, setRows] = useState(() => [newRow()]);
   const usedParamIds = new Set(rows.map((r) => r.paramId));
   const updateRow = (key, patch) => setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const addRow = () => {
     const unused = BULK_PARAMS.find((p) => !usedParamIds.has(p.id));
     if (!unused) return; // hepsi zaten eklenmiş
-    setRows((prev) => [...prev, { key: ++rowKeySeq.current, paramId: unused.id, value: "" }]);
+    setRows((prev) => [...prev, { key: ++rowKeySeq.current, paramId: unused.id, value: "", operation: "set" }]);
   };
   const removeRow = (key) => setRows((prev) => (prev.length > 1 ? prev.filter((r) => r.key !== key) : prev));
 
@@ -259,20 +260,22 @@ export default function BulkParamUpdate({ token }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const allRowsFilled = rows.every((r) => r.value);
+  const isRead = (r) => (r.operation || "set") === "read";
+  const allRowsFilled = rows.every((r) => isRead(r) || r.value);
+  const allRowsRead = rows.length > 0 && rows.every(isRead);
   const startBulk = async (rowOverride = null) => {
     const devices = Object.values(selectedDevices);
     const effectiveRows = rowOverride
       ? rows.map((r) => r.key === rowOverride.key ? { ...r, value: rowOverride.value } : r)
       : rows;
-    if (devices.length === 0 || effectiveRows.some((r) => !r.value)) return false;
+    if (devices.length === 0 || effectiveRows.some((r) => !isRead(r) && !r.value)) return false;
     setStarting(true);
     try {
       const r = await authFetch("/api/bulk-jobs", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           company: selectedCompany,
-          params: effectiveRows.map((row) => ({ paramId: row.paramId, value: row.value })),
+          params: effectiveRows.map((row) => ({ paramId: row.paramId, value: row.value, operation: row.operation || "set" })),
           deviceIds: devices.map((d) => d.id),
           workerCount,
           autoRetryMinutes: autoRetryEnabled ? autoRetryMinutes : 0,
@@ -405,6 +408,8 @@ export default function BulkParamUpdate({ token }) {
   };
   const selectedList = Object.values(selectedDevices);
   const jobDevices = job?.devices || [];
+  // Sadece okuma yapan iş: sayaçlar "okundu / okunamadı" diye gösterilir
+  const readJob = !!job && (job.params || []).length > 0 && (job.params || []).every((p) => p.operation === "read");
   const counts = jobDevices.reduce((acc, d) => {
     acc[d.phase] = (acc[d.phase] || 0) + 1;
     return acc;
@@ -442,6 +447,12 @@ export default function BulkParamUpdate({ token }) {
                 return (
                   <div key={row.key} className="border border-[var(--border-subtle)] rounded-lg p-3">
                     <div className="flex items-start gap-2">
+                      <select value={row.operation || "set"} onChange={(e) => updateRow(row.key, { operation: e.target.value, value: "" })}
+                        className="shrink-0 w-[105px] bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
+                                   px-2 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
+                        <option value="set">Yaz (SET)</option>
+                        <option value="read">Oku (READ)</option>
+                      </select>
                       <select value={row.paramId} onChange={(e) => updateRow(row.key, { paramId: Number(e.target.value), value: "" })}
                         className="shrink-0 w-[150px] bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
                                    px-2 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
@@ -453,7 +464,11 @@ export default function BulkParamUpdate({ token }) {
                       </select>
 
                       <div className="flex-1 min-w-0">
-                        {rowParam.type === "logo" ? (
+                        {isRead(row) ? (
+                          <div className="w-full px-3 py-2 rounded-lg text-[12px] text-[var(--text-muted)] bg-[var(--bg-subtle)] border border-[var(--border-subtle)]">
+                            Seçilen cihazlardan bu parametre okunacak
+                          </div>
+                        ) : rowParam.type === "logo" ? (
                           <select value={row.value} onChange={(e) => updateRow(row.key, { value: e.target.value })}
                             className="w-full bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)]
                                        px-3 py-2 rounded-lg text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
@@ -485,6 +500,11 @@ export default function BulkParamUpdate({ token }) {
 
                     {rowParam.type === "logo" && (
                       <div className="mt-2 border border-dashed border-[var(--border-subtle)] rounded-lg p-3">
+                        {isRead(row) ? (
+                          <p className="text-[11px] text-[var(--text-muted)]">
+                            Her cihazın aktif logo adı sonuçlarda ayrı ayrı gösterilecek. İsterseniz sonuçta görünen logo adını seçip önizleyebilirsiniz.
+                          </p>
+                        ) : (
                         <div className="flex flex-wrap items-center gap-2">
                           <button type="button" disabled={!row.value || logoPreviewLoading}
                             onClick={() => previewSelectedLogo(row.value)}
@@ -497,6 +517,7 @@ export default function BulkParamUpdate({ token }) {
                             Seçili logoyu sil
                           </button>
                         </div>
+                        )}
                         {logoPreviewName === row.value && logoRemotePreviewUrl && (
                           <div className="mt-3">
                             <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)] mb-1">Seçili logo: {row.value} (238×88)</div>
@@ -508,7 +529,7 @@ export default function BulkParamUpdate({ token }) {
                         {logoPreviewName === row.value && logoPreviewError && (
                           <p className="mt-2 text-[11px] text-rose-500">{logoPreviewError}</p>
                         )}
-                        {canUploadLogo && (
+                        {!isRead(row) && canUploadLogo && (
                           <div className="mt-3 border-t border-[var(--border-subtle)] pt-3">
                             <p className="text-[11px] text-[var(--text-muted)] mb-2">
                               Yeni logo ekle — dosya adı {selectedCompany ? `${selectedCompany}_logo_ sıra numarası` : "şirket hesabına göre"} olarak otomatik atanır.
@@ -664,7 +685,7 @@ export default function BulkParamUpdate({ token }) {
                   ? "bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] cursor-not-allowed opacity-50"
                   : "bg-[var(--accent)] hover:brightness-110 text-white border-[var(--accent)] cursor-pointer"}`}>
               <HiOutlineBolt className="text-[14px]" />
-              {starting ? "Başlatılıyor..." : `${selectedList.length} Cihaza Gönder`}
+              {starting ? "Başlatılıyor..." : allRowsRead ? `${selectedList.length} Cihazdan Oku` : `${selectedList.length} Cihaza Gönder`}
             </button>
           </div>
         </>
@@ -676,7 +697,8 @@ export default function BulkParamUpdate({ token }) {
             {(job.params || []).map((p, i) => (
               <span key={i}>
                 {i > 0 && " · "}
-                <b className="text-[var(--text-primary)]">{p.label}</b> → <span className="font-mono">{p.value}</span>
+                <b className="text-[var(--text-primary)]">{p.operation === "read" && Number(p.id) === 64 ? "Aktif Logo Adı" : p.label}</b>
+                {" → "}<span className="font-mono">{p.operation === "read" ? "Oku (READ)" : p.value}</span>
               </span>
             ))}
             {job.created_by && <> — başlatan: <b>{job.created_by}</b></>}
@@ -699,9 +721,9 @@ export default function BulkParamUpdate({ token }) {
 
           <div className="flex items-center justify-between mb-4 px-3 py-2 rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)]">
             <div className="flex items-center gap-4 text-[12px] font-semibold flex-wrap">
-              <span className="text-emerald-500">✓ {counts.success || 0} başarılı</span>
-              {(counts.unverified || 0) > 0 && <span className="text-amber-500">{counts.unverified} doğrulanamadı</span>}
-              <span className="text-rose-500">✕ {counts.failed || 0} güncellenemedi</span>
+              <span className="text-emerald-500">✓ {counts.success || 0} {readJob ? "okundu" : "başarılı"}</span>
+              {(counts.unverified || 0) > 0 && <span className="text-amber-500">{counts.unverified} {readJob ? "okunamadı" : "doğrulanamadı"}</span>}
+              <span className="text-rose-500">✕ {counts.failed || 0} {readJob ? "okunamadı" : "güncellenemedi"}</span>
               {running && (
                 <span className="text-amber-500 flex items-center gap-1">
                   <HiOutlineClock className="text-[13px]" />
