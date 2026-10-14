@@ -4,7 +4,6 @@ import {
   HiOutlineDocumentText, HiOutlineEye, HiOutlineArrowPath, HiOutlineXMark,
 } from "react-icons/hi2";
 import OcppArchive from "./OcppArchive.jsx";
-import OcppLiveDevice from "./OcppLiveDevice.jsx";
 
 /* ── Cihaz Logları ──
    İki sekme:
@@ -392,8 +391,6 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
 
             {error && <p className="text-[12px] text-rose-400 mt-3">{error}</p>}
           </div>
-
-          <OcppLiveDevice token={token} isActive={isActive} mac={mac} />
 
           <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-4">
             <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
