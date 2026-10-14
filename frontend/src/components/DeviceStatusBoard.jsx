@@ -1,10 +1,16 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, createContext, useContext } from "react";
 import {
   HiOutlineViewColumns, HiOutlineMapPin, HiOutlineArrowPath,
   HiOutlineBolt, HiOutlineBoltSlash, HiOutlinePauseCircle, HiOutlineFlag, HiOutlineExclamationTriangle,
   HiOutlineMoon, HiOutlineSignalSlash, HiOutlineQuestionMarkCircle,
 } from "react-icons/hi2";
 import { TbPlugConnected } from "react-icons/tb";
+import OcppLiveConsole from "./OcppLiveConsole.jsx";
+import OcppDeviceModal from "./OcppDeviceModal.jsx";
+
+// Kutucuk popover'ındaki "Mesaj Geçmişi" düğmesi cihaz penceresini açar —
+// tile'lar birkaç bileşen derinde olduğu için prop zinciri yerine context.
+const OpenHistoryContext = createContext(null);
 
 /* ── Toplu Okuma ──
    Şirket bazlı, sürekli tazelenen canlı cihaz durumu panosu. "Toplu
@@ -161,6 +167,7 @@ function DeviceTile({ d, tileKey, isOpen, onToggle, onConnectDevice, connecting,
   const active = d.state === "checking" ? null : d.state !== "offline";
   const btnRef = useRef(null);
   const [pos, setPos] = useState(null); // { left, arrowLeft, top, side }
+  const openHistory = useContext(OpenHistoryContext);
 
   // Kutucuk her zaman tıklanan cihazın TAM ortasına, ekranın merkezine değil —
   // bu yüzden konumu viewport'a göre hesaplayıp kenarlardan taşmayacak şekilde
@@ -270,6 +277,14 @@ function DeviceTile({ d, tileKey, isOpen, onToggle, onConnectDevice, connecting,
           {connectError && (
             <p className="mt-2 text-[11px] font-semibold text-rose-500">{connectError}</p>
           )}
+          {openHistory && d.id !== undefined && d.id !== null && (
+            <button type="button"
+              onClick={(e) => { e.stopPropagation(); openHistory(d); }}
+              className="mt-3 w-full flex items-center justify-center gap-1.5 text-[11.5px] font-semibold px-2 py-1.5 rounded-lg border
+                         border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition">
+              <HiOutlineViewColumns className="text-[13px]" /> Mesaj Geçmişi
+            </button>
+          )}
           <div
             style={{ left: pos.arrowLeft }}
             className={`absolute w-2.5 h-2.5 rotate-45 bg-[var(--bg-elevated,#fff)]
@@ -358,6 +373,11 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
   const [connectError, setConnectError] = useState("");
   // Popover değişince önceki denemenin hata mesajı yeni cihaza taşınmasın diye.
   const setOpenKey = useCallback((key) => { setConnectError(""); setOpenKeyRaw(key); }, []);
+  const [historyDevice, setHistoryDevice] = useState(null); // { deviceId, name }
+  const openHistory = useCallback((d) => {
+    setOpenKeyRaw(null);
+    setHistoryDevice({ deviceId: d.id, name: [d.location, d.device_code].filter(Boolean).join(" ") || "Cihaz" });
+  }, []);
 
   // Dışarıya (başka bir kutucuğa ya da boş bir yere) tıklanınca açık
   // bilgi kutucuğunu kapat — dokunmatik cihazlarda da doğal davranır.
@@ -448,6 +468,7 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
   const total = devices.length;
 
   return (
+    <OpenHistoryContext.Provider value={openHistory}>
     <div>
 
       {isSuperadmin && (
@@ -496,8 +517,19 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
                 onConnectDevice={handleConnectDevice} connecting={connecting} connectError={connectError} />
             ))}
           </div>
+
+          {/* Konsol açık kaldıkça Toplu Okuma her cihazda 3 28 3 ile OCPP logu toplar, çıkarken 3 28 0 gönderir */}
+          <div className="mt-6">
+            <OcppLiveConsole token={token} company={isSuperadmin ? selectedCompany : undefined}
+              onPickDevice={(l) => l.deviceId != null && setHistoryDevice({
+                deviceId: l.deviceId, name: [l.location, l.deviceCode].filter(Boolean).join(" ") || "Cihaz",
+              })}
+              emptyText="Canlı OCPP mesajı bekleniyor… Toplu Okuma her cihaza uğradığında kısa süre log toplar." />
+          </div>
         </>
       )}
+      <OcppDeviceModal token={token} device={historyDevice} onClose={() => setHistoryDevice(null)} />
     </div>
+    </OpenHistoryContext.Provider>
   );
 }

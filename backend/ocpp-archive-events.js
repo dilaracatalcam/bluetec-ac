@@ -218,4 +218,4 @@ function pickOcppFiles(files) {
   return ocpp;
 }
 
-module.exports = { parseOcppLog, mergeEvents, pickOcppFiles, labelFor, ACTION_LABELS };
+module.exports = { parseOcppLog, mergeEvents, pickOcppFiles, labelFor, extractFrame, directionHint, ACTION_LABELS, CP_INITIATED, DISCONNECT_RE };

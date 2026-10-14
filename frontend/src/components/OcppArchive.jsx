@@ -57,7 +57,7 @@ function useArchiveFetch(token) {
   }, [token]);
 }
 
-function TypeBadge({ type }) {
+export function TypeBadge({ type }) {
   const { color } = metaOf(type);
   return (
     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
@@ -147,7 +147,7 @@ function Pager({ page, pages, onPage }) {
 }
 
 /* ── İşlem Geçmişi ── */
-function HistoryView({ fetchEvents, mac, preset }) {
+export function HistoryView({ fetchEvents, mac, preset }) {
   const [from, setFrom] = useState(() => toLocalInput(Date.now() - 2 * DAY_MS));
   const [to, setTo] = useState(() => toLocalInput(Date.now() + 60 * 1000));
   const [types, setTypes] = useState(() => new Set());
@@ -316,7 +316,7 @@ function Marker({ shape, x, y, color, size = 5 }) {
   return <circle cx={x} cy={y} r={size - 1} fill={color} />;
 }
 
-function TimelineView({ fetchEvents, onPick }) {
+export function TimelineView({ fetchEvents, onPick, autoRefreshMs = 0 }) {
   const [date, setDate] = useState(() => toDateInput(Date.now()));
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -341,6 +341,13 @@ function TimelineView({ fetchEvents, onPick }) {
   }, [date, fetchEvents]);
 
   useEffect(() => { load(false); }, [load]);
+
+  // Canlı veride (frame 3 28 3) çizelge kendiliğinden tazelenir
+  useEffect(() => {
+    if (!autoRefreshMs) return;
+    const iv = setInterval(() => load(false), autoRefreshMs);
+    return () => clearInterval(iv);
+  }, [autoRefreshMs, load]);
 
   useEffect(() => {
     const el = boxRef.current;

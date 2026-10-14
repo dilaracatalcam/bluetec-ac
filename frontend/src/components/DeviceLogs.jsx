@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import OcppArchive from "./OcppArchive.jsx";
+import OcppLiveDevice from "./OcppLiveDevice.jsx";
 import { HiOutlineCommandLine, HiOutlineArrowDownTray, HiOutlineTrash, HiOutlinePause, HiOutlinePlay } from "react-icons/hi2";
 
 /* ── Cihaz Canlı Logları ──
@@ -216,6 +217,8 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
 
         {error && <p className="text-[12px] text-rose-400 mt-3">{error}</p>}
       </div>
+
+      <OcppLiveDevice token={token} isActive={isActive} mac={mac} />
 
       <OcppArchive token={token} isActive={isActive} mac={mac} />
 

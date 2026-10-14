@@ -1791,11 +1791,24 @@ const { initDeviceStatusPoll } = require('./device-status-poll');
 const deviceStatusPoll = initDeviceStatusPoll({
     readTarget, writeJsonRaw, findOrCreateSlot, deactivateThenActivateForSlot,
     removeSlot, readResponses, isPythonRunning, TARGET_PATH, touchSlot, withLock, getDevices,
+    onOcppLine: (mac, line) => ocppLive.add(mac, line),
 });
 
 // ── Cihaz Canlı Log Akışı — frame 3 28/29 (bkz. device-log-stream.js) ──
 const { initDeviceLogStream } = require('./device-log-stream');
-const deviceLog = initDeviceLogStream({ RESPONSES_PATH, readResponses });
+// Canlı OCPP olayları (frame 3 28 3) — Loglar sayfası ve Toplu Okuma konsolu (bkz. ocpp-live-store.js)
+const { initOcppLiveStore } = require('./ocpp-live-store');
+const ocppLive = initOcppLiveStore();
+const logSessionMacs = new Map(); // sessionId -> bağlı cihaz MAC'i (log komutunda öğrenilir)
+const OCPP_LIVE_LEVEL = 3;        // frame 3 28 3 = Canlı OCPP Akışı
+const deviceLog = initDeviceLogStream({
+    RESPONSES_PATH, readResponses,
+    onLine(sessionId, msg, data) {
+        if (msg !== 28 || deviceLog.modes(sessionId)[28] !== OCPP_LIVE_LEVEL) return;
+        const mac = logSessionMacs.get(sessionId);
+        if (mac) ocppLive.add(mac, data);
+    },
+});
 const { initDeviceArchiveLogs } = require('./device-archive-logs');
 const { parseOcppLog, mergeEvents, pickOcppFiles } = require('./ocpp-archive-events');
 const deviceArchiveLogs = initDeviceArchiveLogs({
@@ -2028,6 +2041,7 @@ app.post('/api/send-command', requireAuth(), async (req, res) => {
             }
             slot.send_message = frame;
             await writeJsonRaw(TARGET_PATH, data);
+            if (slot.target) logSessionMacs.set(sessionId, slot.target);
         });
         if (notConnected) return res.status(400).json({ message: 'Önce bir cihaza bağlanmalısınız.' });
         if (unauthorizedTarget) {
@@ -2259,6 +2273,79 @@ app.get('/api/device-log-archive/ocpp-events', requireAuth(), async (req, res) =
     } catch (e) {
         console.error('[DEVICE-LOG-ARCHIVE] OCPP olay hatası:', e.message);
         archiveError(res, e);
+    }
+});
+
+// ── Canlı OCPP (frame 3 28 3) — siyah konsol akışı ve cihaz olayları ──
+// ?session=1: oturumun bağlı olduğu cihaz (Loglar sayfası). Aksi halde şirket
+// kapsamı (Toplu Okuma); bu istek Toplu Okuma döngüsünde log toplamayı da açık tutar.
+async function sessionDeviceMac(req) {
+    const target = await readTarget();
+    const slot = target.requests.find((r) => r.session_id === req.sessionId && r.control === 'activate');
+    return slot?.target || null;
+}
+
+function deviceInfoByMac() {
+    const map = new Map();
+    for (const d of getDevices({})) map.set(String(d.mac || '').toUpperCase(), d);
+    return map;
+}
+
+app.get('/api/ocpp-live/feed', requireAuth(), async (req, res) => {
+    if (isRestrictedOperator(req)) return res.status(403).json({ error: 'Bireysel/kısıtlı hesaplarda cihaz logları kapalı' });
+    try {
+        const scope = scopeFor(req);
+        const info = deviceInfoByMac();
+        let filter;
+        if (req.query.session === '1') {
+            const mac = (await sessionDeviceMac(req) || '').toUpperCase();
+            if (!mac) return res.json({ lastId: ocppLive.feed(0, () => false).lastId, lines: [] });
+            filter = (m) => m === mac;
+        } else {
+            const company = scope.unrestricted ? (req.query.company || null) : scope.company;
+            if (!company) return res.json({ lastId: ocppLive.feed(0, () => false).lastId, lines: [] });
+            deviceStatusPoll.ensureWatching(company, { liveLogs: true });
+            filter = (m) => {
+                const d = info.get(m);
+                return !!d && String(d.company || '').trim() === company && (scope.unrestricted || allowsDevice(scope, d));
+            };
+        }
+        const out = ocppLive.feed(req.query.after, filter);
+        const hideMac = req.userRole === 'operator';
+        res.json({
+            lastId: out.lastId,
+            lines: out.lines.map((l) => {
+                const d = info.get(l.mac);
+                return { ...l, mac: hideMac ? undefined : l.mac, deviceId: d?.id ?? null, location: d?.location || null, deviceCode: d?.device_code || null };
+            }),
+        });
+    } catch (e) {
+        console.error('[OCPP-LIVE] akış hatası:', e.message);
+        res.status(500).json({ error: 'Canlı OCPP akışı alınamadı' });
+    }
+});
+
+app.get('/api/ocpp-live/events', requireAuth(), async (req, res) => {
+    if (isRestrictedOperator(req)) return res.status(403).json({ error: 'Bireysel/kısıtlı hesaplarda cihaz logları kapalı' });
+    try {
+        const scope = scopeFor(req);
+        let mac;
+        if (req.query.deviceId) {
+            const d = getDevices({}).find((x) => String(x.id) === String(req.query.deviceId));
+            if (!d) return res.status(404).json({ error: 'Cihaz bulunamadı' });
+            if (!scope.unrestricted && !allowsDevice(scope, d)) return res.status(403).json({ error: 'Bu cihazın loglarına erişme yetkiniz yok' });
+            mac = d.mac;
+        } else {
+            mac = await sessionDeviceMac(req);
+            if (!mac) return res.status(400).json({ error: 'Önce bir cihaza bağlanmalısınız.' });
+        }
+        const from = req.query.from ? Date.parse(req.query.from) : -Infinity;
+        const to = req.query.to ? Date.parse(req.query.to) : Infinity;
+        if (Number.isNaN(from) || Number.isNaN(to)) return res.status(400).json({ error: 'Geçersiz tarih aralığı' });
+        res.json({ events: ocppLive.events(mac, from, to), fetchedAt: new Date().toISOString() });
+    } catch (e) {
+        console.error('[OCPP-LIVE] olay hatası:', e.message);
+        res.status(500).json({ error: 'Canlı OCPP olayları alınamadı' });
     }
 });
 
