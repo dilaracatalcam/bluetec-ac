@@ -42,3 +42,9 @@ build/
 frontend/test-results/
 frontend/playwright-report/
 frontend/blob-report/
+
+# canlı veritabanı ve çalışma verisi (sunucu sürekli günceller; repoya girmez)
+backend/bluetech.db
+backend/bluetech.db-shm
+backend/bluetech.db-wal
+backend/device_share_requests.json
