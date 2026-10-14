@@ -69,6 +69,23 @@ if (!existingColumns.includes("msp_sw")) {
 if (!existingColumns.includes("latitude")) db.exec("ALTER TABLE devices ADD COLUMN latitude REAL");
 if (!existingColumns.includes("longitude")) db.exec("ALTER TABLE devices ADD COLUMN longitude REAL");
 
+// Şehir / ilçe — Toplu Okuma'daki Şehir → İlçe → Lokasyon görünümü için. Kolonlar ilk
+// eklendiğinde eski kayıtlar konum metninde geçen il/ilçe adından bir kez doldurulur
+// (bkz. turkey-locations.js); bulunamayanlar boş kalır, Cihaz Yönetimi'nden girilir.
+if (!existingColumns.includes("city") || !existingColumns.includes("district")) {
+  if (!existingColumns.includes("city")) db.exec("ALTER TABLE devices ADD COLUMN city TEXT");
+  if (!existingColumns.includes("district")) db.exec("ALTER TABLE devices ADD COLUMN district TEXT");
+  const { inferCityDistrict } = require("./turkey-locations");
+  const fill = db.prepare("UPDATE devices SET city = @city, district = @district WHERE id = @id");
+  const rows = db.prepare("SELECT id, location FROM devices WHERE city IS NULL AND district IS NULL").all();
+  db.transaction(() => {
+    for (const row of rows) {
+      const { city, district } = inferCityDistrict(row.location);
+      if (city || district) fill.run({ id: row.id, city, district });
+    }
+  })();
+}
+
 // ── Toplu Parametre işleri — backend'de arka planda çalışan, kalıcı iş kaydı ──
 // Tarayıcı sekmesi kapansa/yenilense bile ("Toplu Parametre" bileşeni unmount
 // olsa bile) işin durumu burada kalıcı — panel sadece bunu okuyup gösteren
@@ -390,7 +407,7 @@ function getDevices({ company, location, role, userCompany } = {}) {
 
   const rows = db
     .prepare(
-      `SELECT id, device_code, serial_no, mac, company, location, latitude, longitude, connection,
+      `SELECT id, device_code, serial_no, mac, company, location, city, district, latitude, longitude, connection,
               logo, sw_version, msp_fw, msp_sw, hw_version, note, updated_at, created_at, extra_fields, is_revision
        FROM devices ${where}
        ORDER BY company, location, device_code`
@@ -449,10 +466,10 @@ function updateDeviceInventoryByMac(mac, fields) {
 function replaceAllDevices(rows) {
   const insert = db.prepare(`
     INSERT INTO devices
-      (device_code, serial_no, mac, company, location, latitude, longitude, connection,
+      (device_code, serial_no, mac, company, location, city, district, latitude, longitude, connection,
        logo, sw_version, msp_fw, msp_sw, hw_version, note, updated_at, created_at, extra_fields, is_revision)
     VALUES
-      (@device_code, @serial_no, @mac, @company, @location, @latitude, @longitude, @connection,
+      (@device_code, @serial_no, @mac, @company, @location, @city, @district, @latitude, @longitude, @connection,
        @logo, @sw_version, @msp_fw, @msp_sw, @hw_version, @note, @updated_at, @created_at, @extra_fields, @is_revision)
   `);
 
@@ -463,6 +480,8 @@ function replaceAllDevices(rows) {
       // verilmişse (mevcut bir cihaz güncelleniyorsa) olduğu gibi korunur, "eklenme sırası" bozulmaz
       insert.run({
         ...row,
+        city: row.city || null,
+        district: row.district || null,
         latitude: row.latitude ?? null,
         longitude: row.longitude ?? null,
         msp_sw: row.msp_sw ?? null,

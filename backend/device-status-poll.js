@@ -341,11 +341,12 @@ function initDeviceStatusPoll(deps) {
         // (bkz. DeviceStatusBoard.jsx) — operatörden MAC gizlense de id kalır.
         const polling = (pollingDevices.get(normalizeMac(d.mac)) || 0) > 0;
         return live
-          ? { ...live, id: d.id, sw_version: d.sw_version, polling }
+          ? { ...live, id: d.id, sw_version: d.sw_version, city: d.city || null, district: d.district || null, polling }
           : {
               id: d.id, mac: d.mac, company: d.company, location: d.location || null,
               device_code: d.device_code, state: "checking", label: "Kontrol ediliyor",
               raw: null, updated_at: null, sw_version: d.sw_version, max_power: null, polling,
+              city: d.city || null, district: d.district || null,
             };
       })
       .sort((a, b) => (a.location || "").localeCompare(b.location || "", "tr") || (a.mac || "").localeCompare(b.mac || ""));

@@ -23,6 +23,8 @@ COLUMNS = [
     ("SERI NO", "serial_no"),
     ("MAC ADRESI", "mac"),
     ("KONUM", "location"),
+    ("SEHIR", "city"),
+    ("ILCE", "district"),
     ("ENLEM", "latitude"),
     ("BOYLAM", "longitude"),
     ("CONN TYPE", "connection"),

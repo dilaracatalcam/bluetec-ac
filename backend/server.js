@@ -2856,12 +2856,29 @@ function parseCoordinate(value, min, max, label) {
   return Number(number.toFixed(7));
 }
 
+// Şehir / ilçe: gönderildiyse resmi yazımına çevrilir; gönderilmediyse konum metninden tahmin edilir
+const { inferCityDistrict, canonicalCity, canonicalDistrict, iller: TURKEY_CITIES } = require('./turkey-locations');
+function parseCityDistrict(body, location, previous = null) {
+  const has = (key) => body && Object.prototype.hasOwnProperty.call(body, key);
+  let city = has("city") ? canonicalCity(body.city) : previous?.city ?? null;
+  let district = has("district") ? canonicalDistrict(city, body.district) : previous?.district ?? null;
+  if (!city && !district && !has("city") && !has("district")) {
+    ({ city, district } = inferCityDistrict(location));
+  }
+  return { city: city || null, district: district || null };
+}
+
 function parseLocationCoordinates(body) {
   return {
     latitude: parseCoordinate(body?.latitude, -90, 90, "Enlem"),
     longitude: parseCoordinate(body?.longitude, -180, 180, "Boylam"),
   };
 }
+
+// Türkiye il/ilçe listesi — Cihaz Yönetimi'ndeki Şehir/İlçe seçimi için
+app.get("/api/locations/turkey", requireAuth(), (req, res) => {
+  res.json({ iller: TURKEY_CITIES });
+});
 
 // Cihaz listesi export
 app.get("/api/devices/export", requireAuth(), async (req, res) => {
@@ -2946,11 +2963,14 @@ app.post("/api/devices/import", requireAuth(), (req, res) => {
           if (imp.longitude === null || imp.longitude === undefined || imp.longitude === '') {
             imp.longitude = byMac[key].longitude ?? null;
           }
+          if (!imp.city) imp.city = byMac[key].city ?? null;
+          if (!imp.district) imp.district = byMac[key].district ?? null;
           Object.assign(byMac[key], imp);
           updated++;
         } else {
           byMac[key] = {
             ...imp,
+            ...(imp.city || imp.district ? {} : inferCityDistrict(imp.location)),
             is_revision: (imp.location || "").toLowerCase().includes("revizyon") ? 1 : 0,
           };
           added++;
@@ -2993,6 +3013,7 @@ app.post("/api/devices", requireAuth(), async (req, res) => {
     const { device_code, serial_no, mac, location, connection, logo, sw_version, msp_fw, msp_sw, hw_version, note, extra_fields } = req.body || {};
     const company = normalizeDeviceCompany(req.body?.company);
     const { latitude, longitude } = parseLocationCoordinates(req.body || {});
+    const { city, district } = parseCityDistrict(req.body || {}, location);
     if (!mac) return res.status(400).json({ error: "MAC zorunlu" });
     if (!canManageDeviceCompany(req, company)) {
       return res.status(403).json({ error: "Şirket yöneticisi yalnızca kendi şirketine veya Bireysel sahipliğine cihaz ekleyebilir" });
@@ -3013,6 +3034,8 @@ app.post("/api/devices", requireAuth(), async (req, res) => {
       mac,
       company,
       location: location || null,
+      city,
+      district,
       latitude,
       longitude,
       connection: connection || null,
@@ -3078,6 +3101,7 @@ app.put("/api/devices/:id", requireAuth(), (req, res) => {
     const idx = existing.findIndex((d) => String(d.id) === String(req.params.id));
     if (idx === -1) return res.status(404).json({ error: "Cihaz bulunamadı" });
     const previousDevice = existing[idx];
+    const { city, district } = parseCityDistrict(req.body || {}, location, previousDevice);
     if (normalizeMacValue(mac) !== normalizeMacValue(previousDevice.mac)) {
       return res.status(409).json({ error: "MAC adresi değiştirilemez; cihaz kimliği sabittir" });
     }
@@ -3100,6 +3124,8 @@ app.put("/api/devices/:id", requireAuth(), (req, res) => {
       mac,
       company,
       location: location || null,
+      city,
+      district,
       latitude,
       longitude,
       connection: connection || null,
@@ -3206,7 +3232,7 @@ app.post("/api/devices/sync-field", requireAuth(), async (req, res) => {
 });
 
 // ── Toplu cihaz düzenleme — seçilen cihazlara aynı değeri atar, ya da bul-değiştir yapar ── //
-const BULK_EDITABLE_FIELDS = ["company", "location", "latitude", "longitude", "connection", "logo", "sw_version", "msp_fw", "msp_sw", "hw_version", "note"];
+const BULK_EDITABLE_FIELDS = ["company", "location", "city", "district", "latitude", "longitude", "connection", "logo", "sw_version", "msp_fw", "msp_sw", "hw_version", "note"];
 
 app.post("/api/devices/bulk-update", requireAuth(), (req, res) => {
   if (!DEVICE_MGMT_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
@@ -3222,6 +3248,8 @@ app.post("/api/devices/bulk-update", requireAuth(), (req, res) => {
     }
     const normalizedBulkValue = !isCustom && field === "company"
       ? normalizeDeviceCompany(value)
+      : !isCustom && field === "city"
+        ? canonicalCity(value)
       : !isCustom && field === "latitude"
         ? parseCoordinate(value, -90, 90, "Enlem")
         : !isCustom && field === "longitude"
