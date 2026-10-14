@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import OcppArchive from "./OcppArchive.jsx";
 import { HiOutlineCommandLine, HiOutlineArrowDownTray, HiOutlineTrash, HiOutlinePause, HiOutlinePlay } from "react-icons/hi2";
 
 /* ── Cihaz Canlı Logları ──
@@ -215,6 +216,8 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
 
         {error && <p className="text-[12px] text-rose-400 mt-3">{error}</p>}
       </div>
+
+      <OcppArchive token={token} isActive={isActive} mac={mac} />
 
       <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-4">
         <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">

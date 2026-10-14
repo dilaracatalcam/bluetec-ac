@@ -1797,6 +1797,7 @@ const deviceStatusPoll = initDeviceStatusPoll({
 const { initDeviceLogStream } = require('./device-log-stream');
 const deviceLog = initDeviceLogStream({ RESPONSES_PATH, readResponses });
 const { initDeviceArchiveLogs } = require('./device-archive-logs');
+const { parseOcppLog, mergeEvents, pickOcppFiles } = require('./ocpp-archive-events');
 const deviceArchiveLogs = initDeviceArchiveLogs({
     host: process.env.LOG_REMOTE_HOST || OTA_REMOTE_HOST,
     username: process.env.LOG_REMOTE_USER || OTA_REMOTE_USER,
@@ -2217,6 +2218,46 @@ app.get('/api/device-log-archive/download', requireAuth(), async (req, res) => {
         res.send(result.buffer);
     } catch (e) {
         console.error('[DEVICE-LOG-ARCHIVE] indirme hatası:', e.message);
+        archiveError(res, e);
+    }
+});
+
+// frame 3 30 ile aktarılan OCPP arşivi — İşlem Geçmişi / Zaman Çizelgesi verisi.
+// Dosyalar her filtrede yeniden SFTP ile çekilmesin diye cihaz başına kısa süre önbelleklenir.
+const OCPP_EVENTS_CACHE_MS = 30 * 1000;
+const ocppEventsCache = new Map(); // mac -> { at, events, files }
+
+async function loadOcppEvents(mac, fresh) {
+    const cached = ocppEventsCache.get(mac);
+    if (!fresh && cached && Date.now() - cached.at < OCPP_EVENTS_CACHE_MS) return cached;
+    const catalog = await deviceArchiveLogs.list(mac);
+    const files = pickOcppFiles(catalog.files);
+    const lists = [];
+    for (const file of files) {
+        const { buffer } = await deviceArchiveLogs.download(mac, file.name);
+        lists.push(parseOcppLog(buffer.toString('utf8'), file.format));
+    }
+    const entry = { at: Date.now(), events: mergeEvents(lists), files: files.map((f) => f.name) };
+    ocppEventsCache.set(mac, entry);
+    return entry;
+}
+
+app.get('/api/device-log-archive/ocpp-events', requireAuth(), async (req, res) => {
+    if (isRestrictedOperator(req)) {
+        return res.status(403).json({ error: 'Bireysel/kısıtlı hesaplarda cihaz logları kapalı' });
+    }
+    try {
+        const mac = await archiveMacForRequest(req);
+        const from = req.query.from ? Date.parse(req.query.from) : -Infinity;
+        const to = req.query.to ? Date.parse(req.query.to) : Infinity;
+        if (Number.isNaN(from) || Number.isNaN(to)) return res.status(400).json({ error: 'Geçersiz tarih aralığı' });
+        const { events, files, at } = await loadOcppEvents(mac, req.query.fresh === '1');
+        res.json({
+            mac, files, fetchedAt: new Date(at).toISOString(),
+            events: events.filter((e) => e.time >= from && e.time <= to),
+        });
+    } catch (e) {
+        console.error('[DEVICE-LOG-ARCHIVE] OCPP olay hatası:', e.message);
         archiveError(res, e);
     }
 });
