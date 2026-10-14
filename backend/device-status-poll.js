@@ -25,11 +25,6 @@ const READ_POLL_MS = 1500;
 // hemen cevap veriyor, bu yüzden çok daha kısa bir bütçe yeterli.
 const POWER_READ_POLLS = 4;
 const WATCH_IDLE_TIMEOUT_MS = 45 * 1000; // bu süre boyunca kimse istemezse döngü durur
-// Canlı OCPP konsolu açıkken her cihazda 3 28 3 ile bu kadar süre log toplanır,
-// çıkarken 3 28 0 gönderilir. Konsol kapalıyken tur süresi uzamasın diye yapılmaz.
-const LIVE_LOG_DWELL_MS = 10 * 1000;
-const LIVE_LOG_POLL_MS = 250;
-const LIVE_LOG_IDLE_MS = 20 * 1000;   // konsol bu süre istek atmazsa toplama kapanır
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Cihazın gönderdiği ham durum kodları — firmware'deki switch(currentState)
@@ -56,7 +51,6 @@ function initDeviceStatusPoll(deps) {
   const {
     readTarget, writeJsonRaw, findOrCreateSlot, deactivateThenActivateForSlot,
     removeSlot, readResponses, isPythonRunning, TARGET_PATH, touchSlot, getDevices, withLock,
-    onOcppLine,
   } = deps;
   const dbFns = require("./db");
   const normalizeMac = (value) => String(value || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
@@ -116,30 +110,6 @@ function initDeviceStatusPoll(deps) {
   const readCharge = (sessionId) => readValue(sessionId, 25, READ_POLLS);
   const readMaxPower = (sessionId) => readValue(sessionId, 4, POWER_READ_POLLS);
 
-  // 3 28 3 açıkken message_response her yeni log satırıyla üzerine yazılır;
-  // imza değiştikçe satır sayılır (bkz. device-log-stream.js aynı yöntem).
-  const collectOcppLines = async (sessionId, mac, ms) => {
-    const sigOf = (m) => (m ? `${m.cmd}|${m.msg}|${m.time}|${m.data}` : "");
-    const first = (resp) => {
-      const m = resp?.message_response;
-      return Array.isArray(m) ? m[0] || null : (m && typeof m === "object" ? m : null);
-    };
-    let lastSig = sigOf(first((await readResponses()).responses[sessionId]));
-    const until = Date.now() + ms;
-    while (Date.now() < until) {
-      await sleep(LIVE_LOG_POLL_MS);
-      let m;
-      try { m = first((await readResponses()).responses[sessionId]); } catch { continue; }
-      const sig = sigOf(m);
-      if (sig === lastSig) continue;
-      lastSig = sig;
-      if (!m || Number(m.cmd) !== 3 || Number(m.msg) !== 28) continue;
-      for (const line of String(m.data ?? "").split(/\r?\n/)) {
-        if (line.trim()) onOcppLine?.(mac, line);
-      }
-    }
-  };
-
   // Bu izleyici SÜREKLİ çalıştığı için (tek seferlik bir iş değil), gerçek
   // bir kullanıcının o an bağlı olduğu bir cihaza asla KOMUT göndermemeli —
   // meşgulse bağlanmayı denemeden bu turu atlıyoruz. Ama bunun bedeli, o
@@ -167,9 +137,8 @@ function initDeviceStatusPoll(deps) {
     return { active, raw: found ? String(found.data) : undefined };
   };
 
-  async function pollOne(sessionId, device, { liveLogs = false } = {}) {
+  async function pollOne(sessionId, device) {
     const pollingKey = normalizeMac(device.mac);
-    let ocppLogOn = false;
     pollingDevices.set(pollingKey, (pollingDevices.get(pollingKey) || 0) + 1);
     try {
       const occupierSessionId = await findOccupyingSession(sessionId, device.mac);
@@ -203,11 +172,6 @@ function initDeviceStatusPoll(deps) {
       if (active) {
         raw = await readCharge(sessionId);
         maxPower = await readMaxPower(sessionId);
-        if (liveLogs && onOcppLine) {
-          ocppLogOn = true;
-          await sendFrame(sessionId, "frame 3 28 3");
-          await collectOcppLines(sessionId, device.mac, LIVE_LOG_DWELL_MS);
-        }
       }
 
       const { state, label } = classify(active, raw);
@@ -219,10 +183,6 @@ function initDeviceStatusPoll(deps) {
     } catch (e) {
       console.error(`[STATUS-POLL] ${device.mac} okuma hatası:`, e.message);
     } finally {
-      // Cihazdan çıkmadan log modu kapatılır; köprü frame'i okusun diye kısa beklenir.
-      if (ocppLogOn) {
-        try { await sendFrame(sessionId, "frame 3 28 0"); await sleep(1600); } catch {}
-      }
       const remaining = (pollingDevices.get(pollingKey) || 1) - 1;
       if (remaining > 0) pollingDevices.set(pollingKey, remaining);
       else pollingDevices.delete(pollingKey);
@@ -291,8 +251,7 @@ function initDeviceStatusPoll(deps) {
             break;
           }
           if (!device || !device.mac) continue;
-          const loop = activeLoops.get(company);
-          await pollOne(sessionId, device, { liveLogs: !!loop && Date.now() - (loop.liveLogsAt || 0) <= LIVE_LOG_IDLE_MS });
+          await pollOne(sessionId, device);
         }
       };
       await Promise.all(Array.from({ length: laneCount }, (_, i) => lane(i)));
@@ -302,14 +261,10 @@ function initDeviceStatusPoll(deps) {
     console.log(`[STATUS-POLL] ${company} için izleme durdu (kimse bakmıyor)`);
   }
 
-  function ensureWatching(company, { liveLogs = false } = {}) {
+  function ensureWatching(company) {
     const existing = activeLoops.get(company);
-    if (existing) {
-      existing.lastRequestedAt = Date.now();
-      if (liveLogs) existing.liveLogsAt = Date.now();
-      return;
-    }
-    activeLoops.set(company, { lastRequestedAt: Date.now(), liveLogsAt: liveLogs ? Date.now() : 0 });
+    if (existing) { existing.lastRequestedAt = Date.now(); return; }
+    activeLoops.set(company, { lastRequestedAt: Date.now() });
     console.log(`[STATUS-POLL] ${company} için izleme başladı`);
     runCompanyLoop(company).catch((e) => {
       console.error(`[STATUS-POLL] ${company} döngü hatası:`, e);
@@ -355,4 +310,4 @@ function initDeviceStatusPoll(deps) {
   return { ensureWatching, requestRefresh, getStatuses, ALL_COMPANIES };
 }
 
-module.exports = { initDeviceStatusPoll };
+module.exports = { initDeviceStatusPoll, classify };

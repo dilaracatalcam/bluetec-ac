@@ -1791,7 +1791,6 @@ const { initDeviceStatusPoll } = require('./device-status-poll');
 const deviceStatusPoll = initDeviceStatusPoll({
     readTarget, writeJsonRaw, findOrCreateSlot, deactivateThenActivateForSlot,
     removeSlot, readResponses, isPythonRunning, TARGET_PATH, touchSlot, withLock, getDevices,
-    onOcppLine: (mac, line) => ocppLive.add(mac, line),
 });
 
 // ── Cihaz Canlı Log Akışı — frame 3 28/29 (bkz. device-log-stream.js) ──
@@ -1801,6 +1800,28 @@ const { initOcppLiveStore } = require('./ocpp-live-store');
 const ocppLive = initOcppLiveStore();
 const logSessionMacs = new Map(); // sessionId -> bağlı cihaz MAC'i (log komutunda öğrenilir)
 const OCPP_LIVE_LEVEL = 3;        // frame 3 28 3 = Canlı OCPP Akışı
+// Toplu Okuma açıkken şirketin cihazlarına kalıcı bağlanıp bir kez 3 28 3 gönderen izleyici (bkz. ocpp-watch.js)
+const { initOcppWatch } = require('./ocpp-watch');
+const { classify: classifyChargeState } = require('./device-status-poll');
+const ocppWatch = initOcppWatch({
+    readTarget, writeJsonRaw, withLock, TARGET_PATH, findOrCreateSlot, deactivateThenActivateForSlot,
+    removeSlot, touchSlot, readResponses, getDevices, ocppLive, SLOT_CLEAR_MSG_INTERVAL,
+    // İzlenen cihazlar Toplu Okuma şeritlerince okunamaz; durumlarını izleyici günceller
+    onStatus(device, active, raw) {
+        if (active && raw == null) return;
+        const { state, label } = classifyChargeState(active, raw);
+        require('./db').upsertDeviceLiveStatus({
+            mac: device.mac, company: device.company, location: device.location, deviceCode: device.device_code,
+            state, label, raw, swVersion: device.sw_version, maxPower: null,
+        });
+    },
+});
+// systemd yeniden başlatırken izlenen cihazlarda log modu açık kalmasın
+for (const signal of ['SIGTERM', 'SIGINT']) {
+    process.once(signal, () => {
+        Promise.race([ocppWatch.stopAll(), new Promise((r) => setTimeout(r, 5000))]).finally(() => process.exit(0));
+    });
+}
 const deviceLog = initDeviceLogStream({
     RESPONSES_PATH, readResponses,
     onLine(sessionId, msg, data) {
@@ -1923,7 +1944,11 @@ app.post('/api/update-target', requireAuth(), async (req, res) => {
             (r) => r.target === targetMac && r.control === 'activate' && r.session_id !== sessionId
         );
 
-        if (occupant && isSyntheticSessionStale(occupant.session_id)) {
+        if (occupant && ocppWatch.isWatchSession(occupant.session_id)) {
+            // Toplu Okuma canlı OCPP izleyicisi — kullanıcı önceliklidir: 3 28 0 gönderilip cihaz bırakılır
+            console.log(`[OCCUPANCY] ${targetMac} OCPP izleyicisinden kullanıcıya bırakıldı`);
+            await ocppWatch.release(occupant.session_id);
+        } else if (occupant && isSyntheticSessionStale(occupant.session_id)) {
             // bulk:/ota: önekli sahte bir session, sahibi iş artık çalışmıyor —
             // çökmüş/durmuş bir toplu iş şeridinden kalma yetim kayıt. Zaman
             // aşımı beklemeden hemen temizle, kullanıcıyı "meşgul" diye
@@ -2304,17 +2329,20 @@ app.get('/api/ocpp-live/feed', requireAuth(), async (req, res) => {
         } else {
             const company = scope.unrestricted ? (req.query.company || null) : scope.company;
             if (!company) return res.json({ lastId: ocppLive.feed(0, () => false).lastId, lines: [] });
-            deviceStatusPoll.ensureWatching(company, { liveLogs: true });
+            ocppWatch.ensure(company, req.sessionId);
             filter = (m) => {
                 const d = info.get(m);
                 return !!d && String(d.company || '').trim() === company && (scope.unrestricted || allowsDevice(scope, d));
             };
         }
-        const out = ocppLive.feed(req.query.after, filter);
+        // Yalnızca tanınan OCPP mesajları; cihazın sistem/log satırları gösterilmez
+        const out = ocppLive.feed(req.query.after, (mac) => filter(mac));
         const hideMac = req.userRole === 'operator';
+        const company = req.query.session === '1' ? null : (scope.unrestricted ? (req.query.company || null) : scope.company);
         res.json({
             lastId: out.lastId,
-            lines: out.lines.map((l) => {
+            watch: company ? ocppWatch.state(company) : null,
+            lines: out.lines.filter((l) => l.action).map((l) => {
                 const d = info.get(l.mac);
                 return { ...l, mac: hideMac ? undefined : l.mac, deviceId: d?.id ?? null, location: d?.location || null, deviceCode: d?.device_code || null };
             }),
@@ -2323,6 +2351,15 @@ app.get('/api/ocpp-live/feed', requireAuth(), async (req, res) => {
         console.error('[OCPP-LIVE] akış hatası:', e.message);
         res.status(500).json({ error: 'Canlı OCPP akışı alınamadı' });
     }
+});
+
+// Toplu Okuma sayfasından çıkış — izleyen kalmadıysa her cihaza 3 28 0, bağlantılar bırakılır, loglar silinir
+app.post('/api/ocpp-live/leave', requireAuth(), async (req, res) => {
+    if (isRestrictedOperator(req)) return res.status(403).json({ error: 'Bireysel/kısıtlı hesaplarda cihaz logları kapalı' });
+    const scope = scopeFor(req);
+    const company = scope.unrestricted ? (req.body?.company || null) : scope.company;
+    if (company) await ocppWatch.leave(company, req.sessionId).catch(() => {});
+    res.json({ message: 'ok' });
 });
 
 app.get('/api/ocpp-live/events', requireAuth(), async (req, res) => {
@@ -2602,6 +2639,18 @@ console.log(`[SLOTS] inaktivite timeout: ${INACTIVITY_TIMEOUT / 60000} dk`);
 (async () => {
     try {
         const validUsernames = new Set(readUsers().map((u) => u.username));
+
+        const leftover = (await readTarget()).requests.filter((r) => ocppWatch.isWatchSession(r.session_id) && r.control === 'activate');
+        if (leftover.length) {
+            // Önceki çalışmadan kalan OCPP izleyici bağlantıları: silmeden önce cihazlarda log modunu kapat
+            await withLock(TARGET_PATH, async () => {
+                const d = await readTarget();
+                for (const r of d.requests) if (ocppWatch.isWatchSession(r.session_id)) r.send_message = 'frame 3 28 0';
+                await writeJsonRaw(TARGET_PATH, d);
+            });
+            await new Promise((r) => setTimeout(r, SLOT_CLEAR_MSG_INTERVAL + 500));
+            console.log(`[STARTUP] ${leftover.length} eski OCPP izleyici bağlantısına 3 28 0 gönderildi`);
+        }
 
         const t = await readTarget();
         const beforeCount = t.requests.length;

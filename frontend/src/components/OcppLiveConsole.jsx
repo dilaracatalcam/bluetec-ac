@@ -4,7 +4,10 @@ import { HiOutlineClock, HiChevronRight, HiOutlinePause, HiOutlinePlay, HiOutlin
 /* ── Canlı OCPP Konsolu (frame 3 28 3) ──
    /api/ocpp-live/feed'den sadece yeni satırları çeker; en yeni satır en üstte.
    - company verilirse: o şirketin cihazları (Toplu Okuma). Bu istekler açık
-     kaldıkça Toplu Okuma her cihazda 3 28 3 açıp log toplar, çıkarken 3 28 0 gönderir.
+     kaldıkça sunucu her cihaza bir kez bağlanıp 3 28 3 gönderir ve bağlantıyı
+     tutar (bkz. backend/ocpp-watch.js); bileşen kapanınca /leave ile 3 28 0
+     gönderilir, bağlantılar bırakılır ve loglar silinir.
+   Yalnızca tanınan OCPP mesajları gelir; cihazın sistem satırları gösterilmez.
    - session verilirse: oturumun bağlı olduğu cihaz (Loglar sayfası).
 */
 
@@ -19,8 +22,11 @@ const fmt = (ms) => {
 
 const DIR_LABEL = { out: "Cihaz Mesajı", in: "Sunucu Mesajı" };
 
-export default function OcppLiveConsole({ token, company, session = false, onPickDevice, height = "h-[300px]", emptyText }) {
+const PHASE_TEXT = { activating: "bağlanıyor", queued: "sırada", offline: "çevrimdışı", occupied: "kullanımda" };
+
+export default function OcppLiveConsole({ token, company, session = false, onPickDevice, height = "h-[300px]", emptyText, collapsed = false }) {
   const [lines, setLines] = useState([]);
+  const [watch, setWatch] = useState(null);
   const [paused, setPaused] = useState(false);
   const [error, setError] = useState("");
   const afterRef = useRef(0);
@@ -37,6 +43,7 @@ export default function OcppLiveConsole({ token, company, session = false, onPic
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setError(d.error || "Canlı akış alınamadı"); return; }
       setError("");
+      setWatch(d.watch || null);
       // Sunucu yeniden başladıysa id'ler sıfırlanır
       if (d.lastId < afterRef.current) { afterRef.current = 0; setLines([]); return; }
       afterRef.current = d.lastId;
@@ -54,8 +61,20 @@ export default function OcppLiveConsole({ token, company, session = false, onPic
     }
   }, [token, company, session]);
 
-  // Kapsam değişince (şirket / cihaz) baştan başla
-  useEffect(() => { afterRef.current = 0; setLines([]); }, [company, session]);
+  // Kapsam değişince (şirket / cihaz) baştan başla; sayfadan çıkınca ya da şirket
+  // değişince sunucuya haber ver: cihazlara 3 28 0 gider, bağlantılar bırakılır
+  useEffect(() => {
+    afterRef.current = 0;
+    setLines([]);
+    if (session) return undefined;
+    const leave = () => fetch("/api/ocpp-live/leave", {
+      method: "POST", keepalive: true,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ company: company || undefined }),
+    }).catch(() => {});
+    window.addEventListener("pagehide", leave);
+    return () => { window.removeEventListener("pagehide", leave); leave(); };
+  }, [company, session, token]);
 
   useEffect(() => {
     if (paused) return;
@@ -72,6 +91,12 @@ export default function OcppLiveConsole({ token, company, session = false, onPic
         <span className="flex items-center gap-2 text-[11px] font-bold tracking-wide text-slate-300">
           <span className={`w-2 h-2 rounded-full ${paused ? "bg-slate-500" : "bg-emerald-400 animate-pulse"}`} />
           CANLI OCPP <span className="font-mono text-slate-500">frame 3 28 3</span>
+          {watch && (
+            <span className="font-normal text-slate-400">
+              · dinlenen {watch.watching || 0}/{watch.total}
+              {Object.entries(PHASE_TEXT).filter(([k]) => watch[k]).map(([k, t]) => ` · ${watch[k]} ${t}`).join("")}
+            </span>
+          )}
         </span>
         <span className="flex items-center gap-1">
           <button onClick={() => setPaused((p) => !p)} title={paused ? "Devam" : "Duraklat"}
@@ -84,7 +109,7 @@ export default function OcppLiveConsole({ token, company, session = false, onPic
           </button>
         </span>
       </div>
-      <div className={`${height} overflow-auto custom-scroll px-3 py-2 font-mono text-[12px] leading-[1.55]`}>
+      <div className={`${collapsed ? "hidden" : height} overflow-auto custom-scroll px-3 py-2 font-mono text-[12px] leading-[1.55]`}>
         {error && <div className="text-rose-400 mb-1">{error}</div>}
         {lines.length === 0 ? (
           <div className="text-slate-500 italic">

@@ -558,7 +558,7 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
   const [statFilter, setStatFilter] = useState(null); // STAT_CARDS key
   const [openCities, setOpenCities] = useState(() => new Set());
   const [openDistricts, setOpenDistricts] = useState(() => new Set());
-  const [showConsole, setShowConsole] = useState(false);
+  const [showConsole, setShowConsole] = useState(true);
   const diagramRef = useRef(null);
   const toggleIn = (setter) => (key) => setter((prev) => {
     const next = new Set(prev);
@@ -822,7 +822,7 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
                   </button>
                 )}
                 <button type="button" onClick={() => setShowConsole((v) => !v)}
-                  title="Açıkken Toplu Okuma her cihazda kısa süre canlı OCPP logu toplar (3 28 3 / 3 28 0)"
+                  title="Canlı OCPP mesajlarını göster / gizle"
                   className={`${btn} ${showConsole
                     ? "bg-amber-400 border-amber-400 text-slate-900"
                     : "border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"}`}>
@@ -848,14 +848,15 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
               )}
             </div>
 
-            {/* Konsol açık kaldıkça Toplu Okuma her cihazda 3 28 3 ile OCPP logu toplar, çıkarken 3 28 0 gönderir */}
-            {showConsole && (
+            {/* Sayfa açıkken sunucu her cihaza bir kez 3 28 3 gönderip dinler; sayfadan çıkınca 3 28 0.
+                Düğme yalnızca görünümü açıp kapatır, dinleme sürer. */}
+            {(
               <div className="px-4 pb-4">
-                <OcppLiveConsole token={token} company={isSuperadmin ? selectedCompany : undefined}
+                <OcppLiveConsole token={token} company={isSuperadmin ? selectedCompany : undefined} collapsed={!showConsole}
                   onPickDevice={(l) => l.deviceId != null && setHistoryDevice({
                     deviceId: l.deviceId, name: [l.location, l.deviceCode].filter(Boolean).join(" ") || "Cihaz",
                   })}
-                  emptyText="Canlı OCPP mesajı bekleniyor… Toplu Okuma her cihaza uğradığında kısa süre log toplar." />
+                  emptyText="Canlı OCPP mesajı bekleniyor… Cihazlara bağlanılıyor; her cihaza bir kez 3 28 3 gönderilir." />
               </div>
             )}
           </div>
