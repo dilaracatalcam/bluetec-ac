@@ -1,11 +1,21 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import {
+  HiOutlineCommandLine, HiOutlineArrowDownTray, HiOutlineTrash, HiOutlinePause, HiOutlinePlay,
+  HiOutlineDocumentText, HiOutlineEye, HiOutlineArrowPath, HiOutlineXMark,
+} from "react-icons/hi2";
 import OcppArchive from "./OcppArchive.jsx";
-import { HiOutlineCommandLine, HiOutlineArrowDownTray, HiOutlineTrash, HiOutlinePause, HiOutlinePlay } from "react-icons/hi2";
+import OcppLiveDevice from "./OcppLiveDevice.jsx";
 
-/* ── Cihaz Canlı Logları ──
-   frame 3 28 N (verbose) ve frame 3 29 N (debug) ile cihazdan log akışı açılır;
-   satırlar responses.json üzerinden gelir, backend biriktirir (bkz. device-log-stream.js),
-   burada 500ms'de bir sadece yeni satırlar çekilir. En yeni satır en altta.
+/* ── Cihaz Logları ──
+   İki sekme:
+   - Canlı loglar: frame 3 28 N (verbose) ve frame 3 29 N (debug) ile cihazdan
+     log akışı açılır; satırlar responses.json üzerinden gelir, backend biriktirir
+     (bkz. device-log-stream.js), burada 500ms'de bir sadece yeni satırlar çekilir.
+     En yeni satır en altta.
+   - Kayıtlı arşiv: frame 3 30 N ile cihazdaki kalıcı arşiv Bluetech sunucusuna
+     aktarılır (ACK'li); dosyalar orada current/history olarak tutulur ve buradan
+     listelenir/önizlenir/indirilir (bkz. device-archive-logs.js). Aktarım ilerlemesi
+     msg 30 satırlarından (QUEUED / S / D / E / ERR / STATUS) okunur.
 */
 const GROUPS = [
   {
@@ -16,6 +26,13 @@ const GROUPS = [
     id: 29, title: "Debug", hint: "frame 3 29",
     options: ["Kapalı", "Network Debug", "MSP Debug", "Memory", "Tüm Debug Mesajları", "Sistem Notları"],
   },
+];
+
+const ARCHIVE_SCOPES = [
+  { value: 1, label: "Son segment", hint: "En yeni kayıt" },
+  { value: 2, label: "LittleFS", hint: "Cihazın dahili arşivi" },
+  { value: 3, label: "SD / FRAM", hint: "Harici arşiv" },
+  { value: 4, label: "Tüm arşiv", hint: "LittleFS + SD / FRAM" },
 ];
 
 const MAX_LINES = 5000;
@@ -64,9 +81,25 @@ export function classifyLine(line) {
   return { level, cat };
 }
 
+function formatBytes(value) {
+  const n = Number(value) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" });
+}
+
+const ARCHIVE_IDLE = { phase: "ready", percent: null, total: 0, offset: 0, scope: null, note: "Hazır" };
+
 export default function DeviceLogs({ token, isConnected, isActive, mac }) {
   const [lines, setLines] = useState([]);
   const [modes, setModes] = useState({ 28: 0, 29: 0 });
+  const [tab, setTab] = useState("live");
   const [paused, setPaused] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [search, setSearch] = useState("");
@@ -74,6 +107,12 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
   const [hiddenCats, setHiddenCats] = useState(() => new Set());
   const [sending, setSending] = useState(null);
   const [error, setError] = useState("");
+  const [archiveFiles, setArchiveFiles] = useState([]);
+  const [archiveFetchedAt, setArchiveFetchedAt] = useState(null);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveError, setArchiveError] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [archive, setArchive] = useState(ARCHIVE_IDLE);
 
   const cursorRef = useRef({ epoch: null, lastId: 0 });
   const boxRef = useRef(null);
@@ -82,6 +121,45 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
     ...options,
     headers: { ...(options.headers || {}), "Authorization": `Bearer ${token}` },
   }), [token]);
+
+  // Arşiv aktarımının durum satırları (msg 30) — log listesine değil ilerleme çubuğuna gider
+  const handleArchiveLine = useCallback((line) => {
+    const data = String(line?.data || "");
+    const parts = data.split(",");
+    if (!data) return;
+    if (data.startsWith("QUEUED,")) {
+      const total = Number(data.match(/bytes=(\d+)/)?.[1] || 0);
+      const scope = Number(data.match(/scope=(\d+)/)?.[1] || 0) || null;
+      setArchive((s) => ({
+        ...s, phase: "queued", percent: 0, total, offset: 0, scope,
+        note: total ? `Arşiv aktarımı sıraya alındı · ${formatBytes(total)}` : "Arşiv aktarımı sıraya alındı",
+      }));
+      return;
+    }
+    if (parts[0] === "S" && parts.length >= 4) {
+      const total = Number(parts[3]) || 0;
+      setArchive((s) => ({ ...s, phase: "transferring", percent: 0, total, offset: 0, note: total ? `Arşiv aktarılıyor · ${formatBytes(total)}` : "Arşiv aktarılıyor" }));
+      return;
+    }
+    if (parts[0] === "D" && parts.length >= 3) {
+      const offset = Number(parts[2]) || 0;
+      setArchive((s) => ({
+        ...s, phase: "transferring", offset,
+        percent: s.total ? Math.min(100, Math.round((offset * 100) / s.total)) : null,
+        note: s.total ? `Arşiv aktarılıyor · ${formatBytes(offset)} / ${formatBytes(s.total)}` : "Arşiv aktarılıyor",
+      }));
+      return;
+    }
+    if (parts[0] === "E" || parts[0] === "F") {
+      setArchive((s) => ({ ...s, phase: "complete", percent: 100, offset: s.total, note: "Arşiv aktarımı tamamlandı" }));
+      return;
+    }
+    if (data.startsWith("ERR")) {
+      setArchive((s) => ({ ...s, phase: "error", note: data }));
+      return;
+    }
+    if (data.startsWith("STATUS,")) setArchive((s) => ({ ...s, note: data.replace(/^STATUS,/, "Durum: ") }));
+  }, []);
 
   const poll = useCallback(async () => {
     try {
@@ -100,13 +178,15 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
       setModes(d.modes || { 28: 0, 29: 0 });
       if (d.lines?.length) {
         const fresh = d.lines.map((l) => ({ ...l, ...classifyLine(l) }));
+        fresh.filter((l) => Number(l.msg) === 30).forEach(handleArchiveLine);
+        const logLines = fresh.filter((l) => Number(l.msg) !== 30);
         setLines((prev) => {
-          const next = prev.concat(fresh);
+          const next = prev.concat(logLines);
           return next.length > MAX_LINES ? next.slice(next.length - MAX_LINES) : next;
         });
       }
     } catch {}
-  }, [authFetch]);
+  }, [authFetch, handleArchiveLine]);
 
   useEffect(() => {
     if (paused) return;
@@ -148,6 +228,85 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
     }
   };
 
+  const loadArchive = useCallback(async () => {
+    if (!isConnected) return;
+    setArchiveLoading(true);
+    setArchiveError("");
+    try {
+      const r = await authFetch("/api/device-log-archive/catalog");
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Kayıtlı loglar okunamadı");
+      setArchiveFiles(d.files || []);
+      setArchiveFetchedAt(d.fetchedAt || new Date().toISOString());
+    } catch (e) {
+      setArchiveError(e.message || "Uzak log sunucusuna ulaşılamadı");
+    } finally {
+      setArchiveLoading(false);
+    }
+  }, [authFetch, isConnected]);
+
+  useEffect(() => {
+    if (tab === "archive" && isConnected) loadArchive();
+  }, [tab, isConnected, loadArchive]);
+
+  // Aktarım bitince dosya listesi tazelenir
+  useEffect(() => {
+    if (archive.phase === "complete") loadArchive();
+  }, [archive.phase, loadArchive]);
+
+  const previewFile = async (name) => {
+    setArchiveError("");
+    try {
+      const r = await authFetch(`/api/device-log-archive/preview?name=${encodeURIComponent(name)}`);
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Önizleme alınamadı");
+      setPreview(d);
+    } catch (e) {
+      setArchiveError(e.message || "Önizleme alınamadı");
+    }
+  };
+
+  const downloadFile = async (name) => {
+    setArchiveError("");
+    try {
+      const r = await authFetch(`/api/device-log-archive/download?name=${encodeURIComponent(name)}`);
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.error || "Log indirilemedi");
+      }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      setArchiveError(e.message || "Log indirilemedi");
+    }
+  };
+
+  const requestArchive = async (scope) => {
+    setArchiveError("");
+    setSending(`30-${scope}`);
+    setArchive({ phase: "requesting", percent: 0, total: 0, offset: 0, scope, note: "Cihaza arşiv isteği gönderiliyor…" });
+    try {
+      const r = await authFetch("/api/log/command", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ group: 30, level: scope }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.message || d.error || "Arşiv isteği gönderilemedi");
+      setModes((prev) => ({ ...prev, 30: scope }));
+      setArchive((s) => ({ ...s, phase: "queued", note: `Scope ${scope} isteği cihaza iletildi; cevap bekleniyor…` }));
+    } catch (e) {
+      setArchive((s) => ({ ...s, phase: "error", note: e.message || "Arşiv isteği gönderilemedi" }));
+      setArchiveError(e.message || "Arşiv isteği gönderilemedi");
+    } finally {
+      setSending(null);
+    }
+  };
+
   const clearAll = async () => {
     setLines([]);
     try { await authFetch("/api/log/clear", { method: "POST" }); } catch {}
@@ -175,132 +334,327 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
 
   return (
     <div className="space-y-4">
-      <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-4">
-
-        {!isActive && (
-          <p className="text-[12px] text-amber-400 mb-3">
-            {isConnected ? "Cihaz aktif değil — log komutu gönderilemez." : "Log almak için önce bir cihaza bağlanın."}
-          </p>
-        )}
-
-        <div className="space-y-3">
-          {GROUPS.map((g) => (
-            <div key={g.id}>
-              <div className="flex items-baseline gap-2 mb-1.5">
-                <span className="text-[12px] font-bold text-[var(--text-secondary)]">{g.title}</span>
-                <span className="text-[11px] font-mono text-[var(--text-muted)]">{g.hint}</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {g.options.map((label, level) => {
-                  const selected = modes[g.id] === level;
-                  const cls = selected
-                    ? level === 0
-                      ? "bg-[var(--bg-subtle)] border-[var(--border-strong)] text-[var(--text-primary)]"
-                      : "bg-[var(--accent)] border-[var(--accent)] text-white"
-                    : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--border-strong)]";
-                  return (
-                    <button
-                      key={level}
-                      disabled={!isActive || sending !== null}
-                      onClick={() => sendMode(g.id, level)}
-                      className={`${btnBase} ${cls}`}
-                    >
-                      {sending === `${g.id}-${level}` ? "Gönderiliyor…" : label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+      <div className="flex items-center justify-between gap-3 flex-wrap bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-2">
+        <div className="flex items-center gap-1">
+          <button onClick={() => setTab("live")}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] font-semibold transition ${tab === "live" ? "bg-[var(--accent)] text-white" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"}`}>
+            <HiOutlineCommandLine /> Canlı loglar <span className="font-mono opacity-75">28 / 29</span>
+          </button>
+          <button onClick={() => setTab("archive")}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] font-semibold transition ${tab === "archive" ? "bg-emerald-600 text-white" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"}`}>
+            <HiOutlineDocumentText /> Kayıtlı arşiv <span className="font-mono opacity-75">30</span>
+          </button>
         </div>
-
-        {error && <p className="text-[12px] text-rose-400 mt-3">{error}</p>}
+        <div className="text-[11px] text-[var(--text-muted)] pr-2">
+          {mac ? `Bağlı cihaz: ${mac}` : "Cihaz seçilmedi"}
+        </div>
       </div>
 
-      <OcppArchive token={token} isActive={isActive} mac={mac} />
+      {tab === "live" ? (
+        <>
+          <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-4">
+            {!isActive && (
+              <p className="text-[12px] text-amber-400 mb-3">
+                {isConnected ? "Cihaz aktif değil — log komutu gönderilemez." : "Log almak için önce bir cihaza bağlanın."}
+              </p>
+            )}
 
-      <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-4">
-        <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {levels.map((lv) => (
-              <button
-                key={lv}
-                onClick={() => toggleLevel(lv)}
-                className={`text-[11px] font-bold font-mono px-2 py-1 rounded border transition
+            <div className="space-y-3">
+              {GROUPS.map((g) => (
+                <div key={g.id}>
+                  <div className="flex items-baseline gap-2 mb-1.5">
+                    <span className="text-[12px] font-bold text-[var(--text-secondary)]">{g.title}</span>
+                    <span className="text-[11px] font-mono text-[var(--text-muted)]">{g.hint}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {g.options.map((label, level) => {
+                      const selected = modes[g.id] === level;
+                      const cls = selected
+                        ? level === 0
+                          ? "bg-[var(--bg-subtle)] border-[var(--border-strong)] text-[var(--text-primary)]"
+                          : "bg-[var(--accent)] border-[var(--accent)] text-white"
+                        : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--border-strong)]";
+                      return (
+                        <button
+                          key={level}
+                          disabled={!isActive || sending !== null}
+                          onClick={() => sendMode(g.id, level)}
+                          className={`${btnBase} ${cls}`}
+                        >
+                          {sending === `${g.id}-${level}` ? "Gönderiliyor…" : label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {error && <p className="text-[12px] text-rose-400 mt-3">{error}</p>}
+          </div>
+
+          <OcppLiveDevice token={token} isActive={isActive} mac={mac} />
+
+          <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-4">
+            <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {levels.map((lv) => (
+                  <button
+                    key={lv}
+                    onClick={() => toggleLevel(lv)}
+                    className={`text-[11px] font-bold font-mono px-2 py-1 rounded border transition
                   ${hiddenLevels.has(lv)
                     ? "border-[var(--border-subtle)] text-[var(--text-muted)] line-through opacity-60"
                     : `border-[var(--border-strong)] ${LEVEL_STYLE[lv] || "text-[var(--text-secondary)]"} bg-[#0a0f1a]`}`}
-              >
-                {lv}
-              </button>
-            ))}
-            {cats.length > 0 && <span className="w-px h-4 bg-[var(--border-subtle)] mx-0.5" />}
-            {cats.map((c) => (
-              <button
-                key={c}
-                onClick={() => toggleCat(c)}
-                className={`flex items-center gap-1.5 text-[11px] font-bold font-mono px-2 py-1 rounded border transition
+                  >
+                    {lv}
+                  </button>
+                ))}
+                {cats.length > 0 && <span className="w-px h-4 bg-[var(--border-subtle)] mx-0.5" />}
+                {cats.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => toggleCat(c)}
+                    className={`flex items-center gap-1.5 text-[11px] font-bold font-mono px-2 py-1 rounded border transition
                   ${hiddenCats.has(c)
                     ? "border-[var(--border-subtle)] text-[var(--text-muted)] line-through opacity-60"
                     : `border-[var(--border-strong)] ${catStyle(c)} bg-[#0a0f1a]`}`}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                {c}
-              </button>
-            ))}
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Satırlarda ara…"
-              className="text-[12px] px-2 py-1 rounded-md bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)] w-[160px]"
-            />
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] text-[var(--text-muted)]">
-              {visible.length === lines.length ? `${lines.length} satır` : `${visible.length} / ${lines.length} satır`}
-            </span>
-            <label className="flex items-center gap-1.5 text-[12px] text-[var(--text-muted)] cursor-pointer select-none">
-              <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} className="cursor-pointer" />
-              Otomatik kaydır
-            </label>
-            <button onClick={() => setPaused((p) => !p)}
-              className={`${btnBase} flex items-center gap-1 border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]`}>
-              {paused ? <HiOutlinePlay className="text-[13px]" /> : <HiOutlinePause className="text-[13px]" />}
-              {paused ? "Devam" : "Duraklat"}
-            </button>
-            <button onClick={download} disabled={visible.length === 0}
-              className={`${btnBase} flex items-center gap-1 border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]`}>
-              <HiOutlineArrowDownTray className="text-[13px]" /> İndir
-            </button>
-            <button onClick={clearAll} disabled={lines.length === 0}
-              className={`${btnBase} flex items-center gap-1 border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-rose-400`}>
-              <HiOutlineTrash className="text-[13px]" /> Temizle
-            </button>
-          </div>
-        </div>
-
-        <div
-          ref={boxRef}
-          className="bg-[#0a0f1a] rounded-lg p-3 h-[60vh] min-h-[320px] overflow-auto custom-scroll font-mono text-[12px] leading-relaxed"
-        >
-          {visible.length === 0 ? (
-            <p className="text-slate-500 italic">
-              {lines.length === 0 ? "Henüz log satırı yok — yukarıdan bir log modu seçin." : "Filtreye uyan satır yok."}
-            </p>
-          ) : (
-            visible.map((l) => (
-              <div key={l.id} className={`whitespace-pre ${catStyle(l.cat) || LEVEL_STYLE[l.level] || "text-slate-400"}`}>
-                <span className="text-slate-500">{l.time}</span>
-                {" | "}
-                <span className="inline-block w-[58px]">{l.level}</span>
-                {" | "}
-                {l.data}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                    {c}
+                  </button>
+                ))}
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Satırlarda ara…"
+                  className="text-[12px] px-2 py-1 rounded-md bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)] w-[160px]"
+                />
               </div>
-            ))
-          )}
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] text-[var(--text-muted)]">
+                  {visible.length === lines.length ? `${lines.length} satır` : `${visible.length} / ${lines.length} satır`}
+                </span>
+                <label className="flex items-center gap-1.5 text-[12px] text-[var(--text-muted)] cursor-pointer select-none">
+                  <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} className="cursor-pointer" />
+                  Otomatik kaydır
+                </label>
+                <button onClick={() => setPaused((p) => !p)}
+                  className={`${btnBase} flex items-center gap-1 border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]`}>
+                  {paused ? <HiOutlinePlay className="text-[13px]" /> : <HiOutlinePause className="text-[13px]" />}
+                  {paused ? "Devam" : "Duraklat"}
+                </button>
+                <button onClick={download} disabled={visible.length === 0}
+                  className={`${btnBase} flex items-center gap-1 border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]`}>
+                  <HiOutlineArrowDownTray className="text-[13px]" /> İndir
+                </button>
+                <button onClick={clearAll} disabled={lines.length === 0}
+                  className={`${btnBase} flex items-center gap-1 border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-rose-400`}>
+                  <HiOutlineTrash className="text-[13px]" /> Temizle
+                </button>
+              </div>
+            </div>
+
+            <div
+              ref={boxRef}
+              className="bg-[#0a0f1a] rounded-lg p-3 h-[60vh] min-h-[320px] overflow-auto custom-scroll font-mono text-[12px] leading-relaxed"
+            >
+              {visible.length === 0 ? (
+                <p className="text-slate-500 italic">
+                  {lines.length === 0 ? "Henüz log satırı yok — yukarıdan bir log modu seçin." : "Filtreye uyan satır yok."}
+                </p>
+              ) : (
+                visible.map((l) => (
+                  <div key={l.id} className={`whitespace-pre ${catStyle(l.cat) || LEVEL_STYLE[l.level] || "text-slate-400"}`}>
+                    <span className="text-slate-500">{l.time}</span>
+                    {" | "}
+                    <span className="inline-block w-[58px]">{l.level}</span>
+                    {" | "}
+                    {l.data}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <ArchivePanel
+            isActive={isActive}
+            isConnected={isConnected}
+            files={archiveFiles}
+            fetchedAt={archiveFetchedAt}
+            loading={archiveLoading}
+            error={archiveError}
+            state={archive}
+            sending={sending}
+            onRefresh={loadArchive}
+            onScope={requestArchive}
+            onPreview={previewFile}
+            onDownload={downloadFile}
+            preview={preview}
+            onClosePreview={() => setPreview(null)}
+          />
+          {isConnected && <OcppArchive token={token} mac={mac} />}
+        </>
+      )}
+    </div>
+  );
+}
+
+function ArchivePanel({
+  isActive, isConnected, files, fetchedAt, loading, error, state, sending,
+  onRefresh, onScope, onPreview, onDownload, preview, onClosePreview,
+}) {
+  const current = files.filter((f) => f.period === "current");
+  const history = files.filter((f) => f.period === "history");
+  const noteColor = state.phase === "complete" ? "text-emerald-500" : state.phase === "error" ? "text-rose-500" : "text-sky-500";
+
+  const fileRow = (f) => (
+    <div key={f.name} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-subtle)]">
+      <div className="min-w-0 flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex items-center justify-center text-[var(--text-muted)] shrink-0">
+          <HiOutlineDocumentText />
+        </div>
+        <div className="min-w-0">
+          <div className="text-[12px] font-semibold text-[var(--text-primary)] truncate">{f.label}</div>
+          <div className="text-[10px] text-[var(--text-muted)] font-mono truncate">
+            {f.name} · {formatBytes(f.size)} · {formatDate(f.modifiedAt)}
+          </div>
         </div>
       </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <span className={`hidden sm:inline-flex text-[10px] px-1.5 py-0.5 rounded border ${f.format === "ocl"
+          ? "text-violet-500 border-violet-500/30 bg-violet-500/10"
+          : "text-sky-500 border-sky-500/30 bg-sky-500/10"}`}>
+          {f.format.toUpperCase()}
+        </span>
+        <button onClick={() => onPreview(f.name)} title="Önizle"
+          className="p-1.5 rounded-md border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+          <HiOutlineEye />
+        </button>
+        <button onClick={() => onDownload(f.name)} title="İndir"
+          className="p-1.5 rounded-md border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--accent)]">
+          <HiOutlineArrowDownTray />
+        </button>
+      </div>
+    </div>
+  );
+
+  const stat = (label, value, small = false) => (
+    <div className="rounded-lg border border-[var(--border-subtle)] p-2.5">
+      <div className="text-[10px] text-[var(--text-muted)]">{label}</div>
+      <div className={small ? "text-[11px] font-semibold text-[var(--text-primary)] mt-1" : "text-[16px] font-bold text-[var(--text-primary)]"}>{value}</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {!isConnected && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-500 px-4 py-3 text-[12px]">
+          Kayıtlı logları görmek için önce bir cihaza bağlanın.
+        </div>
+      )}
+      {!isActive && isConnected && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-500 px-4 py-3 text-[12px]">
+          Cihaz aktif değil; arşiv komutu gönderilemez.
+        </div>
+      )}
+
+      <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
+          <div>
+            <h3 className="text-[14px] font-bold text-[var(--text-primary)]">Kalıcı cihaz logları</h3>
+            <p className="text-[11px] text-[var(--text-muted)] mt-1">
+              Frame 3 / 30 ile cihaz arşivini Bluetech sunucusuna aktarır; dosyalar current ve history olarak orada tutulur.
+            </p>
+          </div>
+          <button onClick={onRefresh} disabled={!isConnected || loading}
+            className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-40">
+            <HiOutlineArrowPath className={loading ? "animate-spin" : ""} /> {loading ? "Tazeleniyor…" : "Dosyaları tazele"}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+          {stat("Current", current.length)}
+          {stat("History", history.length)}
+          {stat("Toplam boyut", formatBytes(files.reduce((sum, f) => sum + Number(f.size || 0), 0)))}
+          {stat("Son okuma", formatDate(fetchedAt), true)}
+        </div>
+
+        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div>
+              <div className="text-[12px] font-semibold text-[var(--text-primary)]">Cihaz arşivini çek</div>
+              <div className="text-[10px] text-[var(--text-muted)]">1–4 kapsamından birini seç; cihaz gönderimi ACK ile ilerler.</div>
+            </div>
+            <span className={`text-[11px] font-semibold ${noteColor}`}>{state.note}</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {ARCHIVE_SCOPES.map((s) => (
+              <button key={s.value} onClick={() => onScope(s.value)} disabled={!isActive || sending !== null} title={s.hint}
+                className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-md border transition ${state.scope === s.value && state.phase !== "ready"
+                  ? "bg-emerald-600 border-emerald-600 text-white"
+                  : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"}`}>
+                {sending === `30-${s.value}` ? "Gönderiliyor…" : `${s.value} · ${s.label}`}
+              </button>
+            ))}
+          </div>
+          {state.percent !== null && state.phase !== "ready" && (
+            <div className="mt-3">
+              <div className="flex justify-between text-[10px] text-[var(--text-muted)] mb-1">
+                <span>{state.phase === "complete" ? "Tamamlandı" : "İlerleme"}</span>
+                <span>{state.percent}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-[var(--bg-subtle)] overflow-hidden">
+                <div className={`h-full transition-all ${state.phase === "error" ? "bg-rose-500" : "bg-emerald-500"}`}
+                  style={{ width: `${Math.max(0, Math.min(100, state.percent))}%` }} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {error && (
+          <div className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-500 px-3 py-2 text-[11px]">{error}</div>
+        )}
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        {[["current", "Current dosyaları", current], ["history", "History dosyaları", history]].map(([key, title, list]) => (
+          <div key={key} className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-[12px] font-bold text-[var(--text-primary)]">{title}</h4>
+              <span className="text-[10px] text-[var(--text-muted)]">{list.length} dosya</span>
+            </div>
+            <div className="space-y-2">
+              {list.length ? list.map(fileRow) : <div className="text-[11px] text-[var(--text-muted)] italic">Henüz dosya bulunamadı.</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {preview && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClosePreview}>
+          <div className="w-full max-w-5xl max-h-[85vh] bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--border-subtle)]">
+              <div className="min-w-0">
+                <h4 className="text-[13px] font-bold text-[var(--text-primary)] truncate">{preview.name}</h4>
+                <span className="text-[10px] text-[var(--text-muted)]">
+                  {formatBytes(preview.size)}{preview.truncated ? " · son 1 MB gösteriliyor" : ""}
+                </span>
+              </div>
+              <button onClick={onClosePreview} className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                <HiOutlineXMark />
+              </button>
+            </div>
+            <pre className="m-0 p-4 max-h-[70vh] overflow-auto bg-[#0a0f1a] text-slate-200 text-[11px] leading-relaxed whitespace-pre-wrap font-mono">
+              {preview.content}
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

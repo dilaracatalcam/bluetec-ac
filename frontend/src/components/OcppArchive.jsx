@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   HiOutlineArrowDownTray, HiOutlineArrowPath, HiOutlineFunnel, HiOutlineXMark, HiOutlineChevronDown,
-  HiArrowUp, HiArrowDown, HiOutlineListBullet, HiOutlineChartBar, HiOutlineCloudArrowUp,
+  HiArrowUp, HiArrowDown, HiOutlineListBullet, HiOutlineChartBar,
 } from "react-icons/hi2";
 
 /* ── OCPP Arşivi (frame 3 30) ──
@@ -57,7 +57,7 @@ function useArchiveFetch(token) {
   }, [token]);
 }
 
-function TypeBadge({ type }) {
+export function TypeBadge({ type }) {
   const { color } = metaOf(type);
   return (
     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
@@ -147,7 +147,7 @@ function Pager({ page, pages, onPage }) {
 }
 
 /* ── İşlem Geçmişi ── */
-function HistoryView({ fetchEvents, mac, preset }) {
+export function HistoryView({ fetchEvents, mac, preset }) {
   const [from, setFrom] = useState(() => toLocalInput(Date.now() - 2 * DAY_MS));
   const [to, setTo] = useState(() => toLocalInput(Date.now() + 60 * 1000));
   const [types, setTypes] = useState(() => new Set());
@@ -316,7 +316,7 @@ function Marker({ shape, x, y, color, size = 5 }) {
   return <circle cx={x} cy={y} r={size - 1} fill={color} />;
 }
 
-function TimelineView({ fetchEvents, onPick }) {
+export function TimelineView({ fetchEvents, onPick, autoRefreshMs = 0 }) {
   const [date, setDate] = useState(() => toDateInput(Date.now()));
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -341,6 +341,13 @@ function TimelineView({ fetchEvents, onPick }) {
   }, [date, fetchEvents]);
 
   useEffect(() => { load(false); }, [load]);
+
+  // Canlı veride (frame 3 28 3) çizelge kendiliğinden tazelenir
+  useEffect(() => {
+    if (!autoRefreshMs) return;
+    const iv = setInterval(() => load(false), autoRefreshMs);
+    return () => clearInterval(iv);
+  }, [autoRefreshMs, load]);
 
   useEffect(() => {
     const el = boxRef.current;
@@ -463,27 +470,12 @@ function TimelineView({ fetchEvents, onPick }) {
   );
 }
 
-export default function OcppArchive({ token, isActive, mac }) {
+// Arşiv aktarımı Kayıtlı arşiv sekmesindeki scope 1–4 düğmeleriyle başlatılır;
+// bu kart aktarılan OCPP dosyalarını olaylara çevirip gösterir.
+export default function OcppArchive({ token, mac }) {
   const [view, setView] = useState("history");
   const [preset, setPreset] = useState(null);
-  const [transfer, setTransfer] = useState({ sending: false, msg: "", error: "" });
   const fetchEvents = useArchiveFetch(token);
-
-  const startTransfer = async () => {
-    setTransfer({ sending: true, msg: "", error: "" });
-    try {
-      const r = await fetch("/api/log/command", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ group: 30, level: 1 }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.message || d.error || "Komut gönderilemedi");
-      setTransfer({ sending: false, msg: "Aktarım başlatıldı — tamamlanınca Filtrele / Yenile ile güncel kayıtları alın.", error: "" });
-    } catch (e) {
-      setTransfer({ sending: false, msg: "", error: e.message });
-    }
-  };
 
   const pick = (p) => { setPreset(p); setView("history"); };
 
@@ -502,21 +494,13 @@ export default function OcppArchive({ token, isActive, mac }) {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-baseline gap-2">
           <span className="text-[12px] font-bold text-[var(--text-secondary)]">OCPP Arşivi</span>
-          <span className="text-[11px] font-mono text-[var(--text-muted)]">frame 3 30</span>
+          <span className="text-[11px] font-mono text-[var(--text-muted)]">aktarılan OCPP dosyalarından</span>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           {tab("history", <HiOutlineListBullet />, "İşlem Geçmişi")}
           {tab("timeline", <HiOutlineChartBar />, "Zaman Çizelgesi")}
-          <span className="w-px h-5 bg-[var(--border-subtle)] mx-1" />
-          <button onClick={startTransfer} disabled={!isActive || transfer.sending}
-            title={isActive ? "Cihazdaki OCPP arşivini sunucuya aktar" : "Cihaz aktif değil"}
-            className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-md border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed">
-            <HiOutlineCloudArrowUp /> {transfer.sending ? "Gönderiliyor…" : "Arşivi Aktar"}
-          </button>
         </div>
       </div>
-      {transfer.msg && <p className="text-[12px] text-emerald-500">{transfer.msg}</p>}
-      {transfer.error && <p className="text-[12px] text-rose-500">{transfer.error}</p>}
 
       {view === "history"
         ? <HistoryView fetchEvents={fetchEvents} mac={mac} preset={preset} />

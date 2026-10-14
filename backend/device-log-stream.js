@@ -43,7 +43,7 @@ function isLogMessage(m) {
     return cmd !== 1 && cmd !== 2;
 }
 
-function initDeviceLogStream({ RESPONSES_PATH, readResponses }) {
+function initDeviceLogStream({ RESPONSES_PATH, readResponses, onLine }) {
     const epoch = Date.now(); // process yeniden başlarsa id'ler sıfırlanır — client bunu epoch'tan anlar
     const sessions = new Map(); // sessionId -> { lines, nextId, lastSig, lastSeen }
     // Cihazda açık bırakılan log modları — satır tamponundan AYRI tutulur ve boşta
@@ -65,10 +65,11 @@ function initDeviceLogStream({ RESPONSES_PATH, readResponses }) {
         return s;
     }
 
-    function pushLine(s, m) {
+    function pushLine(sessionId, s, m) {
         const parts = String(m.data ?? "").split(/\r?\n/).filter((p) => p.length > 0);
         for (const data of parts) {
             s.lines.push({ id: s.nextId++, at: Date.now(), time: m.time || "", cmd: Number(m.cmd), msg: Number(m.msg), data });
+            try { onLine?.(sessionId, Number(m.msg), data); } catch {}
         }
         if (s.lines.length > MAX_LINES_PER_SESSION) s.lines.splice(0, s.lines.length - MAX_LINES_PER_SESSION);
     }
@@ -80,7 +81,7 @@ function initDeviceLogStream({ RESPONSES_PATH, readResponses }) {
             if (s.lastSig === null) { s.lastSig = sig; continue; }
             if (sig === s.lastSig) continue;
             s.lastSig = sig;
-            if (m && isLogMessage(m)) pushLine(s, m);
+            if (m && isLogMessage(m)) pushLine(sessionId, s, m);
         }
     }
 
@@ -124,6 +125,7 @@ function initDeviceLogStream({ RESPONSES_PATH, readResponses }) {
             modesBySession.set(sessionId, { ...modesOf(sessionId), [group]: level });
         },
         // Cihazda hâlâ açık olan log grupları (28/29)
+        modes(sessionId) { return modesOf(sessionId); },
         activeGroups(sessionId) {
             const m = modesOf(sessionId);
             return LIVE_LOG_GROUPS.filter((g) => m[g] !== 0);

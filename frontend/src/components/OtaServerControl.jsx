@@ -6,6 +6,7 @@ import {
   HiOutlineCog6Tooth, HiOutlineFunnel, HiOutlineKey, HiOutlineTrash,
 } from "react-icons/hi2";
 import OtaServerLogs from "./OtaServerLogs.jsx";
+import { encodeLogoImageToIndexed4 } from "../utils/logoEncoder.js";
 
 /* ── Şirket listesi — backend'deki OTA_LOGO_COMPANIES ile birebir eşleşmeli ── */
 const LOGO_COMPANIES = [
@@ -83,11 +84,15 @@ function UploadCard({
     setResult(null);
     try {
       const formData = new FormData();
-      formData.append("file", file);
+      // PNG/JPG/WebP logo tarayıcıda cihazın 4-bit .bin biçimine çevrilip gönderilir
+      const isRasterLogo = showLogoFields && fileType === "logo" && /\.(png|jpe?g|webp)$/i.test(file.name);
+      const uploadFile = isRasterLogo ? await encodeLogoImageToIndexed4(file) : file;
+      formData.append("file", uploadFile, uploadFile.name);
       formData.append("fileType", fileType);
       if (showLogoFields) {
         formData.append("company", company);
         formData.append("customName", customName.trim());
+        if (isRasterLogo) formData.append("logoFormat", "indexed4");
       }
       if (versionFields) {
         formData.append("hwVersion", hwVersion.trim());
@@ -113,8 +118,8 @@ function UploadCard({
         if (inputRef.current) inputRef.current.value = "";
         onUploaded?.();
       }
-    } catch {
-      setResult({ ok: false, message: "Sunucuya ulaşılamadı" });
+    } catch (e) {
+      setResult({ ok: false, message: e?.message || "Logo hazırlanamadı" });
     } finally {
       setUploading(false);
     }
@@ -686,9 +691,9 @@ export default function OtaServerControl({ token }) {
         />
         <UploadCard
           title="Logo"
-          description=".c — şirket seçin veya özel isim girin, otomatik .bin'e çevrilir"
+          description="PNG/JPG/WebP — 238×88 LVGL 4-bit .bin'e çevrilir (.c de desteklenir)"
           icon={<HiOutlinePhoto />}
-          accept=".c"
+          accept=".c,.png,.jpg,.jpeg,.webp"
           fileType="logo"
           showLogoFields
           token={token}

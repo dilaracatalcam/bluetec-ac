@@ -24,6 +24,68 @@ export default function AccountSettings({ token, currentUser, onEmailUpdated, on
 
   const hasEmail = !!currentUser?.email;
 
+  /* ── Şirket kullanıcı erişimi ──
+     Şirket hesabındaki admin/operatör, şirketine bir kullanıcı ekleyip çıkarabilir;
+     eklenen kullanıcı şirketin tüm cihazlarını görür. Bireysel hesaplarda yok. */
+  const companyKey = String(currentUser?.company || "").trim().toLocaleLowerCase("tr-TR")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const canManageCompanyUsers = (currentUser?.role === "admin" || currentUser?.role === "operator")
+    && !!companyKey && !["bireysel", "individual", "kisisel", "private", "ozel"].includes(companyKey);
+  const [companyUser, setCompanyUser] = useState("");
+  const [companyBusy, setCompanyBusy] = useState("");
+  const [companyMsg, setCompanyMsg] = useState("");
+
+  const handleCompanyUser = async (action) => {
+    const username = companyUser.trim();
+    if (!username) { setCompanyMsg("Kullanıcı adını girin."); return; }
+    setCompanyBusy(action); setCompanyMsg("");
+    try {
+      const r = await authFetch(action === "assign" ? "/api/company/assign-user" : "/api/company/revoke-user", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setCompanyMsg(d.error || "İşlem gerçekleştirilemedi."); return; }
+      setCompanyMsg(action === "assign"
+        ? `${d.username || username} şirket hesabına eklendi; tüm şirket cihazlarını görebilir.`
+        : `${d.username || username} şirket erişiminden çıkarıldı.`);
+      setCompanyUser("");
+    } catch { setCompanyMsg("Sunucuya ulaşılamadı."); }
+    finally { setCompanyBusy(""); }
+  };
+
+  /* ── Cihaz paylaşım onayları ──
+     Bireysel cihazın sahibi, cihazına başka bir kullanıcı eklenmeden önce onay verir
+     (istek DeviceSelect'teki "Hesabıma ekle" ile oluşur). */
+  const [shareRequests, setShareRequests] = useState([]);
+  const [shareLoading, setShareLoading] = useState(true);
+  const [shareBusy, setShareBusy] = useState("");
+  const [shareError, setShareError] = useState("");
+
+  const loadShareRequests = async () => {
+    try {
+      const r = await authFetch("/api/me/device-share-requests");
+      const d = await r.json();
+      if (r.ok) setShareRequests(d.requests || []);
+    } catch { setShareError("Cihaz onayları alınamadı."); }
+    finally { setShareLoading(false); }
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadShareRequests(); }, [token]);
+
+  const handleShareRequest = async (id, action) => {
+    setShareBusy(id); setShareError("");
+    try {
+      const r = await authFetch(`/api/me/device-share-requests/${encodeURIComponent(id)}/${action}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+      });
+      const d = await r.json();
+      if (!r.ok) { setShareError(d.error || "İşlem gerçekleştirilemedi"); return; }
+      setShareRequests((list) => list.filter((x) => x.id !== id));
+    } catch { setShareError("Sunucuya ulaşılamadı."); }
+    finally { setShareBusy(""); }
+  };
+
   /* ── E-posta ── */
   const [email, setEmail] = useState(currentUser?.email || "");
   const [emailCurrentPassword, setEmailCurrentPassword] = useState("");
@@ -121,6 +183,73 @@ export default function AccountSettings({ token, currentUser, onEmailUpdated, on
 
   return (
     <div>
+      {canManageCompanyUsers && (
+        <div className="mb-6 max-w-2xl rounded-xl border border-[var(--accent-border)] bg-[var(--accent-soft)] p-4">
+          <div className="flex items-center gap-2 text-[13px] font-bold text-[var(--accent)]">
+            <HiOutlineUserCircle className="text-[17px]" />
+            Şirket kullanıcı erişimi
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+            <span className="font-semibold text-[var(--text-secondary)]">{currentUser.company}</span> şirketine aktif bir kullanıcı ekleyin veya erişimini kaldırın. Eklenen kullanıcı şirketin tüm cihazlarını görür.
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <input value={companyUser} onChange={(e) => setCompanyUser(e.target.value)} autoComplete="off"
+              placeholder="Kullanıcı adı" className={inputCls} />
+            <button type="button" disabled={!!companyBusy} onClick={() => handleCompanyUser("assign")}
+              className="shrink-0 rounded-lg bg-[var(--accent)] px-3.5 py-2 text-[12px] font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
+              {companyBusy === "assign" ? "Ekleniyor…" : "Şirkete ekle"}
+            </button>
+            <button type="button" disabled={!!companyBusy} onClick={() => handleCompanyUser("revoke")}
+              className="shrink-0 rounded-lg border border-rose-400/40 bg-rose-500/10 px-3.5 py-2 text-[12px] font-bold text-rose-300 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50">
+              {companyBusy === "revoke" ? "Kaldırılıyor…" : "Erişimi kaldır"}
+            </button>
+          </div>
+          {companyMsg && <div className="mt-2 text-[11px] font-medium text-[var(--text-muted)]">{companyMsg}</div>}
+        </div>
+      )}
+
+      {(shareLoading || shareRequests.length > 0 || shareError) && (
+        <div className="mb-6 max-w-2xl rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+          <div className="flex items-center gap-2 text-[13px] font-bold text-amber-500">
+            <HiOutlineExclamationCircle className="text-[17px]" />
+            Cihaz paylaşım onayları
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+            Sahibi olduğunuz bireysel cihazlara başka kullanıcı eklenmeden önce sizin onayınız gerekir.
+          </p>
+          {shareError && <div className="mt-2 text-[11px] font-medium text-rose-400">{shareError}</div>}
+          {shareLoading ? (
+            <div className="mt-3 text-[12px] text-[var(--text-muted)]">Onaylar yükleniyor…</div>
+          ) : shareRequests.length === 0 ? (
+            <div className="mt-3 text-[12px] text-[var(--text-muted)]">Bekleyen cihaz paylaşım isteği yok.</div>
+          ) : (
+            <div className="mt-3 flex flex-col gap-2">
+              {shareRequests.map((req) => (
+                <div key={req.id} className="flex flex-col gap-3 rounded-lg border border-amber-500/20 bg-[var(--bg-subtle)] p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-semibold text-[var(--text-primary)]">
+                      <span className="font-mono">{req.targetUsername}</span> kullanıcısı cihazınıza erişim istiyor.
+                    </div>
+                    <div className="mt-1 text-[11px] text-[var(--text-muted)]">
+                      {req.location || req.deviceCode || "Bireysel cihaz"} · Cihaz sahibi onayı gerekli
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button type="button" disabled={shareBusy === req.id} onClick={() => handleShareRequest(req.id, "approve")}
+                      className="rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white transition hover:bg-emerald-500 disabled:opacity-50">
+                      Onayla
+                    </button>
+                    <button type="button" disabled={shareBusy === req.id} onClick={() => handleShareRequest(req.id, "reject")}
+                      className="rounded-lg border border-rose-500/30 px-3 py-2 text-[11px] font-bold text-rose-400 transition hover:bg-rose-500/10 disabled:opacity-50">
+                      Reddet
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-col gap-6 max-w-md">
         {/* ── E-posta ── */}
