@@ -11,6 +11,9 @@ import OcppDeviceModal from "./OcppDeviceModal.jsx";
 // Kutucuk popover'ındaki "Mesaj Geçmişi" düğmesi cihaz penceresini açar —
 // tile'lar birkaç bileşen derinde olduğu için prop zinciri yerine context.
 const OpenHistoryContext = createContext(null);
+// "Durumu şimdi oku": { onRefresh(cihaz | cihazlar), refreshingIds: { [id]: true } }
+const RefreshContext = createContext({ onRefresh: null, refreshingIds: {} });
+const isRefreshing = (refreshingIds, d) => !!d.polling || !!refreshingIds[String(d.id)];
 
 /* ── Toplu Okuma ──
    Şirket bazlı, sürekli tazelenen canlı cihaz durumu panosu. "Toplu
@@ -168,6 +171,8 @@ function DeviceTile({ d, tileKey, isOpen, onToggle, onConnectDevice, connecting,
   const btnRef = useRef(null);
   const [pos, setPos] = useState(null); // { left, arrowLeft, top, side }
   const openHistory = useContext(OpenHistoryContext);
+  const { onRefresh, refreshingIds } = useContext(RefreshContext);
+  const refreshing = !!refreshingIds[String(d.id)];
 
   // Kutucuk her zaman tıklanan cihazın TAM ortasına, ekranın merkezine değil —
   // bu yüzden konumu viewport'a göre hesaplayıp kenarlardan taşmayacak şekilde
@@ -213,6 +218,11 @@ function DeviceTile({ d, tileKey, isOpen, onToggle, onConnectDevice, connecting,
                     ${isOpen ? "ring-2 ring-offset-1 ring-[var(--accent)] ring-offset-[var(--bg-page,transparent)]" : ""}`}
       >
         <Icon className={`text-[19px] ${d.state === "checking" ? "animate-spin" : ""}`} />
+        {(d.polling || refreshing) && (
+          <span className="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-[var(--bg-elevated,#fff)] border border-[var(--accent-border)] text-[var(--accent)] flex items-center justify-center shadow-sm">
+            <HiOutlineArrowPath className="text-[10px] animate-spin" />
+          </span>
+        )}
       </button>
 
       {isOpen && pos && (
@@ -231,6 +241,18 @@ function DeviceTile({ d, tileKey, isOpen, onToggle, onConnectDevice, connecting,
             <span className={`text-[13px] font-bold truncate flex-1 ${meta.text}`}>
               {(d.device_code || "Cihaz").trim()}
             </span>
+            <button
+              type="button"
+              title="Durumu şimdi oku"
+              onClick={(e) => { e.stopPropagation(); onRefresh?.(d); }}
+              disabled={refreshing}
+              className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center border
+                         bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)]
+                         hover:bg-[var(--accent-soft-hover)] transition cursor-pointer
+                         disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <HiOutlineArrowPath className={`text-[12px] ${refreshing ? "animate-spin" : ""}`} />
+            </button>
             <button
               type="button"
               title="Cihaza Bağlan"
@@ -320,6 +342,20 @@ function DeviceTileRow({ devices, openKey, setOpenKey, onConnectDevice, connecti
   );
 }
 
+function RefreshButton({ devices, title, small = false }) {
+  const { onRefresh, refreshingIds } = useContext(RefreshContext);
+  const busy = devices.some((d) => isRefreshing(refreshingIds, d));
+  return (
+    <button type="button" title={title} onClick={() => onRefresh?.(devices)} disabled={busy}
+      className={`${small ? "w-5 h-5" : "w-7 h-7"} rounded-full flex items-center justify-center border shrink-0
+                  bg-[var(--accent-soft)] text-[var(--accent)] border-[var(--accent-border)]
+                  hover:bg-[var(--accent-soft-hover)] transition cursor-pointer
+                  disabled:opacity-40 disabled:cursor-not-allowed`}>
+      <HiOutlineArrowPath className={`${small ? "text-[10px]" : "text-[13px]"} ${busy ? "animate-spin" : ""}`} />
+    </button>
+  );
+}
+
 function LocationCard({ site, devices, blocks, openKey, setOpenKey, onConnectDevice, connecting, connectError }) {
   return (
     <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated,transparent)] p-4 flex flex-col gap-3.5">
@@ -327,14 +363,18 @@ function LocationCard({ site, devices, blocks, openKey, setOpenKey, onConnectDev
         <span className="w-7 h-7 rounded-lg bg-[var(--accent-soft)] border border-[var(--accent-border)] flex items-center justify-center text-[var(--accent)] text-[14px] shrink-0">
           <HiOutlineMapPin />
         </span>
-        <span className="text-[13.5px] font-bold text-[var(--text-primary)] truncate" title={site}>{site}</span>
+        <span className="text-[13.5px] font-bold text-[var(--text-primary)] truncate flex-1" title={site}>{site}</span>
+        <RefreshButton devices={devices} title="Bu sektörü şimdi oku" />
       </div>
 
       {blocks ? (
         <div className="flex flex-col gap-3">
           {blocks.map((b) => (
             <div key={b.label}>
-              <div className="text-[10.5px] font-bold uppercase tracking-wide text-[var(--text-muted)] mb-1.5">{b.label}</div>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <div className="text-[10.5px] font-bold uppercase tracking-wide text-[var(--text-muted)] flex-1">{b.label}</div>
+                <RefreshButton devices={b.devices} title="Bu bölümü şimdi oku" small />
+              </div>
               <DeviceTileRow devices={b.devices} openKey={openKey} setOpenKey={setOpenKey}
                 onConnectDevice={onConnectDevice} connecting={connecting} connectError={connectError} />
             </div>
@@ -374,6 +414,11 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
   // Popover değişince önceki denemenin hata mesajı yeni cihaza taşınmasın diye.
   const setOpenKey = useCallback((key) => { setConnectError(""); setOpenKeyRaw(key); }, []);
   const [historyDevice, setHistoryDevice] = useState(null); // { deviceId, name }
+  // "Şimdi oku" istenen cihazlar: yeni bir okuma (updated_at değişimi) gelene ya da
+  // 45 sn dolana kadar dönen simgeyle gösterilir.
+  const [refreshingIds, setRefreshingIds] = useState({});
+  const lastUpdatedRef = useRef(new Map()); // id -> updated_at
+  const refreshTimersRef = useRef(new Map()); // id -> timeout
   const openHistory = useCallback((d) => {
     setOpenKeyRaw(null);
     setHistoryDevice({ deviceId: d.id, name: [d.location, d.device_code].filter(Boolean).join(" ") || "Cihaz" });
@@ -421,6 +466,43 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
     }
   }, [authFetch, isSuperadmin, onConnect]);
 
+  const dropRefreshing = useCallback((ids) => setRefreshingIds((prev) => {
+    const next = { ...prev };
+    ids.forEach((id) => { delete next[id]; });
+    return next;
+  }), []);
+
+  const refreshDevices = useCallback(async (target) => {
+    const list = Array.isArray(target) ? target : [target];
+    const ids = [...new Set(list.map((d) => d?.id).filter((id) => id !== undefined && id !== null).map(String))];
+    if (ids.length === 0) return;
+    setConnectError("");
+    setRefreshingIds((prev) => {
+      const next = { ...prev };
+      ids.forEach((id) => { next[id] = true; });
+      return next;
+    });
+    ids.forEach((id) => {
+      const old = refreshTimersRef.current.get(id);
+      if (old) clearTimeout(old);
+      refreshTimersRef.current.set(id, setTimeout(() => {
+        dropRefreshing([id]);
+        refreshTimersRef.current.delete(id);
+      }, 45000));
+    });
+    try {
+      const r = await authFetch("/api/device-status/refresh", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceIds: ids, company: selectedCompany || undefined }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setConnectError(d.error || "Okuma başlatılamadı"); dropRefreshing(ids); }
+    } catch {
+      setConnectError("Durum okunamadı");
+      dropRefreshing(ids);
+    }
+  }, [authFetch, selectedCompany, dropRefreshing]);
+
   useEffect(() => {
     if (!isSuperadmin) return;
     authFetch("/api/devices/companies").then((r) => r.json())
@@ -445,7 +527,26 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
           : "/api/device-status";
         const r = await authFetch(url);
         const d = await r.json();
-        if (!cancelled) setDevices(d.devices || []);
+        if (!cancelled) {
+          const list = d.devices || [];
+          const prevUpdated = lastUpdatedRef.current;
+          // Yeni bir okuma geldiyse (updated_at değişti) o cihazın "okunuyor" işareti kalkar
+          setRefreshingIds((prev) => {
+            const next = { ...prev };
+            list.forEach((dev) => {
+              const id = String(dev.id), before = prevUpdated.get(id);
+              if (next[id] && dev.updated_at && before && dev.updated_at !== before) {
+                delete next[id];
+                const t = refreshTimersRef.current.get(id);
+                if (t) clearTimeout(t);
+                refreshTimersRef.current.delete(id);
+              }
+            });
+            return next;
+          });
+          lastUpdatedRef.current = new Map(list.map((dev) => [String(dev.id), dev.updated_at || null]));
+          setDevices(list);
+        }
       } catch {}
       if (!cancelled) { setLoading(false); hasLoadedOnce.current = true; }
     };
@@ -469,6 +570,7 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
 
   return (
     <OpenHistoryContext.Provider value={openHistory}>
+    <RefreshContext.Provider value={{ onRefresh: refreshDevices, refreshingIds }}>
     <div>
 
       {isSuperadmin && (
@@ -530,6 +632,7 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
       )}
       <OcppDeviceModal token={token} device={historyDevice} onClose={() => setHistoryDevice(null)} />
     </div>
+    </RefreshContext.Provider>
     </OpenHistoryContext.Provider>
   );
 }
