@@ -7,7 +7,7 @@ import {
 import ScrollableTable from "./ScrollableTable.jsx";
 
 const EMPTY_FORM = {
-  company: "", location: "", device_code: "", serial_no: "", mac: "",
+  company: "", location: "", latitude: "", longitude: "", device_code: "", serial_no: "", mac: "",
   connection: "", sw_version: "", msp_fw: "", msp_sw: "", hw_version: "", logo: "", note: "",
   extra_fields: {},
 };
@@ -15,6 +15,8 @@ const EMPTY_FORM = {
 const BULK_FIELD_LABELS = {
   company: "Şirket",
   location: "Konum",
+  latitude: "Enlem",
+  longitude: "Boylam",
   connection: "Bağlantı",
   logo: "Logo",
   sw_version: "Yazılım Versiyonu",
@@ -24,22 +26,28 @@ const BULK_FIELD_LABELS = {
   note: "Açıklama",
 };
 
-function Field({ label, value, onChange, placeholder, required = false, mono = false, list }) {
+// Şirket alanı boş ya da bireysel ise cihaz "Atanabilir" sayılır (bkz. backend server.js)
+function isIndividualCompany(company) {
+  const key = String(company || "").trim().toLocaleLowerCase("tr-TR").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return !key || ["bireysel", "individual", "kisisel", "private", "ozel"].includes(key);
+}
+
+function Field({ label, value, onChange, placeholder, required = false, mono = false, list, readOnly = false }) {
   return (
     <div>
       <label className="block text-[11px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">
         {label}{required && <span className="text-rose-400 ml-1">*</span>}
       </label>
-      <input type="text" value={value} onChange={onChange} placeholder={placeholder} list={list}
+      <input type="text" value={value} onChange={onChange} placeholder={placeholder} list={list} readOnly={readOnly}
         className={`w-full bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)]
                    px-2.5 py-1.5 rounded-md text-[13px] outline-none
                    focus:border-[var(--accent)] transition placeholder:text-[var(--text-muted)]
-                   ${mono ? "font-mono" : ""}`} />
+                   ${mono ? "font-mono" : ""} ${readOnly ? "opacity-70 cursor-not-allowed" : ""}`} />
     </div>
   );
 }
 
-export default function DeviceManagement({ token }) {
+export default function DeviceManagement({ token, currentUser }) {
   const [devices, setDevices] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -54,6 +62,8 @@ export default function DeviceManagement({ token }) {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [editingId, setEditingId] = useState(null); // null = yeni ekleme, dolu = düzenleme
+  // Gerçek bir şirketin admini sahipliği yalnızca "Bireysel" ya da kendi şirketi olarak seçebilir
+  const companyAdmin = currentUser?.role === "admin" && !isIndividualCompany(currentUser?.company);
 
   // ── Toplu düzenleme ──
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -184,7 +194,6 @@ export default function DeviceManagement({ token }) {
   const handleSave = async () => {
     setFormError("");
     if (!form.mac) { setFormError("MAC adresi zorunlu"); return; }
-    if (!form.company) { setFormError("Şirket zorunlu"); return; }
     setSaving(true);
     try {
       const isEdit = editingId !== null;
@@ -211,7 +220,8 @@ export default function DeviceManagement({ token }) {
     setEditingId(d.id);
     setTemplateSourceId(null);
     setForm({
-      company: d.company || "", location: d.location || "", device_code: d.device_code || "",
+      company: d.company || "", location: d.location || "", latitude: d.latitude ?? "", longitude: d.longitude ?? "",
+      device_code: d.device_code || "",
       serial_no: d.serial_no || "", mac: d.mac || "", connection: d.connection || "",
       sw_version: d.sw_version || "", msp_fw: d.msp_fw || "", msp_sw: d.msp_sw || "", hw_version: d.hw_version || "",
       logo: d.logo || "", note: d.note || "",
@@ -229,7 +239,8 @@ export default function DeviceManagement({ token }) {
   const startFromTemplate = (d) => {
     if (!showForm || editingId !== null) return; // form kapalıysa veya düzenleme modundaysa hiçbir şey yapma
     setForm({
-      company: d.company || "", location: d.location || "", device_code: d.device_code || "",
+      company: d.company || "", location: d.location || "", latitude: d.latitude ?? "", longitude: d.longitude ?? "",
+      device_code: d.device_code || "",
       serial_no: d.serial_no || "", mac: d.mac || "", connection: d.connection || "",
       sw_version: d.sw_version || "", msp_fw: d.msp_fw || "", msp_sw: d.msp_sw || "", hw_version: d.hw_version || "",
       logo: d.logo || "", note: d.note || "",
@@ -425,11 +436,28 @@ export default function DeviceManagement({ token }) {
           </datalist>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            <Field label="Şirket" value={form.company} onChange={setField("company")} placeholder="Şirket adı" required list="companies-list" />
+            {companyAdmin ? (
+              <div>
+                <label className="block text-[11px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Firma / Sahiplik</label>
+                <select value={form.company || ""} onChange={setField("company")}
+                  className="w-full bg-[var(--bg-sunken)] border border-[var(--border-subtle)] text-[var(--text-primary)] px-2.5 py-1.5 rounded-md text-[13px] outline-none focus:border-[var(--accent)] transition cursor-pointer">
+                  {editingId !== null && !form.company && <option value="">Atanabilir — firma/kişi daha sonra seçilecek</option>}
+                  <option value="Bireysel">Bireysel — benim cihazım</option>
+                  <option value={currentUser.company}>{currentUser.company}</option>
+                </select>
+                <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                  Cihazı kendiniz için alıyorsanız Bireysel, şirket için alıyorsanız şirketinizi seçin.
+                </p>
+              </div>
+            ) : (
+              <Field label="Firma / Sahiplik" value={form.company} onChange={setField("company")} placeholder="Bireysel veya boş = Atanabilir" list="companies-list" />
+            )}
             <Field label="Konum" value={form.location} onChange={setField("location")} placeholder="İstanbul Merkez" />
-            <Field label="ID" value={form.device_code} onChange={setField("device_code")} placeholder="AKBAT1AC" mono />
+            <Field label="Enlem" value={form.latitude} onChange={setField("latitude")} placeholder="41.0422" mono />
+            <Field label="Boylam" value={form.longitude} onChange={setField("longitude")} placeholder="29.0010" mono />
+            <Field label="OCPP ID" value={form.device_code} onChange={setField("device_code")} placeholder="AKBAT1AC" mono />
             <Field label="Seri No" value={form.serial_no} onChange={setField("serial_no")} placeholder="BT110S222509171140" mono />
-            <Field label="MAC Adresi" value={form.mac} onChange={setField("mac")} placeholder="30:ED:A0:31:B2:E0" required mono />
+            <Field label="MAC Adresi" value={form.mac} onChange={setField("mac")} placeholder="30:ED:A0:31:B2:E0" required mono readOnly={editingId !== null} />
             <div>
               <label className="block text-[11px] font-semibold tracking-wide uppercase text-[var(--text-muted)] mb-1">Bağlantı</label>
               <select value={form.connection} onChange={setField("connection")}
@@ -651,12 +679,14 @@ export default function DeviceManagement({ token }) {
             </div>
             <div className="flex flex-col gap-1">
               {[
-                ["ID", selectedDetail.id],
-                ["Cihaz Kodu", selectedDetail.device_code],
+                ["Kayıt ID", selectedDetail.id],
+                ["OCPP ID", selectedDetail.device_code],
                 ["Seri No", selectedDetail.serial_no],
                 ["MAC Adresi", selectedDetail.mac],
-                ["Şirket", selectedDetail.company],
+                ["Şirket", selectedDetail.company || "Atanabilir"],
                 ["Konum", selectedDetail.location],
+                ["Enlem", selectedDetail.latitude],
+                ["Boylam", selectedDetail.longitude],
                 ["Bağlantı", selectedDetail.connection],
                 ["Logo", selectedDetail.logo],
                 ["Yazılım Versiyonu", selectedDetail.sw_version],

@@ -765,7 +765,7 @@ export default function BulkParamUpdate({ token }) {
                       {(isBad || isWarn) && <HiOutlineExclamationCircle className={`text-[14px] ${isBad ? "text-rose-500" : "text-amber-500"}`} />}
                       {!isDone && <HiOutlineArrowPath className="text-amber-500 text-[14px] animate-spin" />}
                       <span className={`text-[12px] font-bold ${PHASE_COLORS[d.phase] || "text-[var(--text-muted)]"}`}>
-                        {PHASE_LABELS[d.phase] || d.phase}
+                        {(readJob && { success: "Okundu", unverified: "Okunamadı", failed: "Okunamadı" }[d.phase]) || PHASE_LABELS[d.phase] || d.phase}
                       </span>
                     </div>
                   </div>
