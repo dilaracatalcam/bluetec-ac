@@ -66,6 +66,15 @@ export default function Login({ page, onLogin }) {
     setMode("register");
   };
 
+  // Kayıt olup kodu sonra girecek kullanıcı: girişteki kullanıcı adıyla doğrulama ekranı
+  const goToVerify = () => {
+    setError("");
+    setRegisterCode("");
+    setRegisterUsername(username.trim());
+    setVerificationMessage("");
+    setMode("verify");
+  };
+
   const handleForgotSubmit = async (e) => {
     e.preventDefault();
     if (!forgotUsername) return;
@@ -491,13 +500,22 @@ export default function Login({ page, onLogin }) {
                 </button>
 
                 {!isAdmin && (
-                  <button
-                    type="button"
-                    onClick={goToRegister}
-                    className="text-[12px] font-semibold text-[var(--accent)] hover:underline transition cursor-pointer text-center mt-1"
-                  >
-                    Hesabın yok mu? Kayıt Ol
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={goToRegister}
+                      className="text-[12px] font-semibold text-[var(--accent)] hover:underline transition cursor-pointer text-center mt-1"
+                    >
+                      Hesabın yok mu? Kayıt Ol
+                    </button>
+                    <button
+                      type="button"
+                      onClick={goToVerify}
+                      className="text-[12px] font-semibold text-[var(--text-muted)] hover:text-[var(--accent)] transition cursor-pointer text-center"
+                    >
+                      E-posta doğrulama kodum var
+                    </button>
+                  </>
                 )}
               </div>
             ) : mode === "forgot" ? (
