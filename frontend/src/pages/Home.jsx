@@ -170,6 +170,7 @@ const ESP_CTRL = [
       { value: "1", label: "Soket Takılı" },
       { value: "2", label: "Şarja Geç" },
     ]},
+  { id: 70, icon: <HiOutlineCommandLine />,    label: "Active Transaction", isInfo: true, isReadable: true },
   { id: 38, icon: <HiOutlineGlobeAlt />,      label: "OCPP Aktif",  isToggle: true, color: "blue",
     toggleLabels: { off: "Deaktif", on: "Aktif" }},
   { id: 45, icon: <TbPlugConnected />,         label: "OCPP Bağlantı", isInfo: true, isReadable: true },
@@ -1420,8 +1421,8 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   const renderEspCtrl = () => {
     const isRfidCharge = String(readValues[19] ?? "") === "1";
     const visibleEspCtrl = ESP_CTRL.filter((p) => {
-      if ((p.id === 19 || p.id === 69) && !isAdmin) return false; // ESP Modu / OCPP Sanal Mod sadece Panel'de (Dashboard'da gizli)
-      if (restrictedIndividualView && (p.id === 19 || p.id === 69 || p.id === 38 || p.id === 45)) return false; // OCPP alanları bireysel cihazda yok
+      if ((p.id === 19 || p.id === 69 || p.id === 70) && !isAdmin) return false; // ESP Modu / OCPP Sanal Mod / Active Transaction sadece Panel'de (Dashboard'da gizli)
+      if (restrictedIndividualView && (p.id === 19 || p.id === 69 || p.id === 70 || p.id === 38 || p.id === 45)) return false; // OCPP alanları bireysel cihazda yok
       if ((p.id === 66 || p.id === 67) && !isRfidCharge) return false; // sadece RFID Charge iken
       return true;
     });
