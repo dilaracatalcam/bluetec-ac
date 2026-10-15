@@ -29,7 +29,7 @@ const GROUPS = [
 
 const ARCHIVE_SCOPES = [
   { value: 0, label: "Disable", hint: "Arşiv aktarımını kapat" },
-  { value: 1, label: "Günlük log", hint: "Son segment — cihazın en yeni (günlük) kayıtları" },
+  { value: 1, label: "Günlük log", hint: "Cihazın en yeni (günlük) kayıtları" },
   { value: 2, label: "LittleFS", hint: "Cihazın dahili arşivi" },
   { value: 3, label: "SD / FRAM", hint: "Harici arşiv" },
   { value: 4, label: "Tüm arşiv", hint: "LittleFS + SD / FRAM" },
@@ -680,13 +680,20 @@ function ArchivePanel({
               const selected = state.scope === s.value && state.phase !== "ready" && s.value !== 0;
               return (
                 <button key={s.value} onClick={() => onScope(s.value)} disabled={!isActive || sending !== null} title={s.hint}
-                  className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-md border transition ${selected
+                  className={`text-left text-[11px] font-semibold px-2.5 py-1.5 rounded-md border transition ${selected
                     ? "bg-emerald-600 border-emerald-600 text-white"
                     : recommended
                       ? "border-emerald-500 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/30"
                       : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"}`}>
-                  {sending === `30-${s.value}` ? "Gönderiliyor…" : `${s.value} · ${s.label}`}
-                  {recommended && !selected && <span className="ml-1.5 text-[9px] uppercase tracking-wide">Önerilen</span>}
+                  <span>
+                    {sending === `30-${s.value}` ? "Gönderiliyor…" : `${s.value} · ${s.label}`}
+                    {recommended && !selected && <span className="ml-1.5 text-[9px] uppercase tracking-wide">Önerilen</span>}
+                  </span>
+                  {s.value === 1 && (
+                    <span className={`block text-[9.5px] font-medium mt-0.5 ${selected ? "text-white/85" : "text-amber-600 dark:text-amber-400"}`}>
+                      Günlük log altı saatte bir yenilenmektedir
+                    </span>
+                  )}
                 </button>
               );
             })}
