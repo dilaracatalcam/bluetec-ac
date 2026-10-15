@@ -63,16 +63,21 @@ function cleanLines(text, format) {
   return t.replace(ANSI_RE, "").split(/\r?\n/);
 }
 
+// Logları yazan 85.105 sunucusu Türkiye saatinde (UTC+3), panel sunucusu UTC'de.
+// Satırdaki saatte dilim yoksa Türkiye saati kabul edilir; yoksa her kayıt 3 saat
+// ileri görünür (bkz. ota-log-tailer.js aynı düzeltme).
+const SOURCE_TZ_OFFSET = process.env.LOG_SOURCE_TZ_OFFSET || "+03:00";
+
 function parseTime(prefix) {
   let m = prefix.match(ISO_RE);
   if (m) {
-    const zone = m[8] ? (m[8] === "Z" ? "Z" : m[8].replace(/^([+-]\d{2})(\d{2})$/, "$1:$2")) : "";
+    const zone = m[8] ? (m[8] === "Z" ? "Z" : m[8].replace(/^([+-]\d{2})(\d{2})$/, "$1:$2")) : SOURCE_TZ_OFFSET;
     const d = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}${m[7] || ""}${zone}`);
     if (!Number.isNaN(d.getTime())) return d.getTime();
   }
   m = prefix.match(TR_RE);
   if (m) {
-    const d = new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:${m[6]}`);
+    const d = new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:${m[6]}${SOURCE_TZ_OFFSET}`);
     if (!Number.isNaN(d.getTime())) return d.getTime();
   }
   m = prefix.match(EPOCH_RE);

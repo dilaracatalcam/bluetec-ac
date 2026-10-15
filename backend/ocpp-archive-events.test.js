@@ -15,6 +15,15 @@ describe('ocpp-archive-events', () => {
         expect(ev.result.raw).toContain('currentTime');
     });
 
+    it('dilimsiz saatleri Türkiye saati (UTC+3) kabul eder', () => {
+        const [a] = parseOcppLog('2026-10-15 09:41:14 [2, "z1", "Heartbeat", {}]');
+        expect(new Date(a.time).toISOString()).toBe('2026-10-15T06:41:14.000Z');
+        const [b] = parseOcppLog('15/10/2026 09:41:14 [2, "z2", "Heartbeat", {}]');
+        expect(new Date(b.time).toISOString()).toBe('2026-10-15T06:41:14.000Z');
+        const [c] = parseOcppLog('2026-10-15T09:41:14Z [2, "z3", "Heartbeat", {}]');
+        expect(new Date(c.time).toISOString()).toBe('2026-10-15T09:41:14.000Z');
+    });
+
     it('ANSI renkli ve zaman damgasız satırlarda payload zamanını kullanır', () => {
         const text = '\x1b[32m[2, "m1", "MeterValues", {"connectorId":1,"meterValue":[{"timestamp":"2026-10-13T08:00:00Z","sampledValue":[]}]}]\x1b[0m';
         const [ev] = parseOcppLog(text);
