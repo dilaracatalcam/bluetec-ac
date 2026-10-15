@@ -31,4 +31,24 @@ function espActive(resp, mac, since = null) {
   return at == null || at >= since - SKEW_MS;
 }
 
-module.exports = { espActive, statusTime };
+// Okunan "ESP aktif" cevabını siler: activate'ten önce ve okunduktan sonra çağrılır,
+// böylece sonraki yoklama eski cevabı göremez. Uzak köprü dosyayı periyodik tam
+// senkronizasyonla yeniden yazıp silinen satırı geri getirebildiği için (bkz.
+// bulk-jobs.js clearMessageResponse notu) tek savunma bu değil — espActive'in
+// zaman kontrolü de korunur.
+function makeClearStatus({ withLock, readResponses, writeJsonRaw, RESPONSES_PATH }) {
+  return async function clearStatus(sessionId) {
+    if (!withLock || !RESPONSES_PATH) return;
+    try {
+      await withLock(RESPONSES_PATH, async () => {
+        const r = await readResponses();
+        if (r.responses[sessionId]?.status_response) {
+          r.responses[sessionId].status_response = null;
+          await writeJsonRaw(RESPONSES_PATH, r);
+        }
+      });
+    } catch {}
+  };
+}
+
+module.exports = { espActive, statusTime, makeClearStatus };

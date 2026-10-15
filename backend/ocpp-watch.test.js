@@ -9,9 +9,10 @@ function makeBridge(devices) {
     const frames = []; // [sessionId, frame]
     const state = { online: true, activations: 0 };
     const deps = {
-        TARGET_PATH: 't', SLOT_CLEAR_MSG_INTERVAL: 10,
+        TARGET_PATH: 't', RESPONSES_PATH: 'r', SLOT_CLEAR_MSG_INTERVAL: 10,
         readTarget: async () => JSON.parse(JSON.stringify(target)),
-        writeJsonRaw: async (_p, data) => {
+        writeJsonRaw: async (p, data) => {
+            if (p === 'r') { for (const [k, v] of Object.entries(data.responses)) responses[k] = v; return; }
             for (const r of data.requests) {
                 const prev = target.requests.find((x) => x.session_id === r.session_id);
                 if (r.send_message && r.send_message !== prev?.send_message) frames.push([r.session_id, r.send_message]);
@@ -51,6 +52,8 @@ describe('ocpp-watch', () => {
         expect(watch.state('X').watching).toBe(2);
         expect(bridge.frames.filter(([, f]) => f === 'frame 3 28 3')).toHaveLength(2);
         expect(statuses.map((s) => s[2])).toEqual(['P1_IDLE', 'P1_IDLE']);
+        // okunan activate cevabı silinir — sonraki yoklama eskisini göremez
+        for (const r of bridge.target.requests) expect(bridge.responses[r.session_id].status_response).toBeNull();
 
         // cihazdan OCPP satırı gelir
         const sid = bridge.target.requests[0].session_id;

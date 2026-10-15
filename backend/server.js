@@ -1813,7 +1813,7 @@ const { classify: classifyChargeState } = require('./device-status-poll');
 const { chargeStateFromOcpp } = require('./ocpp-charge-state');
 const ocppWatch = initOcppWatch({
     readTarget, writeJsonRaw, withLock, TARGET_PATH, findOrCreateSlot, deactivateThenActivateForSlot,
-    removeSlot, touchSlot, readResponses, getDevices, ocppLive, SLOT_CLEAR_MSG_INTERVAL,
+    removeSlot, touchSlot, readResponses, getDevices, ocppLive, SLOT_CLEAR_MSG_INTERVAL, RESPONSES_PATH,
     // İzlenen cihazlar Toplu Okuma şeritlerince okunamaz; durumlarını izleyici günceller
     onStatus(device, active, raw) {
         if (active && raw == null) return;
@@ -1839,7 +1839,7 @@ const ocppWatch = initOcppWatch({
 const { initArchiveAutoPull } = require('./archive-auto-pull');
 archiveAutoPull = initArchiveAutoPull({
     readTarget, writeJsonRaw, withLock, TARGET_PATH, deactivateThenActivateForSlot, removeSlot, touchSlot,
-    readResponses, getDevices, SLOT_CLEAR_MSG_INTERVAL,
+    readResponses, getDevices, SLOT_CLEAR_MSG_INTERVAL, RESPONSES_PATH,
     getArchivePull: require('./db').getArchivePull,
     recordArchivePull: require('./db').recordArchivePull,
     getDeviceLiveState: require('./db').getDeviceLiveState,

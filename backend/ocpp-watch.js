@@ -25,7 +25,7 @@
  * önce 3 28 0, sonra slot bırakılır; cihaz kullanıcı ayrılana kadar izlenmez.
  */
 
-const { espActive } = require("./esp-status");
+const { espActive, makeClearStatus } = require("./esp-status");
 
 const SESSION_PREFIX = "ocppwatch:";
 const SESSION_RE = /^ocppwatch:/;
@@ -59,8 +59,9 @@ function initOcppWatch(deps) {
   const {
     readTarget, writeJsonRaw, withLock, TARGET_PATH, findOrCreateSlot, deactivateThenActivateForSlot,
     removeSlot, touchSlot, readResponses, getDevices, ocppLive, onStatus, onOcppLine, onAlive, SLOT_CLEAR_MSG_INTERVAL = 1500,
-    timing = {},
+    timing = {}, RESPONSES_PATH,
   } = deps;
+  const clearStatus = makeClearStatus({ withLock, readResponses, writeJsonRaw, RESPONSES_PATH });
   const T = { SILENCE_MS, LEAVE_GRACE_MS, ACTIVATE_WAIT_SEC, ...timing };
 
   const watchers = new Map(); // company -> watcher
@@ -107,6 +108,7 @@ function initOcppWatch(deps) {
         entry.retryAt = Date.now() + (occ.session_id.startsWith("status:") ? 15000 : RETRY_MS);
         return;
       }
+      await clearStatus(sessionId);
       const since = Date.now();
       await deactivateThenActivateForSlot(sessionId, mac);
       touchSlot(sessionId);
@@ -117,6 +119,7 @@ function initOcppWatch(deps) {
         resp = (await readResponses()).responses[sessionId];
         if (espActive(resp, mac, since)) { active = true; break; }
       }
+      if (active) await clearStatus(sessionId); // okundu — sonraki yoklama eskisini görmesin
       if (watcher.stopped) return;
       if (!active) {
         entry.phase = "offline";
@@ -156,6 +159,7 @@ function initOcppWatch(deps) {
     const { mac, sessionId } = entry;
     entry.phase = "rechecking";
     try {
+      await clearStatus(sessionId);
       const since = Date.now(); // eski "ESP aktif" satırı sayılmasın
       await deactivateThenActivateForSlot(sessionId, mac);
       touchSlot(sessionId);
@@ -164,6 +168,7 @@ function initOcppWatch(deps) {
         await sleep(1000);
         if (espActive((await readResponses()).responses[sessionId], mac, since)) { active = true; break; }
       }
+      if (active) await clearStatus(sessionId); // okundu
       if (watcher.stopped || entry.phase !== "rechecking") return; // kullanıcı devraldı / izleme bitti
       if (!active) {
         console.log(`[OCPP-WATCH] ${mac} akış sessiz, activate cevapsız → çevrimdışı`);

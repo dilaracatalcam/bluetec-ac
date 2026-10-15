@@ -23,7 +23,7 @@
  * çağırır; çekim yarıda bırakılır ve sonra yeniden denenir.
  */
 
-const { espActive } = require("./esp-status");
+const { espActive, makeClearStatus } = require("./esp-status");
 
 const SESSION_PREFIX = "archive:";
 const SESSION_RE = /^archive:/;
@@ -88,8 +88,9 @@ function initArchiveAutoPull(deps) {
     readTarget, writeJsonRaw, withLock, TARGET_PATH, deactivateThenActivateForSlot, removeSlot, touchSlot,
     readResponses, getDevices, getArchivePull, recordArchivePull, getDeviceLiveState,
     markVersionCheck, updateDeviceVersion,
-    SLOT_CLEAR_MSG_INTERVAL = 1500, log = console, timing = {},
+    SLOT_CLEAR_MSG_INTERVAL = 1500, log = console, timing = {}, RESPONSES_PATH,
   } = deps;
+  const clearStatus = makeClearStatus({ withLock, readResponses, writeJsonRaw, RESPONSES_PATH });
   const T = {
     PROGRESS_POLL_MS, IDLE_TIMEOUT_MS, TOTAL_TIMEOUT_MS, ACTIVATE_WAIT_SEC, POLL_MS, ...timing,
   };
@@ -146,6 +147,7 @@ function initArchiveAutoPull(deps) {
     const job = { mac, sessionId, released: false };
     current = job;
     try {
+      await clearStatus(sessionId);
       const since = Date.now();
       await deactivateThenActivateForSlot(sessionId, mac);
       touchSlot(sessionId);
@@ -154,6 +156,7 @@ function initArchiveAutoPull(deps) {
         await sleep(1000);
         if (espActive((await readResponses()).responses[sessionId], mac, since)) { active = true; break; }
       }
+      if (active) await clearStatus(sessionId); // okundu — eskisi bir daha sayılmasın
       if (job.released || stopped) { record("interrupted"); return "interrupted"; }
       if (!active) { record("offline"); return "offline"; }
 
@@ -218,6 +221,7 @@ function initArchiveAutoPull(deps) {
     const job = { mac, sessionId, released: false };
     current = job;
     try {
+      await clearStatus(sessionId);
       const since = Date.now();
       await deactivateThenActivateForSlot(sessionId, mac);
       touchSlot(sessionId);
@@ -226,6 +230,7 @@ function initArchiveAutoPull(deps) {
         await sleep(1000);
         if (espActive((await readResponses()).responses[sessionId], mac, since)) { active = true; break; }
       }
+      if (active) await clearStatus(sessionId); // okundu — eskisi bir daha sayılmasın
       if (job.released || stopped) return "interrupted";
       markVersionCheck(mac);
       if (!active) return "offline";
