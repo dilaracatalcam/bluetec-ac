@@ -6,6 +6,7 @@ import EditableRow from "../components/EditableRow.jsx";
 import InfoRow from "../components/InfoRow.jsx";
 import UserManagement from "../components/UserManagement.jsx";
 import Connections from "../components/Connections.jsx";
+import LocationEditButton from "../components/LocationEditButton";
 import DeviceSelect from "../components/DeviceSelect.jsx";
 import DeviceManagement from "../components/DeviceManagement.jsx";
 import DeviceSetup from "../components/DeviceSetup.jsx";
@@ -445,11 +446,17 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       .then((d) => setDeviceIndex(d.devices || []))
       .catch(() => {});
   }, [currentUser, isOperator, authFetch]);
-  const connectedName = useMemo(() => {
+  const connectedDevice = useMemo(() => {
     const norm = (s) => String(s || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
-    const dev = isOperator ? selectedDevice : deviceIndex.find((d) => d.mac && norm(d.mac) === norm(mac));
-    return dev?.location || dev?.device_code || "";
+    return (isOperator ? selectedDevice : deviceIndex.find((d) => d.mac && norm(d.mac) === norm(mac))) || null;
   }, [isOperator, selectedDevice, deviceIndex, mac]);
+  const connectedName = connectedDevice?.location || connectedDevice?.device_code || "";
+  // Üst çubuktaki kalemle konum kaydedilince ad hemen güncellensin
+  const onConnectedLocationSaved = useCallback((updated) => {
+    const merge = (list) => list.map((d) => (String(d.id) === String(updated.id) ? { ...d, ...updated, mac: d.mac } : d));
+    setDeviceIndex(merge);
+    setMyDevices(merge);
+  }, []);
   const shownMac = isOperator ? "" : mac;
 
   // Çoklu kullanıcı — aynı MAC'e bağlı diğer kullanıcılar + deactivate uyarısı
@@ -1975,6 +1982,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
             {isConnected && (connectedName || shownMac) && (
               <span className="hidden md:inline-flex items-center gap-2 min-w-0 text-[12px]">
                 {connectedName && <span className="font-semibold text-[var(--text-primary)] truncate">{connectedName}</span>}
+                <LocationEditButton device={connectedDevice} authFetch={authFetch} onSaved={onConnectedLocationSaved} />
                 {shownMac && <span className="text-[var(--text-muted)] font-mono tracking-tight shrink-0">{shownMac}</span>}
               </span>
             )}
@@ -2120,8 +2128,9 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
 
           {/* MAC mobilde küçük altta — sadece bağlıyken göster */}
           {isConnected && (connectedName || shownMac) && (
-            <div className="md:hidden px-4 pb-2 text-[11px] text-[var(--text-muted)] truncate">
+            <div className="md:hidden px-4 pb-2 text-[11px] text-[var(--text-muted)] flex flex-wrap items-center gap-x-1">
               {connectedName && <span className="font-semibold text-[var(--text-primary)]">{connectedName}</span>}
+              <LocationEditButton device={connectedDevice} authFetch={authFetch} onSaved={onConnectedLocationSaved} />
               {connectedName && shownMac && " · "}
               {shownMac && <span className="font-mono tracking-tight">{shownMac}</span>}
               {otherUsersOnSameMac.length > 0 && (
