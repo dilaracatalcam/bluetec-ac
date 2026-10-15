@@ -120,12 +120,6 @@ const MSP_CONFIG_ADMIN = [
       { value: "0", label: "Kablosuz" },
       { value: "1", label: "Kablolu" },
     ]},
-  { id: 69, icon: <HiOutlineCommandLine />,    label: "OCPP Sanal Mod",
-    type: "dropdown", options: [
-      { value: "0", label: "Disable" },
-      { value: "1", label: "Soket Takılı" },
-      { value: "2", label: "Şarja Geç" },
-    ]},
 ];
 
 // MSP HW/SW Versiyonları — set + read (EditableRow ile render edilecek)
@@ -169,6 +163,12 @@ const ESP_CTRL = [
       { value: "0", label: "Plug & Charge" },
       { value: "1", label: "RFID Charge" },
       { value: "2", label: "OCPP Charge" },
+    ]},
+  { id: 69, icon: <HiOutlineCommandLine />,    label: "OCPP Sanal Mod", isEditable: true,
+    type: "dropdown", options: [
+      { value: "0", label: "Disable" },
+      { value: "1", label: "Soket Takılı" },
+      { value: "2", label: "Şarja Geç" },
     ]},
   { id: 38, icon: <HiOutlineGlobeAlt />,      label: "OCPP Aktif",  isToggle: true, color: "blue",
     toggleLabels: { off: "Deaktif", on: "Aktif" }},
@@ -1420,8 +1420,8 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   const renderEspCtrl = () => {
     const isRfidCharge = String(readValues[19] ?? "") === "1";
     const visibleEspCtrl = ESP_CTRL.filter((p) => {
-      if (p.id === 19 && !isAdmin) return false; // ESP Modu sadece Panel'de (Dashboard'da gizli)
-      if (restrictedIndividualView && (p.id === 19 || p.id === 38 || p.id === 45)) return false; // OCPP alanları bireysel cihazda yok
+      if ((p.id === 19 || p.id === 69) && !isAdmin) return false; // ESP Modu / OCPP Sanal Mod sadece Panel'de (Dashboard'da gizli)
+      if (restrictedIndividualView && (p.id === 19 || p.id === 69 || p.id === 38 || p.id === 45)) return false; // OCPP alanları bireysel cihazda yok
       if ((p.id === 66 || p.id === 67) && !isRfidCharge) return false; // sadece RFID Charge iken
       return true;
     });
