@@ -6,7 +6,7 @@ import { HiOutlineArrowRightOnRectangle, HiOutlineSun, HiOutlineMoon, HiOutlineX
 const GROUP_ICONS = {
   "Cihaz": <HiOutlineCpuChip />,
   "İzleme": <HiOutlineChartBar />,
-  "Toplu İşlemler": <HiOutlineRectangleStack />,
+  "Toplu Gönderim": <HiOutlineRectangleStack />,
   "OTA": <HiOutlineArrowUpTray />,
   "Yönetim": <HiOutlineCog6Tooth />,
 };

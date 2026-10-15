@@ -3421,7 +3421,7 @@ app.post("/api/devices/bulk-update", requireAuth(), (req, res) => {
 const BULK_JOB_ROLES = ["superadmin", "admin", "operator"];
 
 app.post("/api/bulk-jobs", requireAuth(), (req, res) => {
-  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu işlemler kapalı" });
+  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu gönderim kapalı" });
   if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const { company, deviceIds, workerCount, autoRetryMinutes, autoRetryMax } = req.body || {};
@@ -3472,7 +3472,7 @@ app.post("/api/bulk-jobs", requireAuth(), (req, res) => {
 });
 
 app.get("/api/bulk-jobs/:id", requireAuth(), (req, res) => {
-  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu işlemler kapalı" });
+  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu gönderim kapalı" });
   if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const job = bulkJobs.getJob(req.params.id);
@@ -3492,7 +3492,7 @@ app.get("/api/bulk-jobs/:id", requireAuth(), (req, res) => {
 });
 
 app.get("/api/bulk-jobs", requireAuth(), (req, res) => {
-  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu işlemler kapalı" });
+  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu gönderim kapalı" });
   if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const scope = scopeFor(req);
@@ -3506,7 +3506,7 @@ app.get("/api/bulk-jobs", requireAuth(), (req, res) => {
 });
 
 app.post("/api/bulk-jobs/:id/stop", requireAuth(), (req, res) => {
-  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu işlemler kapalı" });
+  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu gönderim kapalı" });
   if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const job = bulkJobs.getJob(req.params.id);
@@ -3522,7 +3522,7 @@ app.post("/api/bulk-jobs/:id/stop", requireAuth(), (req, res) => {
 
 // "Kapat" — işi listeden gizle (veri silinmiyor, sadece otomatik yakalamadan çıkarılıyor)
 app.post("/api/bulk-jobs/:id/dismiss", requireAuth(), (req, res) => {
-  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu işlemler kapalı" });
+  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu gönderim kapalı" });
   if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const job = bulkJobs.getJob(req.params.id);
@@ -3537,7 +3537,7 @@ app.post("/api/bulk-jobs/:id/dismiss", requireAuth(), (req, res) => {
 });
 
 app.post("/api/bulk-jobs/:id/retry", requireAuth(), (req, res) => {
-  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu işlemler kapalı" });
+  if (isRestrictedOperator(req)) return res.status(403).json({ error: "Bireysel/kısıtlı hesaplarda toplu gönderim kapalı" });
   if (!BULK_JOB_ROLES.includes(req.userRole)) return res.status(403).json({ error: "Yetkisiz" });
   try {
     const oldJob = bulkJobs.getJob(req.params.id);
