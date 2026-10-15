@@ -36,7 +36,10 @@ const READ_TICK_MS = 300;         // responses.json okuma aralığı
 const IDLE_MS = 20 * 1000;        // bu süre istek gelmezse izleyici kapanır
 const RETRY_MS = 3 * 60 * 1000;   // çevrimdışı / meşgul cihazı yeniden deneme
 const TOUCH_MS = 60 * 1000;       // slotun inaktiviteden düşmemesi için
-const SILENCE_MS = 3 * 60 * 1000; // bu süre mesaj gelmezse activate ile yoklanır (Heartbeat ~60 sn)
+// 1 dk + 15 sn pay: cihazlar tam 60 sn aralıkla Heartbeat gönderiyor; pay olmasa boşta
+// bekleyen her cihaz Heartbeat birkaç ms geciktiğinde her dakika yoklanırdı.
+// Süre dolarsa activate ile yoklanır; ESP aktif gelmezse bağlantı kapatılır.
+const SILENCE_MS = 75 * 1000;
 const LEAVE_GRACE_MS = 30 * 1000; // sayfadan çıkınca kapatmadan önce bekleme
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
