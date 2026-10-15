@@ -28,6 +28,7 @@ const GROUPS = [
 ];
 
 const ARCHIVE_SCOPES = [
+  { value: 0, label: "Disable", hint: "Arşiv aktarımını kapat" },
   { value: 1, label: "Son segment", hint: "En yeni kayıt" },
   { value: 2, label: "LittleFS", hint: "Cihazın dahili arşivi" },
   { value: 3, label: "SD / FRAM", hint: "Harici arşiv" },
@@ -126,6 +127,24 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
     const data = String(line?.data || "");
     const parts = data.split(",");
     if (!data) return;
+    // Cihazın ilerleme satırı: "sid=30668 % 42.5 | indiriliyor | segment=1 kayıt=288 ..."
+    // Hata yalnızca durum kısmından anlaşılır — ayrıntıda "CRC-hata=0" gibi alanlar da geçer.
+    const pct = data.match(/%\s*(\d+(?:[.,]\d+)?)/);
+    if (pct) {
+      const percent = Math.min(100, Math.round(parseFloat(pct[1].replace(",", ".")) * 10) / 10);
+      const segments = data.split("|").map((x) => x.trim());
+      const status = segments[1] || "";
+      const done = percent >= 100 || /tamamland/i.test(status);
+      const failed = !done && /hata|başarısız|error|fail|iptal/i.test(status);
+      setArchive((s) => ({
+        ...s,
+        phase: failed ? "error" : done ? "complete" : "transferring",
+        percent,
+        note: status ? status.charAt(0).toLocaleUpperCase("tr-TR") + status.slice(1) : (done ? "Arşiv aktarımı tamamlandı" : "Arşiv aktarılıyor"),
+        detail: segments.slice(2).join(" · "),
+      }));
+      return;
+    }
     if (data.startsWith("QUEUED,")) {
       const total = Number(data.match(/bytes=(\d+)/)?.[1] || 0);
       const scope = Number(data.match(/scope=(\d+)/)?.[1] || 0) || null;
@@ -253,13 +272,13 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
     if (archive.phase === "complete") loadArchive();
   }, [archive.phase, loadArchive]);
 
-  const previewFile = async (name) => {
+  const previewFile = async (name, title) => {
     setArchiveError("");
     try {
       const r = await authFetch(`/api/device-log-archive/preview?name=${encodeURIComponent(name)}`);
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || "Önizleme alınamadı");
-      setPreview(d);
+      setPreview({ ...d, title });
     } catch (e) {
       setArchiveError(e.message || "Önizleme alınamadı");
     }
@@ -288,7 +307,9 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
   const requestArchive = async (scope) => {
     setArchiveError("");
     setSending(`30-${scope}`);
-    setArchive({ phase: "requesting", percent: 0, total: 0, offset: 0, scope, note: "Cihaza arşiv isteği gönderiliyor…" });
+    setArchive(scope === 0
+      ? { ...ARCHIVE_IDLE, phase: "requesting", scope, note: "Arşiv aktarımı kapatılıyor…" }
+      : { phase: "requesting", percent: 0, total: 0, offset: 0, scope, note: "Cihaza arşiv isteği gönderiliyor…" });
     try {
       const r = await authFetch("/api/log/command", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -297,7 +318,9 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.message || d.error || "Arşiv isteği gönderilemedi");
       setModes((prev) => ({ ...prev, 30: scope }));
-      setArchive((s) => ({ ...s, phase: "queued", note: `Scope ${scope} isteği cihaza iletildi; cevap bekleniyor…` }));
+      setArchive((s) => (scope === 0
+        ? { ...ARCHIVE_IDLE, phase: "disabled", scope: 0, note: "Arşiv aktarımı kapatıldı" }
+        : { ...s, phase: "queued", note: `Scope ${scope} isteği cihaza iletildi; cevap bekleniyor…` }));
     } catch (e) {
       setArchive((s) => ({ ...s, phase: "error", note: e.message || "Arşiv isteği gönderilemedi" }));
       setArchiveError(e.message || "Arşiv isteği gönderilemedi");
@@ -500,12 +523,20 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
   );
 }
 
+// Kullanıcıya gösterilen ad: SteVe biçimli OCPP logları "OCPP current/history log", canlı kayıt kendi adıyla
+function fileTitle(f) {
+  if (f.family === "ocpp") return f.period === "history" ? "OCPP history log" : "OCPP current log";
+  return f.label;
+}
+
 function ArchivePanel({
   isActive, isConnected, files, fetchedAt, loading, error, state, sending,
   onRefresh, onScope, onPreview, onDownload, preview, onClosePreview,
 }) {
-  const current = files.filter((f) => f.period === "current");
-  const history = files.filter((f) => f.period === "history");
+  // Yalnızca OCPP logu (SteVe biçimi) ve canlı kayıt gösterilir; diğer dosyalar (renkli log, HTML, OCL) gizli
+  const shown = files.filter((f) => f.family === "live" || (f.family === "ocpp" && /steve/i.test(f.name)));
+  const current = shown.filter((f) => f.period === "current");
+  const history = shown.filter((f) => f.period === "history");
   const noteColor = state.phase === "complete" ? "text-emerald-500" : state.phase === "error" ? "text-rose-500" : "text-sky-500";
 
   const fileRow = (f) => (
@@ -515,9 +546,9 @@ function ArchivePanel({
           <HiOutlineDocumentText />
         </div>
         <div className="min-w-0">
-          <div className="text-[12px] font-semibold text-[var(--text-primary)] truncate">{f.label}</div>
+          <div className="text-[12px] font-semibold text-[var(--text-primary)] truncate">{fileTitle(f)}</div>
           <div className="text-[10px] text-[var(--text-muted)] font-mono truncate">
-            {f.name} · {formatBytes(f.size)} · {formatDate(f.modifiedAt)}
+            {formatBytes(f.size)} · {formatDate(f.modifiedAt)}
           </div>
         </div>
       </div>
@@ -527,7 +558,7 @@ function ArchivePanel({
           : "text-sky-500 border-sky-500/30 bg-sky-500/10"}`}>
           {f.format.toUpperCase()}
         </span>
-        <button onClick={() => onPreview(f.name)} title="Önizle"
+        <button onClick={() => onPreview(f.name, fileTitle(f))} title="Önizle"
           className="p-1.5 rounded-md border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]">
           <HiOutlineEye />
         </button>
@@ -567,16 +598,12 @@ function ArchivePanel({
               Frame 3 / 30 ile cihaz arşivini Bluetech sunucusuna aktarır; dosyalar current ve history olarak orada tutulur.
             </p>
           </div>
-          <button onClick={onRefresh} disabled={!isConnected || loading}
-            className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-40">
-            <HiOutlineArrowPath className={loading ? "animate-spin" : ""} /> {loading ? "Tazeleniyor…" : "Dosyaları tazele"}
-          </button>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
           {stat("Current", current.length)}
           {stat("History", history.length)}
-          {stat("Toplam boyut", formatBytes(files.reduce((sum, f) => sum + Number(f.size || 0), 0)))}
+          {stat("Toplam boyut", formatBytes(shown.reduce((sum, f) => sum + Number(f.size || 0), 0)))}
           {stat("Son okuma", formatDate(fetchedAt), true)}
         </div>
 
@@ -584,14 +611,14 @@ function ArchivePanel({
           <div className="flex items-center justify-between gap-2 mb-2">
             <div>
               <div className="text-[12px] font-semibold text-[var(--text-primary)]">Cihaz arşivini çek</div>
-              <div className="text-[10px] text-[var(--text-muted)]">1–4 kapsamından birini seç; cihaz gönderimi ACK ile ilerler.</div>
+              <div className="text-[10px] text-[var(--text-muted)]">1–4 kapsamından birini seç, 0 aktarımı kapatır; cihaz gönderimi ACK ile ilerler.</div>
             </div>
             <span className={`text-[11px] font-semibold ${noteColor}`}>{state.note}</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {ARCHIVE_SCOPES.map((s) => (
               <button key={s.value} onClick={() => onScope(s.value)} disabled={!isActive || sending !== null} title={s.hint}
-                className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-md border transition ${state.scope === s.value && state.phase !== "ready"
+                className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-md border transition ${state.scope === s.value && state.phase !== "ready" && s.value !== 0
                   ? "bg-emerald-600 border-emerald-600 text-white"
                   : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"}`}>
                 {sending === `30-${s.value}` ? "Gönderiliyor…" : `${s.value} · ${s.label}`}
@@ -608,6 +635,7 @@ function ArchivePanel({
                 <div className={`h-full transition-all ${state.phase === "error" ? "bg-rose-500" : "bg-emerald-500"}`}
                   style={{ width: `${Math.max(0, Math.min(100, state.percent))}%` }} />
               </div>
+              {state.detail && <div className="mt-1.5 text-[10px] font-mono text-[var(--text-muted)] break-words">{state.detail}</div>}
             </div>
           )}
         </div>
@@ -617,7 +645,14 @@ function ArchivePanel({
         )}
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-4">
+      <div className="flex items-center justify-end">
+        <button onClick={onRefresh} disabled={!isConnected || loading}
+          className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-40">
+          <HiOutlineArrowPath className={loading ? "animate-spin" : ""} /> {loading ? "Tazeleniyor…" : "Dosyaları tazele"}
+        </button>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4 !mt-2">
         {[["current", "Current dosyaları", current], ["history", "History dosyaları", history]].map(([key, title, list]) => (
           <div key={key} className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
@@ -637,7 +672,7 @@ function ArchivePanel({
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--border-subtle)]">
               <div className="min-w-0">
-                <h4 className="text-[13px] font-bold text-[var(--text-primary)] truncate">{preview.name}</h4>
+                <h4 className="text-[13px] font-bold text-[var(--text-primary)] truncate">{preview.title || preview.name}</h4>
                 <span className="text-[10px] text-[var(--text-muted)]">
                   {formatBytes(preview.size)}{preview.truncated ? " · son 1 MB gösteriliyor" : ""}
                 </span>
