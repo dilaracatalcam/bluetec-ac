@@ -36,7 +36,7 @@ const READ_TICK_MS = 300;         // responses.json okuma aralığı
 const IDLE_MS = 20 * 1000;        // bu süre istek gelmezse izleyici kapanır
 const RETRY_MS = 3 * 60 * 1000;   // çevrimdışı / meşgul cihazı yeniden deneme
 const TOUCH_MS = 60 * 1000;       // slotun inaktiviteden düşmemesi için
-const SILENCE_MS = 7 * 60 * 1000; // bu süre mesaj gelmezse activate ile yoklanır
+const SILENCE_MS = 3 * 60 * 1000; // bu süre mesaj gelmezse activate ile yoklanır (Heartbeat ~60 sn)
 const LEAVE_GRACE_MS = 30 * 1000; // sayfadan çıkınca kapatmadan önce bekleme
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -53,7 +53,7 @@ const signatureOf = (m) => (m ? `${m.cmd}|${m.msg}|${m.time}|${m.data}` : "");
 function initOcppWatch(deps) {
   const {
     readTarget, writeJsonRaw, withLock, TARGET_PATH, findOrCreateSlot, deactivateThenActivateForSlot,
-    removeSlot, touchSlot, readResponses, getDevices, ocppLive, onStatus, SLOT_CLEAR_MSG_INTERVAL = 1500,
+    removeSlot, touchSlot, readResponses, getDevices, ocppLive, onStatus, onOcppLine, SLOT_CLEAR_MSG_INTERVAL = 1500,
     timing = {},
   } = deps;
   const T = { SILENCE_MS, LEAVE_GRACE_MS, ACTIVATE_WAIT_SEC, ...timing };
@@ -229,7 +229,11 @@ function initOcppWatch(deps) {
         e.lastAliveAt = now; // mesaj akıyor — yoklamaya gerek yok
         e.silentChecks = 0;
         if (m && Number(m.cmd) === 3 && Number(m.msg) === 28) {
-          for (const line of String(m.data ?? "").split(/\r?\n/)) if (line.trim()) ocppLive.add(e.mac, line);
+          for (const line of String(m.data ?? "").split(/\r?\n/)) {
+            if (!line.trim()) continue;
+            ocppLive.add(e.mac, line);
+            onOcppLine?.(e.device, line); // şarj durumu mesajdan çıkarılır (bkz. ocpp-charge-state.js)
+          }
         } else if (m && Number(m.cmd) === 2 && Number(m.msg) === 25 && m.data != null) {
           onStatus?.(e.device, true, String(m.data));
         }

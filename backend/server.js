@@ -1810,6 +1810,7 @@ const OCPP_LIVE_LEVEL = 3;        // frame 3 28 3 = Canlı OCPP Akışı
 // Toplu Okuma açıkken şirketin cihazlarına kalıcı bağlanıp bir kez 3 28 3 gönderen izleyici (bkz. ocpp-watch.js)
 const { initOcppWatch } = require('./ocpp-watch');
 const { classify: classifyChargeState } = require('./device-status-poll');
+const { chargeStateFromOcpp } = require('./ocpp-charge-state');
 const ocppWatch = initOcppWatch({
     readTarget, writeJsonRaw, withLock, TARGET_PATH, findOrCreateSlot, deactivateThenActivateForSlot,
     removeSlot, touchSlot, readResponses, getDevices, ocppLive, SLOT_CLEAR_MSG_INTERVAL,
@@ -1820,6 +1821,15 @@ const ocppWatch = initOcppWatch({
         require('./db').upsertDeviceLiveStatus({
             mac: device.mac, company: device.company, location: device.location, deviceCode: device.device_code,
             state, label, raw, swVersion: device.sw_version, maxPower: null,
+        });
+    },
+    // Akan OCPP mesajı (StatusNotification, MeterValues, Start/StopTransaction) durumu günceller
+    onOcppLine(device, line) {
+        const st = chargeStateFromOcpp(line);
+        if (!st) return;
+        require('./db').upsertDeviceLiveStatus({
+            mac: device.mac, company: device.company, location: device.location, deviceCode: device.device_code,
+            state: st.state, label: st.label, raw: st.raw, swVersion: device.sw_version, maxPower: null,
         });
     },
 });
