@@ -557,6 +557,23 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   }, [authFetch]);
 
 
+  // Panelde gerçek kullanım (fare/klavye/kaydırma/dokunma) bağlantının 5 dk
+  // hareketsizlik sayacını sıfırlar — en fazla dakikada bir bildirilir. Sekmenin
+  // yalnızca açık durması sayılmaz (bkz. backend /api/activity).
+  useEffect(() => {
+    if (!isConnected) return undefined;
+    let last = 0;
+    const onUse = () => {
+      const now = Date.now();
+      if (now - last < 60 * 1000 || document.visibilityState !== "visible") return;
+      last = now;
+      authFetch("/api/activity", { method: "POST" }).catch(() => {});
+    };
+    const events = ["pointerdown", "keydown", "wheel", "touchstart", "mousemove"];
+    events.forEach((e) => window.addEventListener(e, onUse, { passive: true }));
+    return () => events.forEach((e) => window.removeEventListener(e, onUse));
+  }, [isConnected, authFetch]);
+
   useEffect(() => {
     if (!isConnected) return;
     const f = () => authFetch("/api/keepalive", { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => {});
@@ -2198,15 +2215,22 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                 Bağlantı Kapatıldı
               </h3>
             </div>
-            <p className="text-[14px] text-[var(--text-secondary)] mb-2 leading-relaxed">
-              Bu şarj cihazına bağlantınız
-              {" "}
-              <span className="font-bold text-[var(--text-primary)]">{deactivatedByModal}</span>
-              {" "}
-              tarafından deaktif edildi.
-            </p>
+            {/^İnaktivite/i.test(String(deactivatedByModal)) ? (
+              <p className="text-[14px] text-[var(--text-secondary)] mb-2 leading-relaxed">
+                Panelde <span className="font-bold text-[var(--text-primary)]">5 dakika boyunca işlem yapılmadığı</span> için
+                {" "}bu şarj cihazına bağlantınız kapatıldı; cihaz başka kullanıcılar için serbest bırakıldı.
+              </p>
+            ) : (
+              <p className="text-[14px] text-[var(--text-secondary)] mb-2 leading-relaxed">
+                Bu şarj cihazına bağlantınızı
+                {" "}
+                <span className="font-bold text-[var(--text-primary)]">{deactivatedByModal}</span>
+                {" "}
+                devraldı.
+              </p>
+            )}
             <p className="text-[12px] text-[var(--text-muted)] mb-5 leading-relaxed">
-              Tekrar bağlanmak isterseniz üstteki "BAĞLAN" butonuna tıklayabilirsiniz.
+              Tekrar bağlanmak için üstteki bağlantı anahtarını açabilirsiniz.
             </p>
             <div className="flex justify-end">
               <button

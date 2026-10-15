@@ -2013,6 +2013,21 @@ app.post('/api/update-target', requireAuth(), async (req, res) => {
     }
 });
 
+// Kullanıcı panelde gerçekten bir şey yapıyor (fare, klavye, kaydırma, dokunma) —
+// ön yüz en fazla dakikada bir bildirir. Sekmenin yalnızca açık durması değil, gerçek
+// kullanım aktivite sayılır; böylece logları/arşivi incelerken bağlantı kopmaz,
+// açık unutulan sekme ise cihazı 5 dk sonra yine bırakır.
+app.post('/api/activity', requireAuth(), async (req, res) => {
+    try {
+        const target = await readTarget();
+        const slot = target.requests.find((r) => r.session_id === req.sessionId && r.control === 'activate');
+        if (slot) touchSlot(req.sessionId);
+        res.json({ touched: !!slot });
+    } catch (e) {
+        res.status(500).json({ error: 'activity hata' });
+    }
+});
+
 // Keepalive — sadece token/oturumun canlı olduğunu doğrular.
 // ARTIK slot aktivitesini YENİLEMİYOR: sekmenin açık kalması "kullanım" sayılmasın —
 // 5dk hareketsizlik kuralı gerçek işlemlere (bağlan, komut gönder) göre işlesin.
