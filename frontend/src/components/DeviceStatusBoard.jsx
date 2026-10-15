@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, createContext, useContext } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useId, createContext, useContext } from "react";
 import {
   HiOutlineViewColumns, HiOutlineMapPin, HiOutlineArrowPath,
   HiOutlineBolt, HiOutlineBoltSlash, HiOutlinePauseCircle, HiOutlineFlag, HiOutlineExclamationTriangle,
@@ -191,6 +191,38 @@ function StateCounts({ devices }) {
   );
 }
 
+// Şarj cihazı çizimi (fotoğraf değil, SVG): soketin çevresindeki halka ve köşedeki
+// nokta cihazın durum rengini taşır. Beyaz durumlar (erişim yok / kontrol) açık
+// zeminde görünmediği için gri çizilir.
+function ChargerGlyph({ hex, dim = false }) {
+  const ring = hex.toLowerCase() === "#ffffff" ? "#9aa3ad" : hex;
+  const uid = useId().replace(/:/g, "");
+  return (
+    <svg viewBox="0 0 40 56" className={`w-[36px] h-[50px] drop-shadow-sm ${dim ? "opacity-60" : ""}`} aria-hidden="true">
+      <defs>
+        <linearGradient id={`side${uid}`} x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0" stopColor="#8d949c" /><stop offset=".45" stopColor="#e4e7ea" /><stop offset="1" stopColor="#9aa1a8" />
+        </linearGradient>
+        <radialGradient id={`glow${uid}`} cx=".5" cy=".5" r=".5">
+          <stop offset=".55" stopColor={ring} stopOpacity=".55" /><stop offset="1" stopColor={ring} stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect x="3" y="2" width="34" height="51" rx="6" fill="#2a2e34" stroke="#4a515a" strokeWidth=".8" />
+      <rect x="3.6" y="5" width="5.4" height="45" rx="2.4" fill={`url(#side${uid})`} />
+      <rect x="31" y="5" width="5.4" height="45" rx="2.4" fill={`url(#side${uid})`} />
+      <rect x="9" y="3.5" width="22" height="48" rx="3.5" fill="#1d2126" />
+      <rect x="13" y="8.5" width="14" height="10" rx="1.6" fill="#59616b" />
+      <circle cx="20" cy="35" r="11" fill={`url(#glow${uid})`} />
+      <circle cx="20" cy="35" r="7.6" fill="#15181c" stroke={ring} strokeWidth="2.2" />
+      <circle cx="20" cy="35" r="4.6" fill="#24282e" stroke="#3a4048" strokeWidth=".6" />
+      {[[18.2, 33.2], [21.8, 33.2], [17.2, 35.6], [20, 35.6], [22.8, 35.6], [18.6, 37.8], [21.4, 37.8]].map(([cx, cy]) => (
+        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r=".75" fill="#7a828c" />
+      ))}
+      <rect x="9" y="51.5" width="22" height="2" rx="1" fill="#000" opacity=".25" />
+    </svg>
+  );
+}
+
 // Referans görseldeki gibi: her cihaz kendi renkli kutucuğu. Dokunmatikte de
 // çalışsın diye hover değil, TIKLAMA ile açılan estetik bir bilgi kutucuğu —
 // konum, MAC, aktiflik ve şarj durumunu gösteriyor.
@@ -246,13 +278,14 @@ function DeviceTile({ d, tileKey, isOpen, onToggle, onConnectDevice, connecting,
         ref={btnRef}
         type="button"
         onClick={(e) => { e.stopPropagation(); onToggle(); }}
-        title={`${(d.device_code || "Cihaz").trim()} — ${meta.label}`}
-        className={`w-[26px] h-[46px] rounded-[3px] overflow-hidden border border-black/20 flex flex-col shrink-0
+        title={`${(d.device_code || "Cihaz").trim()} · ${socketType(d)} — ${meta.label}`}
+        className={`relative w-[62px] h-[70px] rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)]
+                    flex items-center justify-center shrink-0
                     transition hover:-translate-y-0.5 hover:shadow-md active:scale-95
                     ${isOpen ? "ring-2 ring-offset-1 ring-[var(--accent)] ring-offset-[var(--bg-page,transparent)]" : ""}`}
       >
-        <span className="h-[13px] bg-[#2e7d32] text-white text-[7.5px] font-bold leading-[13px] text-center tracking-tight">{socketType(d)}</span>
-        <span className="flex-1" style={{ background: meta.hex }} />
+        <ChargerGlyph hex={meta.hex} dim={d.state === "offline" || d.state === "checking"} />
+        <span className="absolute right-1 top-1 w-[9px] h-[9px] rounded-full border border-black/15" style={{ background: meta.hex }} />
         {(d.polling || refreshing) && (
           <span className="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-[var(--bg-elevated,#fff)] border border-[var(--accent-border)] text-[var(--accent)] flex items-center justify-center shadow-sm">
             <HiOutlineArrowPath className="text-[10px] animate-spin" />
