@@ -29,7 +29,7 @@ const GROUPS = [
 
 const ARCHIVE_SCOPES = [
   { value: 0, label: "Disable", hint: "Arşiv aktarımını kapat" },
-  { value: 1, label: "Son segment", hint: "En yeni kayıt" },
+  { value: 1, label: "Günlük log", hint: "Son segment — cihazın en yeni (günlük) kayıtları" },
   { value: 2, label: "LittleFS", hint: "Cihazın dahili arşivi" },
   { value: 3, label: "SD / FRAM", hint: "Harici arşiv" },
   { value: 4, label: "Tüm arşiv", hint: "LittleFS + SD / FRAM" },
@@ -113,6 +113,7 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
   const [archiveError, setArchiveError] = useState("");
   const [preview, setPreview] = useState(null);
   const [archive, setArchive] = useState(ARCHIVE_IDLE);
+  const [pullStatus, setPullStatus] = useState(null);
 
   const cursorRef = useRef({ epoch: null, lastId: 0 });
   const boxRef = useRef(null);
@@ -246,8 +247,18 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
     }
   };
 
+  // Son arşiv çekimi (otomatik ya da elle) — "Cihaz arşivini çek" altında gösterilir
+  const loadPullStatus = useCallback(async () => {
+    if (!isConnected) return;
+    try {
+      const r = await authFetch("/api/device-log-archive/pull-status");
+      if (r.ok) setPullStatus(await r.json());
+    } catch {}
+  }, [authFetch, isConnected]);
+
   const loadArchive = useCallback(async () => {
     if (!isConnected) return;
+    loadPullStatus();
     setArchiveLoading(true);
     setArchiveError("");
     try {
@@ -261,7 +272,7 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
     } finally {
       setArchiveLoading(false);
     }
-  }, [authFetch, isConnected]);
+  }, [authFetch, isConnected, loadPullStatus]);
 
   useEffect(() => {
     if (tab === "archive" && isConnected) loadArchive();
@@ -269,8 +280,11 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
 
   // Aktarım bitince dosya listesi tazelenir
   useEffect(() => {
-    if (archive.phase === "complete") loadArchive();
-  }, [archive.phase, loadArchive]);
+    if (archive.phase !== "complete") return undefined;
+    loadArchive();
+    const t = setTimeout(loadPullStatus, 2000); // sunucu çekimi kaydetsin
+    return () => clearTimeout(t);
+  }, [archive.phase, loadArchive, loadPullStatus]);
 
   const previewFile = async (name, title) => {
     setArchiveError("");
@@ -508,6 +522,7 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
             loading={archiveLoading}
             error={archiveError}
             state={archive}
+            pullStatus={pullStatus}
             sending={sending}
             onRefresh={loadArchive}
             onScope={requestArchive}
@@ -523,6 +538,50 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
   );
 }
 
+const PULL_RESULT_TEXT = {
+  charging: "şarj verdiği için ertelendi", offline: "cihaz çevrimdışıydı", busy: "cihaz kullanımdaydı",
+  failed: "başarısız oldu", timeout: "zaman aşımına uğradı", interrupted: "kullanıcı bağlandığı için yarıda kaldı",
+};
+
+// Son çekim saati + öneri: arşiv eşitse yalnızca Günlük log yeterli
+function PullInfo({ status }) {
+  if (!status) return null;
+  const { lastSuccessAt, lastSource, lastAttemptAt, lastResult, autoEligible, synced, running, minVersion, intervalHours } = status;
+  const lastTryFailed = lastResult && lastResult !== "ok" && lastAttemptAt && (!lastSuccessAt || lastAttemptAt > lastSuccessAt);
+  return (
+    <div className="mt-2.5 space-y-1 text-[11px]">
+      <div className="text-[var(--text-secondary)]">
+        <span className="text-[var(--text-muted)]">Son çekim: </span>
+        {lastSuccessAt
+          ? <><span className="font-semibold">{formatDate(lastSuccessAt)}</span> <span className="text-[var(--text-muted)]">({lastSource === "auto" ? "otomatik" : "elle"})</span></>
+          : <span className="font-semibold">henüz çekilmedi</span>}
+        {running && <span className="ml-2 text-sky-500 font-semibold">· otomatik çekim sürüyor</span>}
+      </div>
+      {lastTryFailed && (
+        <div className="text-amber-600 dark:text-amber-400">
+          Son otomatik deneme ({formatDate(lastAttemptAt)}) {PULL_RESULT_TEXT[lastResult] || lastResult}; yeniden denenecek.
+        </div>
+      )}
+      <div className="text-[var(--text-muted)]">
+        {autoEligible
+          ? `Otomatik çekim açık: ${intervalHours} saatte bir, cihaz şarj vermiyorken Günlük log çekilir.`
+          : `Otomatik çekim kapalı: yazılım ${minVersion} ve üzeri olan cihazlarda çalışır.`}
+      </div>
+      {synced ? (
+        <div className="text-emerald-600 dark:text-emerald-400 font-semibold">
+          Arşiv eşit — yeni kayıtlar için 1 · Günlük log yeterli.
+        </div>
+      ) : lastSuccessAt ? (
+        <div className="text-amber-600 dark:text-amber-400">
+          Son çekimin üzerinden {intervalHours} saatten fazla geçti; arada kayıt kaçmış olabilir, gerekirse 4 · Tüm arşiv seçin.
+        </div>
+      ) : (
+        <div className="text-[var(--text-muted)]">Bu cihazdan kayıtlı çekim yok; ilk seferde 4 · Tüm arşiv önerilir.</div>
+      )}
+    </div>
+  );
+}
+
 // Kullanıcıya gösterilen ad: SteVe biçimli OCPP logları "OCPP current/history log", canlı kayıt kendi adıyla
 function fileTitle(f) {
   if (f.family === "ocpp") return f.period === "history" ? "OCPP history log" : "OCPP current log";
@@ -530,7 +589,7 @@ function fileTitle(f) {
 }
 
 function ArchivePanel({
-  isActive, isConnected, files, fetchedAt, loading, error, state, sending,
+  isActive, isConnected, files, fetchedAt, loading, error, state, pullStatus, sending,
   onRefresh, onScope, onPreview, onDownload, preview, onClosePreview,
 }) {
   // Yalnızca OCPP logu (SteVe biçimi) ve canlı kayıt gösterilir; diğer dosyalar (renkli log, HTML, OCL) gizli
@@ -616,15 +675,23 @@ function ArchivePanel({
             <span className={`text-[11px] font-semibold ${noteColor}`}>{state.note}</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {ARCHIVE_SCOPES.map((s) => (
-              <button key={s.value} onClick={() => onScope(s.value)} disabled={!isActive || sending !== null} title={s.hint}
-                className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-md border transition ${state.scope === s.value && state.phase !== "ready" && s.value !== 0
-                  ? "bg-emerald-600 border-emerald-600 text-white"
-                  : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"}`}>
-                {sending === `30-${s.value}` ? "Gönderiliyor…" : `${s.value} · ${s.label}`}
-              </button>
-            ))}
+            {ARCHIVE_SCOPES.map((s) => {
+              const recommended = s.value === 1 && pullStatus?.synced;
+              const selected = state.scope === s.value && state.phase !== "ready" && s.value !== 0;
+              return (
+                <button key={s.value} onClick={() => onScope(s.value)} disabled={!isActive || sending !== null} title={s.hint}
+                  className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-md border transition ${selected
+                    ? "bg-emerald-600 border-emerald-600 text-white"
+                    : recommended
+                      ? "border-emerald-500 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/30"
+                      : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"}`}>
+                  {sending === `30-${s.value}` ? "Gönderiliyor…" : `${s.value} · ${s.label}`}
+                  {recommended && !selected && <span className="ml-1.5 text-[9px] uppercase tracking-wide">Önerilen</span>}
+                </button>
+              );
+            })}
           </div>
+          <PullInfo status={pullStatus} />
           {state.percent !== null && state.phase !== "ready" && (
             <div className="mt-3">
               <div className="flex justify-between text-[10px] text-[var(--text-muted)] mb-1">

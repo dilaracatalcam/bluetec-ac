@@ -617,7 +617,44 @@ function listRecentJobs({ createdBy, includeOta = true, limit = 8 } = {}) {
   return db.prepare(sql).all(params);
 }
 
+function getDeviceLiveState(mac) {
+  return db.prepare("SELECT state, raw, updated_at FROM device_live_status WHERE mac = ?").get(mac) || null;
+}
+
+// ── Kayıtlı log arşivi çekimleri (frame 3 30) — cihaz başına son çekim ──
+// Otomatik çekim (bkz. archive-auto-pull.js) ve kullanıcının elle yaptığı
+// çekimler aynı satıra yazılır; ekranda "son çekim" ve eşitlik buradan gelir.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS archive_pulls (
+    mac              TEXT PRIMARY KEY,
+    last_success_at  TEXT,
+    last_source      TEXT,   -- auto | manual
+    last_detail      TEXT,   -- cihazın son ilerleme satırının ayrıntısı
+    last_attempt_at  TEXT,
+    last_result      TEXT    -- ok | charging | offline | busy | failed | timeout | interrupted
+  )
+`);
+
+function getArchivePull(mac) {
+  return db.prepare("SELECT * FROM archive_pulls WHERE mac = ?").get(mac) || null;
+}
+
+function recordArchivePull({ mac, result, source, detail = null, at = new Date().toISOString() }) {
+  const ok = result === "ok";
+  db.prepare(`
+    INSERT INTO archive_pulls (mac, last_success_at, last_source, last_detail, last_attempt_at, last_result)
+    VALUES (@mac, @successAt, @source, @detail, @at, @result)
+    ON CONFLICT(mac) DO UPDATE SET
+      last_success_at = COALESCE(@successAt, last_success_at),
+      last_source     = CASE WHEN @successAt IS NULL THEN last_source ELSE @source END,
+      last_detail     = CASE WHEN @successAt IS NULL THEN last_detail ELSE @detail END,
+      last_attempt_at = @at,
+      last_result     = @result
+  `).run({ mac, successAt: ok ? at : null, source: source || null, detail, at, result });
+}
+
 module.exports = {
+  getDeviceLiveState, getArchivePull, recordArchivePull,
   getAllDeviceLiveStatus, listRecentJobs,
   getCompanies, getLocations, getDevices, getDeviceByCode, replaceAllDevices, updateDeviceVersion, updateDeviceInventoryByMac, updateDeviceLocation,
   getCustomFields, addCustomField, deleteCustomField,

@@ -1561,6 +1561,7 @@ async function readTarget() {
 // ESP'den okunan değerler veritabanına işlenir (bkz. device-inventory-sync.js)
 const { initDeviceInventorySync } = require('./device-inventory-sync');
 const inventorySync = initDeviceInventorySync({ readTarget, getDevices, updateDeviceInventoryByMac });
+let archiveAutoPull = null; // aşağıda başlatılır (bkz. archive-auto-pull.js)
 
 // responses.json yapısı garanti et: { responses: { ... } }
 async function readResponses() {
@@ -1570,6 +1571,7 @@ async function readResponses() {
     if (!data || typeof data !== 'object') data = { responses: {} };
     if (!data.responses || typeof data.responses !== 'object') data.responses = {};
     try { inventorySync.observe(data); } catch {}
+    try { archiveAutoPull?.observe(data); } catch {}
     return data;
 }
 
@@ -1821,9 +1823,19 @@ const ocppWatch = initOcppWatch({
         });
     },
 });
+// Sürümü uygun cihazların günlük logunu 6 saatte bir (şarj yokken) çeker
+const { initArchiveAutoPull } = require('./archive-auto-pull');
+archiveAutoPull = initArchiveAutoPull({
+    readTarget, writeJsonRaw, withLock, TARGET_PATH, deactivateThenActivateForSlot, removeSlot, touchSlot,
+    readResponses, getDevices, SLOT_CLEAR_MSG_INTERVAL,
+    getArchivePull: require('./db').getArchivePull,
+    recordArchivePull: require('./db').recordArchivePull,
+    getDeviceLiveState: require('./db').getDeviceLiveState,
+});
 // systemd yeniden başlatırken izlenen cihazlarda log modu açık kalmasın
 for (const signal of ['SIGTERM', 'SIGINT']) {
     process.once(signal, () => {
+        archiveAutoPull.stop();
         Promise.race([ocppWatch.stopAll(), new Promise((r) => setTimeout(r, 5000))]).finally(() => process.exit(0));
     });
 }
@@ -1953,6 +1965,10 @@ app.post('/api/update-target', requireAuth(), async (req, res) => {
             // Toplu Okuma canlı OCPP izleyicisi — kullanıcı önceliklidir: 3 28 0 gönderilip cihaz bırakılır
             console.log(`[OCCUPANCY] ${targetMac} OCPP izleyicisinden kullanıcıya bırakıldı`);
             await ocppWatch.release(occupant.session_id);
+        } else if (occupant && archiveAutoPull.isArchiveSession(occupant.session_id)) {
+            // Otomatik günlük log çekimi — kullanıcı önceliklidir, çekim sonra yeniden denenir
+            console.log(`[OCCUPANCY] ${targetMac} otomatik arşiv çekiminden kullanıcıya bırakıldı`);
+            await archiveAutoPull.release(occupant.session_id);
         } else if (occupant && isSyntheticSessionStale(occupant.session_id)) {
             // bulk:/ota: önekli sahte bir session, sahibi iş artık çalışmıyor —
             // çökmüş/durmuş bir toplu iş şeridinden kalma yetim kayıt. Zaman
@@ -2223,6 +2239,19 @@ app.get('/api/device-log-archive/catalog', requireAuth(), async (req, res) => {
         res.json(await deviceArchiveLogs.list(mac));
     } catch (e) {
         console.error('[DEVICE-LOG-ARCHIVE] listeleme hatası:', e.message);
+        archiveError(res, e);
+    }
+});
+
+// Son arşiv çekimi (otomatik ya da elle) ve otomatik çekime uygunluk
+app.get('/api/device-log-archive/pull-status', requireAuth(), async (req, res) => {
+    if (isRestrictedOperator(req)) {
+        return res.status(403).json({ error: 'Bireysel/kısıtlı hesaplarda cihaz logları kapalı' });
+    }
+    try {
+        const mac = await archiveMacForRequest(req);
+        res.json(archiveAutoPull.status(mac));
+    } catch (e) {
         archiveError(res, e);
     }
 });
