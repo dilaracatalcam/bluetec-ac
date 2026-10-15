@@ -1999,6 +1999,8 @@ app.post('/api/update-target', requireAuth(), async (req, res) => {
         await stopDeviceLogs(sessionId).catch(() => {}); // önceki cihazda log açık kalmasın
         await deactivateThenActivateForSlot(sessionId, targetMac);
         touchSlot(sessionId);
+        // Önceki bağlantının "kapatıldı/devralındı" bilgisi yeni bağlantıda uyarı açmasın
+        if (slotMeta[sessionId]) slotMeta[sessionId].lastDeactivatedBy = null;
 
         console.log(`[CONNECT] ${sessionId} → ${targetMac}`);
         deviceLog.drop(sessionId); // önceki cihazın log satırları yeni cihazınkilere karışmasın

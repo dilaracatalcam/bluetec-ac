@@ -519,8 +519,18 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
         const r = await authFetch("/api/get-status");
         const d = await r.json();
         setEspStatus(d.espState);
-        if (d.timedOut) { setIsConnected(false); setMessage("10dk inaktivite — bağlantı kesildi."); }
-        // Başkası deaktif etti uyarısı
+        // Hareketsizlik: bağlantı 5. dakikada kapanır — uyarı penceresi açılmaz, üst
+        // çubukta yazılır ve sunucudaki bayrak hemen temizlenir (yeniden bağlanırken
+        // eski uyarı çıkmasın)
+        const inactivity = /^İnaktivite/i.test(String(d.deactivatedBy || ""));
+        if (inactivity || d.timedOut) {
+          setIsConnected(false);
+          setEspStatus("nonactive");
+          setMessage("5 dakika işlem yapılmadığı için bağlantı kapatıldı.");
+          if (inactivity) authFetch("/api/ack-deactivated", { method: "POST" }).catch(() => {});
+          return;
+        }
+        // Başkası bağlantıyı devraldı uyarısı
         if (d.deactivatedBy && !deactivatedByModal) {
           setDeactivatedByModal(d.deactivatedBy);
         }
@@ -2215,20 +2225,13 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
                 Bağlantı Kapatıldı
               </h3>
             </div>
-            {/^İnaktivite/i.test(String(deactivatedByModal)) ? (
-              <p className="text-[14px] text-[var(--text-secondary)] mb-2 leading-relaxed">
-                Panelde <span className="font-bold text-[var(--text-primary)]">5 dakika boyunca işlem yapılmadığı</span> için
-                {" "}bu şarj cihazına bağlantınız kapatıldı; cihaz başka kullanıcılar için serbest bırakıldı.
-              </p>
-            ) : (
-              <p className="text-[14px] text-[var(--text-secondary)] mb-2 leading-relaxed">
-                Bu şarj cihazına bağlantınızı
-                {" "}
-                <span className="font-bold text-[var(--text-primary)]">{deactivatedByModal}</span>
-                {" "}
-                devraldı.
-              </p>
-            )}
+            <p className="text-[14px] text-[var(--text-secondary)] mb-2 leading-relaxed">
+              Bu şarj cihazına bağlantınızı
+              {" "}
+              <span className="font-bold text-[var(--text-primary)]">{deactivatedByModal}</span>
+              {" "}
+              devraldı.
+            </p>
             <p className="text-[12px] text-[var(--text-muted)] mb-5 leading-relaxed">
               Tekrar bağlanmak için üstteki bağlantı anahtarını açabilirsiniz.
             </p>
