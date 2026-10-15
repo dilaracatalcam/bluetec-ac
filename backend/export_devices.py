@@ -22,6 +22,8 @@ COLUMNS = [
     ("ID", "device_code"),
     ("SERI NO", "serial_no"),
     ("MAC ADRESI", "mac"),
+    # Müşteriye verilen kod; MAC'ten türetilir (bkz. activation-code.js). İçe aktarmada okunmaz.
+    ("AKTIVASYON KODU", "activation_code"),
     ("KONUM", "location"),
     ("SEHIR", "city"),
     ("ILCE", "district"),

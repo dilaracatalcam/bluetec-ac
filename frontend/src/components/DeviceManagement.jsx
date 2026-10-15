@@ -716,6 +716,7 @@ export default function DeviceManagement({ token, currentUser }) {
                 ["OCPP ID", selectedDetail.device_code],
                 ["Seri No", selectedDetail.serial_no],
                 ["MAC Adresi", selectedDetail.mac],
+                ["Aktivasyon Kodu", selectedDetail.activation_code],
                 ["Şirket", selectedDetail.company || "Atanabilir"],
                 ["Konum", selectedDetail.location],
                 ["Şehir", selectedDetail.city],

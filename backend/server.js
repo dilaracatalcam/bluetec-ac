@@ -322,32 +322,8 @@ app.get('/api/me', requireAuth(), (req, res) => {
 // Bu endpoint yeni bir tablo kullanmaz; mevcut cihaz kaydı ve device-scope
 // kuralları üzerinden yetki verir. Böylece başka şirkete/kullanıcıya ait
 // cihazın BLE ayarlarına erişilemez.
-function decodeBleDeviceToken(rawToken) {
-    const token = String(rawToken || '').trim().toUpperCase().replace(/\s+/g, '');
-    if (token.length !== 30) return null;
-
-    const brand = 'BLUETECH';
-    let digits = '';
-    for (let index = 0; index < 15; index += 1) {
-        if (token[index * 2] !== brand[index % brand.length]) return null;
-        const digit = token[index * 2 + 1];
-        if (!/[0-9]/.test(digit)) return null;
-        digits += digit;
-    }
-
-    const reversedBits = BigInt(digits.split('').reverse().join(''));
-    let value = 0n;
-    for (let bit = 0; bit < 48; bit += 1) {
-        value = (value << 1n) | ((reversedBits >> BigInt(bit)) & 1n);
-    }
-
-    // Flutter tarafındaki _reverseMacBytes() işleminin BigInt karşılığı.
-    let macValue = 0n;
-    for (let byte = 0; byte < 6; byte += 1) {
-        macValue = (macValue << 8n) | ((value >> BigInt(byte * 8)) & 0xFFn);
-    }
-    return macValue.toString(16).toUpperCase().padStart(12, '0');
-}
+// Aktivasyon kodu (30 karakter, BLUETECH + rakamlar) → MAC; bkz. activation-code.js
+const { decodeActivationCode: decodeBleDeviceToken } = require('./activation-code');
 
 app.post('/api/ble/authorize-device', requireAuth(), (req, res) => {
     const supplied = String(req.body?.deviceId || '').trim();
@@ -2790,10 +2766,12 @@ app.get("/api/devices", requireAuth(), (req, res) => {
       if (req.query.location) devices = devices.filter((d) => d.location === req.query.location);
     }
 
-    // Operatorler MAC gormez — cihaz secimi id uzerinden yapilir.
+    // Operatorler MAC gormez — cihaz secimi id uzerinden yapilir. Aktivasyon kodu
+    // MAC'e geri çevrilebildiği için o da gizlenir.
     const sanitized = devices.map((d) => ({
       ...d,
       mac: req.userRole === "operator" ? undefined : d.mac,
+      activation_code: req.userRole === "operator" ? undefined : d.activation_code,
     }));
     res.json({ devices: sanitized });
   } catch (e) {

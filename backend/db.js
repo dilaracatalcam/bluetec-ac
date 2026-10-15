@@ -42,6 +42,24 @@ if (!existingColumns.includes("created_at")) {
 // ── Migration: extra_fields kolonu ──
 // Sabit kolonlara sığmayan, panelden kullanıcı tarafından tanımlanan özel alanları
 // (örn. "Kurulum Ekibi") JSON olarak burada tutuyoruz — { "kurulum_ekibi": "Ahmet" } gibi.
+// ── Migration: activation_code — MAC'ten türetilen müşteri aktivasyon kodu (bkz. activation-code.js) ──
+// Her açılışta tüm cihazlar için yeniden hesaplanır; kod yalnızca MAC'e bağlı olduğu için
+// eksik/bozuk değer kendiliğinden düzelir.
+if (!existingColumns.includes("activation_code")) {
+  db.exec("ALTER TABLE devices ADD COLUMN activation_code TEXT");
+}
+{
+  const { encodeActivationCode } = require("./activation-code");
+  const rows = db.prepare("SELECT id, mac, activation_code FROM devices").all();
+  const set = db.prepare("UPDATE devices SET activation_code = ? WHERE id = ?");
+  db.transaction(() => {
+    for (const r of rows) {
+      const code = encodeActivationCode(r.mac);
+      if (code !== r.activation_code) set.run(code, r.id);
+    }
+  })();
+}
+
 if (!existingColumns.includes("extra_fields")) {
   db.exec("ALTER TABLE devices ADD COLUMN extra_fields TEXT DEFAULT '{}'");
   db.exec("UPDATE devices SET extra_fields = '{}' WHERE extra_fields IS NULL");
@@ -408,7 +426,8 @@ function getDevices({ company, location, role, userCompany } = {}) {
   const rows = db
     .prepare(
       `SELECT id, device_code, serial_no, mac, company, location, city, district, latitude, longitude, connection,
-              logo, sw_version, msp_fw, msp_sw, hw_version, note, updated_at, created_at, extra_fields, is_revision
+              logo, sw_version, msp_fw, msp_sw, hw_version, note, updated_at, created_at, extra_fields, is_revision,
+              activation_code
        FROM devices ${where}
        ORDER BY company, location, device_code`
     )
@@ -463,14 +482,18 @@ function updateDeviceInventoryByMac(mac, fields) {
   return result.changes;
 }
 
+const { encodeActivationCode } = require("./activation-code");
+
 function replaceAllDevices(rows) {
   const insert = db.prepare(`
     INSERT INTO devices
       (device_code, serial_no, mac, company, location, city, district, latitude, longitude, connection,
-       logo, sw_version, msp_fw, msp_sw, hw_version, note, updated_at, created_at, extra_fields, is_revision)
+       logo, sw_version, msp_fw, msp_sw, hw_version, note, updated_at, created_at, extra_fields, is_revision,
+       activation_code)
     VALUES
       (@device_code, @serial_no, @mac, @company, @location, @city, @district, @latitude, @longitude, @connection,
-       @logo, @sw_version, @msp_fw, @msp_sw, @hw_version, @note, @updated_at, @created_at, @extra_fields, @is_revision)
+       @logo, @sw_version, @msp_fw, @msp_sw, @hw_version, @note, @updated_at, @created_at, @extra_fields, @is_revision,
+       @activation_code)
   `);
 
   const importAll = db.transaction((items) => {
@@ -486,6 +509,7 @@ function replaceAllDevices(rows) {
         longitude: row.longitude ?? null,
         msp_sw: row.msp_sw ?? null,
         created_at: row.created_at || new Date().toISOString(),
+        activation_code: encodeActivationCode(row.mac), // Excel/istekten gelen değer değil, her zaman MAC'ten
         extra_fields: JSON.stringify(row.extra_fields && typeof row.extra_fields === "object" ? row.extra_fields : {}),
       });
     }
