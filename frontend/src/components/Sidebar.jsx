@@ -30,7 +30,11 @@ export default function Sidebar({
   onCloseMobile,
   currentUser = null,
   onOpenAccount,
+  canOpenPanel = true,
 }) {
+  // Panel erişimi olmayan (operatör) için Dashboard/Panel seçimi gösterilmez ve
+  // gruplar açılır-kapanır değil, hep açık düz bir liste olur
+  const flat = !canOpenPanel;
   const handleClick = (key) => {
     onSectionChange?.(key);
     onCloseMobile?.();
@@ -102,7 +106,8 @@ export default function Sidebar({
           </button>
         </div>
 
-        {/* Mode Switch (Dashboard / Panel) */}
+        {/* Mode Switch (Dashboard / Panel) — yalnız panel erişimi olanlara */}
+        {canOpenPanel && (
         <div className="px-3 pt-3 pb-2">
           <div className="relative p-[3px] rounded-lg bg-[var(--bg-subtle)] border border-[var(--border-subtle)] flex">
             <div
@@ -125,12 +130,19 @@ export default function Sidebar({
             </button>
           </div>
         </div>
+        )}
 
         {/* Section List */}
         <nav className="flex-1 overflow-y-auto px-2 py-2 custom-scroll">
           {groups.map((g) => (
           <div key={g.name} className="mb-0.5">
-          {g.name && (
+          {g.name && flat && (
+            <div className="flex items-center gap-2.5 px-3 pt-3 pb-1 text-[var(--text-muted)]">
+              <span className="text-[15px] shrink-0">{GROUP_ICONS[g.name]}</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider truncate">{g.name}</span>
+            </div>
+          )}
+          {g.name && !flat && (
             <button
               onClick={() => toggleGroup(g.name)}
               aria-expanded={openGroups.has(g.name)}
@@ -142,7 +154,7 @@ export default function Sidebar({
               <HiOutlineChevronDown className={`text-[13px] transition-transform ${openGroups.has(g.name) ? "rotate-180" : ""}`} />
             </button>
           )}
-          <ul className={`space-y-0.5 ${g.name ? "ml-[19px] pl-2 border-l border-[var(--border-subtle)] my-0.5" : ""} ${g.name && !openGroups.has(g.name) ? "hidden" : ""}`}>
+          <ul className={`space-y-0.5 ${g.name ? "ml-[19px] pl-2 border-l border-[var(--border-subtle)] my-0.5" : ""} ${g.name && !flat && !openGroups.has(g.name) ? "hidden" : ""}`}>
             {g.items.map((s) => {
               const isActive = activeSection === s.key;
               return (

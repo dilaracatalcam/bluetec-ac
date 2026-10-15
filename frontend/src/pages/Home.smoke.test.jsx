@@ -94,13 +94,15 @@ describe("Home (Dashboard, isAdmin=false) — operator rolü", () => {
     }
   });
 
-  it("Dashboard modu gösterilir (ADMIN PANEL değil)", async () => {
+  it("panel erişimi olmayana Dashboard/Panel seçimi gösterilmez, menü açılır-kapanır değildir", async () => {
     mockFetchAsOperator();
     render(<Home token="tok" isAdmin={false} onNavigate={() => {}} onLogout={() => {}} />);
 
     const nav = screen.getByRole("navigation");
     await waitFor(() => expect(within(nav).getByText("Cihaz Seç")).toBeInTheDocument());
-    expect(screen.getByText(/DASHBOARD/)).toBeInTheDocument();
-    expect(screen.queryByText(/ADMIN PANEL/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Panel" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dashboard" })).not.toBeInTheDocument();
+    // grup başlıkları buton değil; içindeki bölümler tıklamadan görünür
+    expect(within(nav).queryAllByRole("button", { expanded: false })).toHaveLength(0);
   });
 });
