@@ -1558,6 +1558,10 @@ async function readTarget() {
     return data;
 }
 
+// ESP'den okunan değerler veritabanına işlenir (bkz. device-inventory-sync.js)
+const { initDeviceInventorySync } = require('./device-inventory-sync');
+const inventorySync = initDeviceInventorySync({ readTarget, getDevices, updateDeviceInventoryByMac });
+
 // responses.json yapısı garanti et: { responses: { ... } }
 async function readResponses() {
     let data;
@@ -1565,6 +1569,7 @@ async function readResponses() {
     catch (e) { data = { responses: {} }; }
     if (!data || typeof data !== 'object') data = { responses: {} };
     if (!data.responses || typeof data.responses !== 'object') data.responses = {};
+    try { inventorySync.observe(data); } catch {}
     return data;
 }
 
