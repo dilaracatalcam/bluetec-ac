@@ -48,7 +48,8 @@ const msg = (cmd, m, data) => ({ cmd, msg: m, time: String(Math.random()), data 
 
 describe('archive-auto-pull', () => {
     it('sürüm karşılaştırması', () => {
-        expect(isEligibleVersion('v@4.1.7')).toBe(true);
+        expect(isEligibleVersion('v@4.1.7')).toBe(false);
+        expect(isEligibleVersion('v@4.1.8')).toBe(true);
         expect(isEligibleVersion('V@4.2.4(reset )')).toBe(true);
         expect(isEligibleVersion('v@4.1.6')).toBe(false);
         expect(isEligibleVersion('v@3.9.9')).toBe(false);
@@ -114,8 +115,8 @@ describe('archive-auto-pull', () => {
     });
 
     it('şarj veriyorsa çekmez; başka oturumdaki cihaza dokunmaz', async () => {
-        const dev = { mac: 'AA:00:00:00:00:03', sw_version: 'v@4.1.7' };
-        const busy = { mac: 'AA:00:00:00:00:04', sw_version: 'v@4.1.7' };
+        const dev = { mac: 'AA:00:00:00:00:03', sw_version: 'v@4.1.8' };
+        const busy = { mac: 'AA:00:00:00:00:04', sw_version: 'v@4.2.0' };
         const device = {
             online: true,
             onFrame(sid, frame, responses) { if (frame === 'frame 2 25 0') responses[sid].message_response = msg(2, 25, 'P4_CHARGING'); },

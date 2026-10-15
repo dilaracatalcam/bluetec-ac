@@ -565,7 +565,7 @@ function PullInfo({ status }) {
       <div className="text-[var(--text-muted)]">
         {autoEligible
           ? `Otomatik çekim açık: ${intervalHours} saatte bir, cihaz şarj vermiyorken Günlük log çekilir.`
-          : `Otomatik çekim kapalı: yazılım ${minVersion} ve üzeri olan cihazlarda çalışır. Sürüm günde bir kontrol edilir; cihaz güncellenince kendiliğinden açılır.`}
+          : `Otomatik çekim kapalı: yazılımı ${minVersion} üzeri olan cihazlarda çalışır. Sürüm günde bir kontrol edilir; cihaz güncellenince kendiliğinden açılır.`}
       </div>
       {synced ? (
         <div className="text-emerald-600 dark:text-emerald-400 font-semibold">
@@ -671,6 +671,9 @@ function ArchivePanel({
             <div>
               <div className="text-[12px] font-semibold text-[var(--text-primary)]">Cihaz arşivini çek</div>
               <div className="text-[10px] text-[var(--text-muted)]">1–4 kapsamından birini seç, 0 aktarımı kapatır; cihaz gönderimi ACK ile ilerler.</div>
+              <div className="text-[10.5px] font-semibold text-amber-600 dark:text-amber-400 mt-0.5">
+                Arşiv 6 saatte bir yenilenmektedir. Günlük logu seçmeniz tavsiye edilmektedir.
+              </div>
             </div>
             <span className={`text-[11px] font-semibold ${noteColor}`}>{state.note}</span>
           </div>
@@ -680,7 +683,7 @@ function ArchivePanel({
               const selected = state.scope === s.value && state.phase !== "ready" && s.value !== 0;
               return (
                 <button key={s.value} onClick={() => onScope(s.value)} disabled={!isActive || sending !== null} title={s.hint}
-                  className={`text-left text-[11px] font-semibold px-2.5 py-1.5 rounded-md border transition ${selected
+                  className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-md border transition ${selected
                     ? "bg-emerald-600 border-emerald-600 text-white"
                     : recommended
                       ? "border-emerald-500 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/30"
@@ -689,12 +692,6 @@ function ArchivePanel({
                     {sending === `30-${s.value}` ? "Gönderiliyor…" : `${s.value} · ${s.label}`}
                     {recommended && !selected && <span className="ml-1.5 text-[9px] uppercase tracking-wide">Önerilen</span>}
                   </span>
-                  {s.value === 1 && (
-                    <span className={`block text-[9.5px] font-medium mt-0.5 ${selected ? "text-white/85" : "text-amber-600 dark:text-amber-400"}`}>
-                      Arşiv 6 saatte bir yenilenmektedir.
-                      <span className="block">Günlük logu seçmeniz tavsiye edilmektedir.</span>
-                    </span>
-                  )}
                 </button>
               );
             })}

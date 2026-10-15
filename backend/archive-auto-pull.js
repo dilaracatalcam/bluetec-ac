@@ -1,7 +1,7 @@
 /*
  * Kayıtlı log arşivinin otomatik çekimi (frame 3 30 1 — "Günlük log").
  *
- * Yazılımı MIN_VERSION ve üzeri olan cihazlar, son başarılı çekimin üzerinden
+ * Yazılımı MIN_VERSION'dan YÜKSEK olan cihazlar (4.1.7 dahil değil), son başarılı çekimin üzerinden
  * INTERVAL_MS geçince sırayla çekilir:
  *   1) cihaz başka bir oturumda açıksa atlanır (kullanıcı önceliklidir),
  *   2) "archive:<MAC>" oturumuyla bağlanılır, ESP aktif beklenir,
@@ -10,7 +10,7 @@
  *      tamamlandı" olana kadar izlenir, sonra bağlantı bırakılır.
  * Başarısız / ertelenen cihaz RETRY_MS sonra yeniden denenir.
  *
- * Sürüm kontrolü: cihaz sonradan güncellenip MIN_VERSION'a ulaşabilir.
+ * Sürüm kontrolü: cihaz sonradan güncellenip MIN_VERSION'u geçebilir.
  * Veritabanındaki sürüm her taramada yeniden okunduğu için OTA ya da ESP
  * okumasıyla güncellenen cihaz kendiliğinden listeye girer. Panel dışından
  * güncellenmiş olabilecek cihazlar için, sürümü uygun görünmeyen her cihazın
@@ -25,7 +25,7 @@
 
 const SESSION_PREFIX = "archive:";
 const SESSION_RE = /^archive:/;
-const MIN_VERSION = [4, 1, 7];
+const MIN_VERSION = [4, 1, 7]; // bu sürümün ÜZERİ (4.1.7 hariç)
 const INTERVAL_MS = 6 * 60 * 60 * 1000;   // başarılı çekimler arası
 const RETRY_MS = 30 * 60 * 1000;          // şarjda / çevrimdışı / meşgul → yeniden deneme
 const TICK_MS = 5 * 60 * 1000;            // vadesi gelen cihaz taraması
@@ -52,7 +52,7 @@ function isEligibleVersion(v) {
   const p = parseVersion(v);
   if (!p) return false;
   for (let i = 0; i < 3; i++) if (p[i] !== MIN_VERSION[i]) return p[i] > MIN_VERSION[i];
-  return true;
+  return false; // tam 4.1.7 dahil değil
 }
 
 const FAIL_RE = /zaman aşımı|hata|başarısız|error|fail|iptal/i;
