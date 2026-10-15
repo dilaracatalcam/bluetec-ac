@@ -191,14 +191,14 @@ function StateCounts({ devices }) {
   );
 }
 
-// Şarj cihazı çizimi (fotoğraf değil, SVG): soketin çevresindeki halka ve köşedeki
-// nokta cihazın durum rengini taşır. Beyaz durumlar (erişim yok / kontrol) açık
+// Şarj cihazı çizimi (fotoğraf değil, SVG): gövdenin kenarı ve soketin çevresindeki
+// halka cihazın durum rengini taşır. Beyaz durumlar (erişim yok / kontrol) açık
 // zeminde görünmediği için gri çizilir.
 function ChargerGlyph({ hex, dim = false }) {
   const ring = hex.toLowerCase() === "#ffffff" ? "#9aa3ad" : hex;
   const uid = useId().replace(/:/g, "");
   return (
-    <svg viewBox="0 0 40 56" className={`w-[36px] h-[50px] drop-shadow-sm ${dim ? "opacity-60" : ""}`} aria-hidden="true">
+    <svg viewBox="-1 -1 42 58" className={`w-[40px] h-[56px] drop-shadow-sm ${dim ? "opacity-60" : ""}`} aria-hidden="true">
       <defs>
         <linearGradient id={`side${uid}`} x1="0" x2="1" y1="0" y2="0">
           <stop offset="0" stopColor="#8d949c" /><stop offset=".45" stopColor="#e4e7ea" /><stop offset="1" stopColor="#9aa1a8" />
@@ -207,7 +207,7 @@ function ChargerGlyph({ hex, dim = false }) {
           <stop offset=".55" stopColor={ring} stopOpacity=".55" /><stop offset="1" stopColor={ring} stopOpacity="0" />
         </radialGradient>
       </defs>
-      <rect x="3" y="2" width="34" height="51" rx="6" fill="#2a2e34" stroke="#4a515a" strokeWidth=".8" />
+      <rect x="3" y="2" width="34" height="51" rx="6" fill="#2a2e34" stroke={ring} strokeWidth="2.2" />
       <rect x="3.6" y="5" width="5.4" height="45" rx="2.4" fill={`url(#side${uid})`} />
       <rect x="31" y="5" width="5.4" height="45" rx="2.4" fill={`url(#side${uid})`} />
       <rect x="9" y="3.5" width="22" height="48" rx="3.5" fill="#1d2126" />
@@ -279,13 +279,11 @@ function DeviceTile({ d, tileKey, isOpen, onToggle, onConnectDevice, connecting,
         type="button"
         onClick={(e) => { e.stopPropagation(); onToggle(); }}
         title={`${(d.device_code || "Cihaz").trim()} · ${socketType(d)} — ${meta.label}`}
-        className={`relative w-[62px] h-[70px] rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)]
-                    flex items-center justify-center shrink-0
+        className={`relative w-[44px] h-[60px] rounded-lg flex items-center justify-center shrink-0
                     transition hover:-translate-y-0.5 hover:shadow-md active:scale-95
                     ${isOpen ? "ring-2 ring-offset-1 ring-[var(--accent)] ring-offset-[var(--bg-page,transparent)]" : ""}`}
       >
         <ChargerGlyph hex={meta.hex} dim={d.state === "offline" || d.state === "checking"} />
-        <span className="absolute right-1 top-1 w-[9px] h-[9px] rounded-full border border-black/15" style={{ background: meta.hex }} />
         {(d.polling || refreshing) && (
           <span className="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-[var(--bg-elevated,#fff)] border border-[var(--accent-border)] text-[var(--accent)] flex items-center justify-center shadow-sm">
             <HiOutlineArrowPath className="text-[10px] animate-spin" />
@@ -517,17 +515,24 @@ function StatCard({ label, sub, hex, value, pct, active, onClick }) {
   );
 }
 
+// İlçeler şehir içinde yan yana sütunlardır; lokasyonu çok olan ilçe (açıkken)
+// dar sütunda uzayıp gitmesin diye satırın tamamını kaplar.
+const WIDE_DISTRICT_SITES = 2;
+
 function DistrictSection({ district, devices, sites, open, onToggle, tileProps }) {
+  const wide = open && sites.length > WIDE_DISTRICT_SITES;
   return (
-    <div className="border-t border-[var(--border-subtle)] first:border-t-0">
-      <button type="button" onClick={onToggle} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--bg-hover)] transition text-left">
-        <HiOutlineChevronDown className={`text-[13px] text-[var(--text-muted)] transition ${open ? "" : "-rotate-90"}`} />
-        <span className="text-[12px] font-bold uppercase tracking-wide text-[var(--text-secondary)] w-[180px] truncate shrink-0">{district}</span>
-        <StateCounts devices={devices} />
-        <SegmentedBar devices={devices} className="h-1 flex-1 min-w-[60px]" />
+    <div className={`rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] ${wide ? "col-span-full" : ""}`}>
+      <button type="button" onClick={onToggle} className="w-full flex flex-col gap-1.5 px-3 pt-2.5 pb-2 hover:bg-[var(--bg-hover)] rounded-t-xl transition text-left">
+        <span className="flex items-center gap-2 w-full min-w-0">
+          <HiOutlineChevronDown className={`text-[13px] text-[var(--text-muted)] transition shrink-0 ${open ? "" : "-rotate-90"}`} />
+          <span className="text-[12px] font-bold uppercase tracking-wide text-[var(--text-secondary)] truncate flex-1 min-w-0">{district}</span>
+          <StateCounts devices={devices} />
+        </span>
+        <SegmentedBar devices={devices} className="h-1 w-full" />
       </button>
       {open && (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] items-stretch gap-3 px-3 pb-3">
+        <div className={`grid items-stretch gap-3 px-3 pb-3 pt-1 ${wide ? "grid-cols-[repeat(auto-fill,minmax(240px,1fr))]" : "grid-cols-1"}`}>
           {sites.map((g) => (
             <LocationCard key={g.site} site={g.site} devices={g.devices} blocks={g.blocks} {...tileProps} />
           ))}
@@ -557,7 +562,8 @@ function CityCard({ city, districts, devices, open, onToggle, openDistricts, tog
   return (
     <div className="col-span-full rounded-xl border border-[var(--border-strong)] bg-[var(--bg-subtle)] overflow-hidden">
       <div className="p-3.5 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)]">{header}</div>
-      <div className="bg-[var(--bg-surface)]">
+      {/* dense: geniş ilçe satırı kaplayınca öncesinde kalan boşluğu sonraki dar ilçeler doldurur */}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(270px,1fr))] grid-flow-row-dense items-start gap-3 p-3">
         {districts.map((x) => (
           <DistrictSection key={x.district} {...x} open={openDistricts.has(`${city}|${x.district}`)}
             onToggle={() => toggleDistrict(`${city}|${x.district}`)} tileProps={tileProps} />
