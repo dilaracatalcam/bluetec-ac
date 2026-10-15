@@ -822,12 +822,6 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       else {
         setMessage("");
         setIsConnected(true);
-        if (isOperator) {
-          const dev = myDevices.find((x) => String(x.id) === String(selectedDeviceId));
-          setConnectedLabel(dev ? (dev.location || dev.device_code || `#${dev.id}`) : "Cihaz");
-        } else {
-          setConnectedLabel(mac);
-        }
       }
     } catch { setMessage("Sunucuya ulaşılamadı"); setIsConnected(false); }
     finally { setLoading(false); }
