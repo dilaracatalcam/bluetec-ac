@@ -245,7 +245,7 @@ const SECTIONS = [
 
   // Cihaz Takip (eski "Toplu Okuma") — superadmin/admin panelden, operator (şirket hesabı) kendi dashboard'undan erişir.
   { group: "Toplu Gönderim", key: "device-status", title: "Cihaz Takip", desc: "Tüm şarj cihazlarının anlık durumu ve canlı OCPP akışı", label: "Cihaz Takip",     icon: <HiOutlineViewColumns />, roles: ["superadmin", "admin", "operator"] },
-  { group: "Toplu Gönderim", key: "bulk-param", title: "Parametre Gönderimi", desc: "Seçtiğiniz cihazlara parametreleri topluca okuyun veya yazın. İş sunucuda çalışır; sayfayı kapatsanız da devam eder.",   label: "Parametre Gönderimi", icon: <HiOutlinePencilSquare />, roles: ["superadmin", "admin", "operator"] },
+  { group: "Toplu Gönderim", key: "bulk-param", title: "Parametre İşlemleri", desc: "Seçtiğiniz cihazlara parametreleri topluca okuyun veya yazın. İş sunucuda çalışır; sayfayı kapatsanız da devam eder.",   label: "Parametre İşlemleri", icon: <HiOutlinePencilSquare />, roles: ["superadmin", "admin", "operator"] },
   { group: "Toplu Gönderim", key: "bulk-update", title: "Yazılım Güncelleme", desc: "Seçtiğiniz cihazlara topluca firmware gönderin; şarj olan cihazlar atlanır. İş sunucuda çalışır; sayfayı kapatsanız da devam eder.",  label: "Yazılım Güncelleme", icon: <HiOutlineArrowUpTray />, adminOnly: true },
 
   { group: "OTA", key: "ota", title: "OTA Güncelleme", desc: "Firmware güncelleme, key yönetimi ve ESP reset",          label: "OTA Güncelleme",    icon: <HiOutlineArrowUpTray />, superadminOnly: true, adminOnly: true },
