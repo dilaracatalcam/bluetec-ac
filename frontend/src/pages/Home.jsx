@@ -409,7 +409,6 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   const isOperator = currentUser?.role === "operator";
   const [myDevices, setMyDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
-  const [connectedLabel, setConnectedLabel] = useState("");
   const [deviceSelectClaimOpen, setDeviceSelectClaimOpen] = useState(false);
   const selectedDevice = useMemo(
     () => myDevices.find((device) => String(device.id) === String(selectedDeviceId)) || null,
@@ -425,7 +424,6 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
   const handleDeviceConnected = useCallback((mac, device) => {
     if (mac) setMac(mac);
     if (device?.id !== undefined && device?.id !== null) setSelectedDeviceId(String(device.id));
-    setConnectedLabel(device?.location || device?.device_code || mac || "Cihaz");
     setIsConnected(true);
     navigateToSection("ocpp-wifi");
   }, [setMac, navigateToSection]);
@@ -437,6 +435,22 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
       .then((d) => setMyDevices(d.devices || []))
       .catch(() => {});
   }, [isOperator, authFetch]);
+
+  // Üst çubukta bağlı cihazın adı — admin/superadmin MAC'ten, operatör seçimden bulur
+  const [deviceIndex, setDeviceIndex] = useState([]);
+  useEffect(() => {
+    if (!currentUser || isOperator) return;
+    authFetch("/api/devices")
+      .then((r) => r.json())
+      .then((d) => setDeviceIndex(d.devices || []))
+      .catch(() => {});
+  }, [currentUser, isOperator, authFetch]);
+  const connectedName = useMemo(() => {
+    const norm = (s) => String(s || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
+    const dev = isOperator ? selectedDevice : deviceIndex.find((d) => d.mac && norm(d.mac) === norm(mac));
+    return dev?.location || dev?.device_code || "";
+  }, [isOperator, selectedDevice, deviceIndex, mac]);
+  const shownMac = isOperator ? "" : mac;
 
   // Çoklu kullanıcı — aynı MAC'e bağlı diğer kullanıcılar + deactivate uyarısı
   const [otherUsersOnSameMac, setOtherUsersOnSameMac] = useState([]); // [{ username, fullName }]
@@ -1964,9 +1978,10 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
               <HiOutlineBars3 className="text-xl" />
             </button>
 
-            {isConnected && (connectedLabel || mac) && (
-              <span className="hidden md:inline text-[12px] text-[var(--text-muted)] font-mono tracking-tight truncate">
-                {connectedLabel || mac}
+            {isConnected && (connectedName || shownMac) && (
+              <span className="hidden md:inline-flex items-center gap-2 min-w-0 text-[12px]">
+                {connectedName && <span className="font-semibold text-[var(--text-primary)] truncate">{connectedName}</span>}
+                {shownMac && <span className="text-[var(--text-muted)] font-mono tracking-tight shrink-0">{shownMac}</span>}
               </span>
             )}
 
@@ -2110,9 +2125,11 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
           </form>
 
           {/* MAC mobilde küçük altta — sadece bağlıyken göster */}
-          {isConnected && (connectedLabel || mac) && (
-            <div className="md:hidden px-4 pb-2 text-[11px] text-[var(--text-muted)] font-mono tracking-tight">
-              {connectedLabel || mac}
+          {isConnected && (connectedName || shownMac) && (
+            <div className="md:hidden px-4 pb-2 text-[11px] text-[var(--text-muted)] truncate">
+              {connectedName && <span className="font-semibold text-[var(--text-primary)]">{connectedName}</span>}
+              {connectedName && shownMac && " · "}
+              {shownMac && <span className="font-mono tracking-tight">{shownMac}</span>}
               {otherUsersOnSameMac.length > 0 && (
                 <span className="ml-2 text-amber-500 font-bold">
                   · {otherUsersOnSameMac.length} kullanıcı daha
