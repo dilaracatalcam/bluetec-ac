@@ -3,7 +3,7 @@ import { HiOutlineClock, HiChevronRight, HiOutlinePause, HiOutlinePlay, HiOutlin
 
 /* ── Canlı OCPP Konsolu (frame 3 28 3) ──
    /api/ocpp-live/feed'den sadece yeni satırları çeker; en yeni satır en üstte.
-   - company verilirse: o şirketin cihazları (Toplu Okuma). Bu istekler açık
+   - company verilirse: o şirketin cihazları (Cihaz Takip). Bu istekler açık
      kaldıkça sunucu her cihaza bir kez bağlanıp 3 28 3 gönderir ve bağlantıyı
      tutar (bkz. backend/ocpp-watch.js); bileşen kapanınca /leave ile 3 28 0
      gönderilir, bağlantılar bırakılır ve loglar silinir.
@@ -90,7 +90,7 @@ export default function OcppLiveConsole({ token, company, session = false, onPic
       <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-[#222] border-b border-black/40">
         <span className="flex items-center gap-2 text-[11px] font-bold tracking-wide text-slate-300">
           <span className={`w-2 h-2 rounded-full ${paused ? "bg-slate-500" : "bg-emerald-400 animate-pulse"}`} />
-          CANLI OCPP <span className="font-mono text-slate-500">frame 3 28 3</span>
+          Canlı OCPP Akışı <span className="font-mono font-normal text-slate-500">frame 3 28 3</span>
           {watch && (
             <span className="font-normal text-slate-400">
               · dinlenen {watch.watching || 0}/{watch.total}

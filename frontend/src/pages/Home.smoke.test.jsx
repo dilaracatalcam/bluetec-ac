@@ -14,7 +14,7 @@ const ADMIN_ONLY_LABELS = [
   "Kullanıcı Yönetimi",
   "Cihaz Yönetimi",
   "Cihaz Kurulum",
-  "Toplu Güncelleme",
+  "Yazılım Güncelleme",
   "OTA Sunucu Kontrolü",
   "Cihaz Versiyonları",
 ];

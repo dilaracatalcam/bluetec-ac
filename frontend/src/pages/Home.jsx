@@ -240,13 +240,13 @@ const SECTIONS = [
 
   { group: "İzleme", key: "telemetry", title: "Canlı Telemetri", desc: "Anlık şarj verileri ve cihaz durumu",    label: "Canlı Telemetri",   icon: <TbActivity />, badge: "LIVE" },
   { group: "İzleme", key: "msp-tele", title: "MSP Telemetri", desc: "Metering & Supply Processor: ölçüm ve güç besleme portalı",     label: "MSP Telemetri",     icon: <HiOutlineSignal /> },
+  // Cihaz Takip (eski "Toplu Okuma") — superadmin/admin panelden, operator (şirket hesabı) kendi dashboard'undan erişir.
+  { group: "İzleme", key: "device-status", title: "Cihaz Takip", desc: "Tüm şarj cihazlarının anlık durumu ve canlı OCPP akışı", label: "Cihaz Takip",     icon: <HiOutlineViewColumns />, roles: ["superadmin", "admin", "operator"] },
   { group: "İzleme", key: "logs", title: "Cihaz Logları", desc: "Verbose ve debug log akışını açın, canlı izleyin",         label: "Loglar",            icon: <HiOutlineCommandLine /> },
   { group: "İzleme", key: "connections", title: "Aktif Bağlantılar", desc: "Şu anda hangi kullanıcı hangi şarj cihazına bağlı",  label: "Aktif Bağlantılar", icon: <HiOutlineSignal />, adminOnly: true },
 
-  // superadmin/admin panelden, operator (şirket hesabı) kendi dashboard'undan erişir.
-  { group: "Toplu İşlemler", key: "device-status", title: "Toplu Okuma", desc: "Bir şirkete ait tüm cihazların canlı durumu", label: "Toplu Okuma",     icon: <HiOutlineViewColumns />, roles: ["superadmin", "admin", "operator"] },
-  { group: "Toplu İşlemler", key: "bulk-param", title: "Toplu Parametre Güncelleme", desc: "Seçtiğiniz cihazlara parametreleri topluca okuyun veya yazın. İş sunucuda çalışır; sayfayı kapatsanız da devam eder.",   label: "Toplu Parametre",  icon: <HiOutlinePencilSquare />, roles: ["superadmin", "admin", "operator"] },
-  { group: "Toplu İşlemler", key: "bulk-update", title: "Toplu Güncelleme", desc: "Seçtiğiniz cihazlara topluca firmware gönderin; şarj olan cihazlar atlanır. İş sunucuda çalışır; sayfayı kapatsanız da devam eder.",  label: "Toplu Güncelleme", icon: <HiOutlineArrowUpTray />, adminOnly: true },
+  { group: "Toplu İşlemler", key: "bulk-param", title: "Parametre Gönderimi", desc: "Seçtiğiniz cihazlara parametreleri topluca okuyun veya yazın. İş sunucuda çalışır; sayfayı kapatsanız da devam eder.",   label: "Parametre Gönderimi", icon: <HiOutlinePencilSquare />, roles: ["superadmin", "admin", "operator"] },
+  { group: "Toplu İşlemler", key: "bulk-update", title: "Yazılım Güncelleme", desc: "Seçtiğiniz cihazlara topluca firmware gönderin; şarj olan cihazlar atlanır. İş sunucuda çalışır; sayfayı kapatsanız da devam eder.",  label: "Yazılım Güncelleme", icon: <HiOutlineArrowUpTray />, adminOnly: true },
 
   { group: "OTA", key: "ota", title: "OTA Güncelleme", desc: "Firmware güncelleme, key yönetimi ve ESP reset",          label: "OTA Güncelleme",    icon: <HiOutlineArrowUpTray />, superadminOnly: true, adminOnly: true },
   { group: "OTA", key: "ota-server", title: "OTA Sunucu Kontrolü", desc: "Yüklenen dosyalar cihaza değil, şirketin OTA sunucusuna gönderilir; cihazlar güncellemeyi oradan indirir.",   label: "OTA Sunucu Kontrolü", icon: <HiOutlineServerStack />, superadminOnly: true, adminOnly: true },

@@ -831,7 +831,7 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
         <>
           {/* ── Sayaç kutuları — tıklayınca diyagram o duruma süzülür ── */}
           <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3 mb-4">
-            <StatCard label="Toplam İstasyon" value={total} sub="Anlık durum özeti"
+            <StatCard label="Toplam Cihaz" value={total} sub="Anlık durum"
               active={!statFilter} onClick={() => setStatFilter(null)} />
             {STAT_CARDS.map((c) => {
               const n = countOf(c.states);
@@ -853,7 +853,7 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
           {/* ── Bağlantı Diyagramı ── */}
           <div ref={diagramRef} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] overflow-auto">
             <div className="flex items-center justify-between gap-2 flex-wrap px-4 py-3 border-b border-[var(--border-subtle)]">
-              <span className="text-[15px] font-semibold text-[var(--text-primary)]">Bağlantı Diyagramı</span>
+              <span className="text-[15px] font-semibold text-[var(--text-primary)]">Konuma Göre Cihazlar</span>
               <div className="flex items-center gap-2">
                 {anyOpen && !filtering && (
                   <button type="button" onClick={() => { setOpenCities(new Set()); setOpenDistricts(new Set()); }}
@@ -866,7 +866,7 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
                   className={`${btn} ${showConsole
                     ? "bg-amber-400 border-amber-400 text-slate-900"
                     : "border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"}`}>
-                  <HiOutlineServerStack /> Cihaz Mesajları
+                  <HiOutlineServerStack /> Canlı OCPP
                 </button>
                 <button type="button" onClick={toggleFullscreen} title="Tam ekran"
                   className="p-2 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]">
@@ -902,7 +902,7 @@ export default function DeviceStatusBoard({ token, currentUser, onConnect }) {
           </div>
 
           <div className="mt-4">
-            <div className="text-[12px] font-semibold text-[var(--text-secondary)] mb-2">Bağlantı Renkleri</div>
+            <div className="text-[12px] font-semibold text-[var(--text-secondary)] mb-2">Renk Açıklaması</div>
             <div className="flex flex-wrap gap-x-5 gap-y-2">
               {LEGEND.map((l) => (
                 <span key={l.label} className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]">

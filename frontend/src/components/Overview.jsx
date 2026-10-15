@@ -154,7 +154,7 @@ export default function Overview({ token, currentUser, onNavigate, canOpen = () 
       </div>
 
       <Card className="mb-4" title="Şirketlere Göre Durum" subtitle={lastRead}
-        action={canOpen("device-status") && <LinkBtn onClick={() => onNavigate("device-status")}>Toplu Okuma</LinkBtn>}>
+        action={canOpen("device-status") && <LinkBtn onClick={() => onNavigate("device-status")}>Cihaz Takip</LinkBtn>}>
         {data.companies.length === 0 ? <Empty>Görüntülenecek cihaz yok.</Empty> : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
