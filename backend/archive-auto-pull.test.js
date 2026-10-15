@@ -60,6 +60,8 @@ describe('archive-auto-pull', () => {
         expect(parseProgress('sid=1 % 100.0 | indirme ve çözümleme tamamlandı | segment=1 kayıt=288')).toMatchObject({ done: true, percent: 100 });
         expect(parseProgress('sid=1 % 42,5 | indiriliyor | CRC-hata=0')).toMatchObject({ done: false, failed: false, percent: 42.5 });
         expect(parseProgress('Heartbeat')).toBeNull();
+        expect(parseProgress('OCPP log başlangıcı zaman aşımına uğradı.')).toMatchObject({ failed: true });
+        expect(parseProgress('sid=1 % 100.0 | tamamlandı | CRC-hata=0')).toMatchObject({ done: true, failed: false });
     });
 
     it('şarj yoksa 3 30 1 gönderir, tamamlanınca kaydeder ve bağlantıyı bırakır', async () => {

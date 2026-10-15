@@ -173,7 +173,7 @@ export default function DeviceLogs({ token, isConnected, isActive, mac }) {
       setArchive((s) => ({ ...s, phase: "complete", percent: 100, offset: s.total, note: "Arşiv aktarımı tamamlandı" }));
       return;
     }
-    if (data.startsWith("ERR")) {
+    if (data.startsWith("ERR") || /zaman aşımı|başarısız|hata/i.test(data)) {
       setArchive((s) => ({ ...s, phase: "error", note: data }));
       return;
     }
@@ -691,7 +691,8 @@ function ArchivePanel({
                   </span>
                   {s.value === 1 && (
                     <span className={`block text-[9.5px] font-medium mt-0.5 ${selected ? "text-white/85" : "text-amber-600 dark:text-amber-400"}`}>
-                      Günlük log altı saatte bir yenilenmektedir
+                      Arşiv 6 saatte bir yenilenmektedir.
+                      <span className="block">Günlük logu seçmeniz tavsiye edilmektedir.</span>
                     </span>
                   )}
                 </button>

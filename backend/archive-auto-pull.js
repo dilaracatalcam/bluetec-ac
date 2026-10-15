@@ -55,19 +55,22 @@ function isEligibleVersion(v) {
   return true;
 }
 
+const FAIL_RE = /zaman aşımı|hata|başarısız|error|fail|iptal/i;
+
 // "sid=30668 % 100.0 | indirme ve çözümleme tamamlandı | segment=1 kayıt=288 ..."
 function parseProgress(data) {
   const text = String(data || "");
   const pct = text.match(/%\s*(\d+(?:[.,]\d+)?)/);
   if (!pct) {
-    if (/^ERR/i.test(text)) return { percent: null, done: false, failed: true, status: text, detail: "" };
+    // Yüzdesiz hata cümleleri: "ERR,...", "OCPP log başlangıcı zaman aşımına uğradı." gibi
+    if (/^ERR/i.test(text) || FAIL_RE.test(text)) return { percent: null, done: false, failed: true, status: text, detail: "" };
     return null;
   }
   const percent = Math.min(100, parseFloat(pct[1].replace(",", ".")));
   const segments = text.split("|").map((x) => x.trim());
   const status = segments[1] || "";
   const done = percent >= 100 || /tamamland/i.test(status);
-  const failed = !done && /hata|başarısız|error|fail|iptal/i.test(status);
+  const failed = !done && FAIL_RE.test(status);
   return { percent, done, failed, status, detail: segments.slice(2).join(" · ") };
 }
 
