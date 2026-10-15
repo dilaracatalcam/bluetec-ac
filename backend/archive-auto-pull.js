@@ -23,6 +23,8 @@
  * çağırır; çekim yarıda bırakılır ve sonra yeniden denenir.
  */
 
+const { espActive } = require("./esp-status");
+
 const SESSION_PREFIX = "archive:";
 const SESSION_RE = /^archive:/;
 const MIN_VERSION = [4, 1, 7]; // bu sürümün ÜZERİ (4.1.7 hariç)
@@ -121,11 +123,6 @@ function initArchiveAutoPull(deps) {
     return true;
   };
 
-  const espActive = (resp, mac) => {
-    const topic = compactMac(String(resp?.status_response?.topic || "").split("/")[0]);
-    if (topic && topic !== compactMac(mac)) return false;
-    return String(resp?.status_response?.data || "").toLowerCase().includes("esp aktif");
-  };
 
   const occupantOf = async (mac, sessionId) => {
     const target = await readTarget();
@@ -149,12 +146,13 @@ function initArchiveAutoPull(deps) {
     const job = { mac, sessionId, released: false };
     current = job;
     try {
+      const since = Date.now();
       await deactivateThenActivateForSlot(sessionId, mac);
       touchSlot(sessionId);
       let active = false;
       for (let i = 0; i < T.ACTIVATE_WAIT_SEC && !job.released && !stopped; i++) {
         await sleep(1000);
-        if (espActive((await readResponses()).responses[sessionId], mac)) { active = true; break; }
+        if (espActive((await readResponses()).responses[sessionId], mac, since)) { active = true; break; }
       }
       if (job.released || stopped) { record("interrupted"); return "interrupted"; }
       if (!active) { record("offline"); return "offline"; }
@@ -220,12 +218,13 @@ function initArchiveAutoPull(deps) {
     const job = { mac, sessionId, released: false };
     current = job;
     try {
+      const since = Date.now();
       await deactivateThenActivateForSlot(sessionId, mac);
       touchSlot(sessionId);
       let active = false;
       for (let i = 0; i < T.ACTIVATE_WAIT_SEC && !job.released && !stopped; i++) {
         await sleep(1000);
-        if (espActive((await readResponses()).responses[sessionId], mac)) { active = true; break; }
+        if (espActive((await readResponses()).responses[sessionId], mac, since)) { active = true; break; }
       }
       if (job.released || stopped) return "interrupted";
       markVersionCheck(mac);

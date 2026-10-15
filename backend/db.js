@@ -617,6 +617,11 @@ function listRecentJobs({ createdBy, includeOta = true, limit = 8 } = {}) {
   return db.prepare(sql).all(params);
 }
 
+// Durum değişmeden yalnızca "Son veri" zamanı (Heartbeat vb. her canlı mesajda)
+function touchDeviceLiveStatus(mac, at = new Date().toISOString()) {
+  db.prepare("UPDATE device_live_status SET updated_at = ? WHERE mac = ? AND state != 'offline'").run(at, mac);
+}
+
 function getDeviceLiveState(mac) {
   return db.prepare("SELECT state, raw, updated_at FROM device_live_status WHERE mac = ?").get(mac) || null;
 }
@@ -667,7 +672,7 @@ function recordArchivePull({ mac, result, source, detail = null, at = new Date()
 }
 
 module.exports = {
-  getDeviceLiveState, getArchivePull, recordArchivePull, markVersionCheck,
+  getDeviceLiveState, touchDeviceLiveStatus, getArchivePull, recordArchivePull, markVersionCheck,
   getAllDeviceLiveStatus, listRecentJobs,
   getCompanies, getLocations, getDevices, getDeviceByCode, replaceAllDevices, updateDeviceVersion, updateDeviceInventoryByMac, updateDeviceLocation,
   getCustomFields, addCustomField, deleteCustomField,

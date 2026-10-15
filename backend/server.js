@@ -1823,10 +1823,12 @@ const ocppWatch = initOcppWatch({
             state, label, raw, swVersion: device.sw_version, maxPower: null,
         });
     },
+    // Sessizlik yoklamasında taze "ESP aktif" geldi
+    onAlive(device) { require('./db').touchDeviceLiveStatus(device.mac); },
     // Akan OCPP mesajı (StatusNotification, MeterValues, Start/StopTransaction) durumu günceller
     onOcppLine(device, line) {
         const st = chargeStateFromOcpp(line);
-        if (!st) return;
+        if (!st) { require('./db').touchDeviceLiveStatus(device.mac); return; } // durum yok ama veri geldi
         require('./db').upsertDeviceLiveStatus({
             mac: device.mac, company: device.company, location: device.location, deviceCode: device.device_code,
             state: st.state, label: st.label, raw: st.raw, swVersion: device.sw_version, maxPower: null,

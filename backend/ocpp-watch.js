@@ -25,6 +25,8 @@
  * önce 3 28 0, sonra slot bırakılır; cihaz kullanıcı ayrılana kadar izlenmez.
  */
 
+const { espActive } = require("./esp-status");
+
 const SESSION_PREFIX = "ocppwatch:";
 const SESSION_RE = /^ocppwatch:/;
 const ACTIVATE_CONCURRENCY = 4;   // aynı anda kaç cihaza bağlanılmaya çalışılır
@@ -56,7 +58,7 @@ const signatureOf = (m) => (m ? `${m.cmd}|${m.msg}|${m.time}|${m.data}` : "");
 function initOcppWatch(deps) {
   const {
     readTarget, writeJsonRaw, withLock, TARGET_PATH, findOrCreateSlot, deactivateThenActivateForSlot,
-    removeSlot, touchSlot, readResponses, getDevices, ocppLive, onStatus, onOcppLine, SLOT_CLEAR_MSG_INTERVAL = 1500,
+    removeSlot, touchSlot, readResponses, getDevices, ocppLive, onStatus, onOcppLine, onAlive, SLOT_CLEAR_MSG_INTERVAL = 1500,
     timing = {},
   } = deps;
   const T = { SILENCE_MS, LEAVE_GRACE_MS, ACTIVATE_WAIT_SEC, ...timing };
@@ -88,11 +90,6 @@ function initOcppWatch(deps) {
     return true;
   };
 
-  const espActive = (resp, mac) => {
-    const topic = String(resp?.status_response?.topic || "").toUpperCase();
-    if (topic && !topic.startsWith(String(mac).toUpperCase())) return false;
-    return String(resp?.status_response?.data || "").toLowerCase().includes("esp aktif");
-  };
 
   // Cihaz başka bir oturumda açık mı? Toplu Okuma şeritleri (status:) kısa sürelidir — beklenir.
   const occupantOf = async (mac, sessionId) => {
@@ -110,6 +107,7 @@ function initOcppWatch(deps) {
         entry.retryAt = Date.now() + (occ.session_id.startsWith("status:") ? 15000 : RETRY_MS);
         return;
       }
+      const since = Date.now();
       await deactivateThenActivateForSlot(sessionId, mac);
       touchSlot(sessionId);
       let resp = null;
@@ -117,7 +115,7 @@ function initOcppWatch(deps) {
       for (let i = 0; i < T.ACTIVATE_WAIT_SEC && !watcher.stopped; i++) {
         await sleep(1000);
         resp = (await readResponses()).responses[sessionId];
-        if (espActive(resp, mac)) { active = true; break; }
+        if (espActive(resp, mac, since)) { active = true; break; }
       }
       if (watcher.stopped) return;
       if (!active) {
@@ -158,12 +156,13 @@ function initOcppWatch(deps) {
     const { mac, sessionId } = entry;
     entry.phase = "rechecking";
     try {
+      const since = Date.now(); // eski "ESP aktif" satırı sayılmasın
       await deactivateThenActivateForSlot(sessionId, mac);
       touchSlot(sessionId);
       let active = false;
       for (let i = 0; i < T.ACTIVATE_WAIT_SEC && !watcher.stopped && entry.phase === "rechecking"; i++) {
         await sleep(1000);
-        if (espActive((await readResponses()).responses[sessionId], mac)) { active = true; break; }
+        if (espActive((await readResponses()).responses[sessionId], mac, since)) { active = true; break; }
       }
       if (watcher.stopped || entry.phase !== "rechecking") return; // kullanıcı devraldı / izleme bitti
       if (!active) {
@@ -185,6 +184,7 @@ function initOcppWatch(deps) {
       } else {
         console.log(`[OCPP-WATCH] ${mac} akış sessiz, ESP aktif → izlemeye devam`);
       }
+      onAlive?.(entry.device); // taze "ESP aktif" — Son veri güncellenir
       entry.phase = "watching";
       entry.lastAliveAt = Date.now();
       entry.touchedAt = Date.now();
