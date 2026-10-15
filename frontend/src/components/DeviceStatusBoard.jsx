@@ -435,7 +435,7 @@ function RefreshButton({ devices, title, small = false }) {
 
 function LocationCard({ site, devices, blocks, openKey, setOpenKey, onConnectDevice, connecting, connectError }) {
   return (
-    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3.5 flex flex-col gap-3 hover:shadow-sm transition">
+    <div className="h-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3.5 flex flex-col gap-3 hover:shadow-sm transition">
       <div className="flex items-center gap-1.5 min-w-0">
         <HiOutlineMapPin className="text-[var(--accent)] text-[15px] shrink-0" />
         <span className="text-[13px] font-bold text-[var(--text-primary)] leading-snug break-words flex-1 min-w-0" title={site}>{site}</span>
@@ -443,11 +443,12 @@ function LocationCard({ site, devices, blocks, openKey, setOpenKey, onConnectDev
       </div>
 
       {blocks ? (
-        <div className="flex flex-col gap-3">
+        // Bloklar yan yana dizilir — her blok ayrı satır kaplayıp kartı uzatmasın
+        <div className="flex flex-wrap gap-x-4 gap-y-3">
           {blocks.map((b) => (
             <div key={b.label}>
               <div className="flex items-center gap-1.5 mb-1.5">
-                <div className="text-[10.5px] font-bold uppercase tracking-wide text-[var(--text-muted)] flex-1">{b.label}</div>
+                <div className="text-[10.5px] font-bold uppercase tracking-wide text-[var(--text-muted)]">{b.label}</div>
                 <RefreshButton devices={b.devices} title="Bu bölümü şimdi oku" small />
               </div>
               <DeviceTileRow devices={b.devices} openKey={openKey} setOpenKey={setOpenKey}
@@ -460,7 +461,7 @@ function LocationCard({ site, devices, blocks, openKey, setOpenKey, onConnectDev
           onConnectDevice={onConnectDevice} connecting={connecting} connectError={connectError} />
       )}
 
-      <div className="flex items-center gap-2.5 pt-2.5 border-t border-dashed border-[var(--border-subtle)] text-[11px] font-bold text-[var(--text-muted)]">
+      <div className="mt-auto flex items-center gap-2.5 pt-2.5 border-t border-dashed border-[var(--border-subtle)] text-[11px] font-bold text-[var(--text-muted)]">
         {["AC", "DC"].map((t) => {
           const n = devices.filter((d) => socketType(d) === t).length;
           return n ? <span key={t}>{t} <span className="text-[var(--text-secondary)]">{n}</span></span> : null;
@@ -526,7 +527,7 @@ function DistrictSection({ district, devices, sites, open, onToggle, tileProps }
         <SegmentedBar devices={devices} className="h-1 flex-1 min-w-[60px]" />
       </button>
       {open && (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] items-start gap-3 px-3 pb-3">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] items-stretch gap-3 px-3 pb-3">
           {sites.map((g) => (
             <LocationCard key={g.site} site={g.site} devices={g.devices} blocks={g.blocks} {...tileProps} />
           ))}
