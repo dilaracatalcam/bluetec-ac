@@ -11,6 +11,16 @@
  * istek gelmemesi) her cihaza "frame 3 28 0" gönderilir, bağlantılar bırakılır
  * ve o cihazların canlı OCPP kayıtları silinir.
  *
+ * Akış kontrolü: cihazdan mesaj geldikçe bağlantıya dokunulmaz. SILENCE_MS
+ * boyunca hiç mesaj gelmezse cihaza yeniden activate gönderilip "ESP aktif"
+ * beklenir: gelirse izlemeye devam edilir, gelmezse cihaz çevrimdışı sayılır
+ * ve RETRY_MS'de bir yeniden bağlanılır. Aktif olduğu halde üst üste ikinci
+ * kez sessiz kalırsa (cihaz yeniden başlayıp log modunu kaybetmiş olabilir)
+ * 3 28 3 bir kez daha gönderilir.
+ *
+ * Sayfadan çıkışta LEAVE_GRACE_MS beklenir; bu sürede geri dönülürse
+ * cihazlara yeniden bağlanılmaz.
+ *
  * Gerçek bir kullanıcı izlenen cihaza bağlanırsa server.js release() çağırır:
  * önce 3 28 0, sonra slot bırakılır; cihaz kullanıcı ayrılana kadar izlenmez.
  */
@@ -26,6 +36,8 @@ const READ_TICK_MS = 300;         // responses.json okuma aralığı
 const IDLE_MS = 20 * 1000;        // bu süre istek gelmezse izleyici kapanır
 const RETRY_MS = 3 * 60 * 1000;   // çevrimdışı / meşgul cihazı yeniden deneme
 const TOUCH_MS = 60 * 1000;       // slotun inaktiviteden düşmemesi için
+const SILENCE_MS = 7 * 60 * 1000; // bu süre mesaj gelmezse activate ile yoklanır
+const LEAVE_GRACE_MS = 30 * 1000; // sayfadan çıkınca kapatmadan önce bekleme
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const compactMac = (mac) => String(mac || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
@@ -42,7 +54,9 @@ function initOcppWatch(deps) {
   const {
     readTarget, writeJsonRaw, withLock, TARGET_PATH, findOrCreateSlot, deactivateThenActivateForSlot,
     removeSlot, touchSlot, readResponses, getDevices, ocppLive, onStatus, SLOT_CLEAR_MSG_INTERVAL = 1500,
+    timing = {},
   } = deps;
+  const T = { SILENCE_MS, LEAVE_GRACE_MS, ACTIVATE_WAIT_SEC, ...timing };
 
   const watchers = new Map(); // company -> watcher
   const bySession = new Map(); // sessionId -> { watcher, entry }
@@ -97,7 +111,7 @@ function initOcppWatch(deps) {
       touchSlot(sessionId);
       let resp = null;
       let active = false;
-      for (let i = 0; i < ACTIVATE_WAIT_SEC && !watcher.stopped; i++) {
+      for (let i = 0; i < T.ACTIVATE_WAIT_SEC && !watcher.stopped; i++) {
         await sleep(1000);
         resp = (await readResponses()).responses[sessionId];
         if (espActive(resp, mac)) { active = true; break; }
@@ -127,6 +141,8 @@ function initOcppWatch(deps) {
       entry.logOn = true;
       entry.phase = "watching";
       entry.touchedAt = Date.now();
+      entry.lastAliveAt = Date.now();
+      entry.silentChecks = 0;
     } catch (e) {
       entry.phase = "offline";
       entry.retryAt = Date.now() + RETRY_MS;
@@ -134,14 +150,61 @@ function initOcppWatch(deps) {
     }
   }
 
+  // Akış sessiz kaldı: aynı oturumla yeniden activate, "ESP aktif" gelirse izlemeye devam
+  async function recheck(watcher, entry) {
+    const { mac, sessionId } = entry;
+    entry.phase = "rechecking";
+    try {
+      await deactivateThenActivateForSlot(sessionId, mac);
+      touchSlot(sessionId);
+      let active = false;
+      for (let i = 0; i < T.ACTIVATE_WAIT_SEC && !watcher.stopped && entry.phase === "rechecking"; i++) {
+        await sleep(1000);
+        if (espActive((await readResponses()).responses[sessionId], mac)) { active = true; break; }
+      }
+      if (watcher.stopped || entry.phase !== "rechecking") return; // kullanıcı devraldı / izleme bitti
+      if (!active) {
+        console.log(`[OCPP-WATCH] ${mac} akış sessiz, activate cevapsız → çevrimdışı`);
+        entry.logOn = false;
+        entry.phase = "offline";
+        entry.retryAt = Date.now() + RETRY_MS;
+        await removeSlot(sessionId).catch(() => {});
+        onStatus?.(entry.device, false, null);
+        return;
+      }
+      entry.silentChecks = (entry.silentChecks || 0) + 1;
+      entry.lastSig = signatureOf(firstMessage((await readResponses()).responses[sessionId]));
+      if (entry.silentChecks >= 2) {
+        // ESP aktif ama üst üste sessiz — log modu düşmüş olabilir
+        await sendFrame(sessionId, "frame 3 28 3");
+        entry.silentChecks = 0;
+        console.log(`[OCPP-WATCH] ${mac} aktif ama sessiz → 3 28 3 yeniden gönderildi`);
+      } else {
+        console.log(`[OCPP-WATCH] ${mac} akış sessiz, ESP aktif → izlemeye devam`);
+      }
+      entry.phase = "watching";
+      entry.lastAliveAt = Date.now();
+      entry.touchedAt = Date.now();
+    } catch (e) {
+      entry.phase = "watching";
+      entry.lastAliveAt = Date.now();
+      console.error(`[OCPP-WATCH] ${mac} yoklanamadı:`, e.message);
+    }
+  }
+
   async function activationLoop(watcher) {
     while (!watcher.stopped) {
+      const now = Date.now();
       const due = [...watcher.devices.values()].filter((e) =>
-        (e.phase === "queued") || ((e.phase === "offline" || e.phase === "occupied") && Date.now() >= e.retryAt));
-      if (due.length === 0) { await sleep(2000); continue; }
+        (e.phase === "queued") || ((e.phase === "offline" || e.phase === "occupied") && now >= e.retryAt) ||
+        (e.phase === "watching" && now - (e.lastAliveAt || now) > T.SILENCE_MS));
+      if (due.length === 0) { await sleep(Math.min(2000, T.SILENCE_MS)); continue; }
       const queue = [...due];
       await Promise.all(Array.from({ length: Math.min(ACTIVATE_CONCURRENCY, queue.length) }, async () => {
-        while (queue.length && !watcher.stopped) await activate(watcher, queue.shift());
+        while (queue.length && !watcher.stopped) {
+          const entry = queue.shift();
+          await (entry.phase === "watching" ? recheck(watcher, entry) : activate(watcher, entry));
+        }
       }));
     }
   }
@@ -163,6 +226,8 @@ function initOcppWatch(deps) {
       const sig = signatureOf(m);
       if (sig !== e.lastSig) {
         e.lastSig = sig;
+        e.lastAliveAt = now; // mesaj akıyor — yoklamaya gerek yok
+        e.silentChecks = 0;
         if (m && Number(m.cmd) === 3 && Number(m.msg) === 28) {
           for (const line of String(m.data ?? "").split(/\r?\n/)) if (line.trim()) ocppLive.add(e.mac, line);
         } else if (m && Number(m.cmd) === 2 && Number(m.msg) === 25 && m.data != null) {
@@ -210,7 +275,9 @@ function initOcppWatch(deps) {
     const now = Date.now();
     for (const [company, w] of watchers) {
       for (const [viewer, seen] of w.viewers) if (now - seen > IDLE_MS) w.viewers.delete(viewer);
-      if (w.viewers.size === 0) stopWatcher(company, "izleyen kalmadı").catch(() => {});
+      if (w.viewers.size > 0) { w.emptySince = null; continue; }
+      w.emptySince ??= now;
+      if (now - w.emptySince >= T.LEAVE_GRACE_MS) stopWatcher(company, "izleyen kalmadı").catch(() => {});
     }
   }, READ_TICK_MS);
   timer.unref?.();
@@ -223,18 +290,22 @@ function initOcppWatch(deps) {
       w.viewers.set(viewerId, Date.now());
       return w;
     },
-    // Sayfadan çıkış: bu izleyici ayrılır; kimse kalmadıysa izleme hemen kapanır
+    // Sayfadan çıkış: bu izleyici ayrılır; kimse kalmadıysa LEAVE_GRACE_MS sonra
+    // kapanır (3 28 0) — bu sürede sayfaya dönülürse cihazlara yeniden bağlanılmaz
     async leave(company, viewerId) {
       const w = watchers.get(company);
       if (!w) return;
       w.viewers.delete(viewerId);
-      if (w.viewers.size === 0) await stopWatcher(company, "sayfadan çıkıldı");
+      if (w.viewers.size > 0) return;
+      if (T.LEAVE_GRACE_MS <= 0) await stopWatcher(company, "sayfadan çıkıldı");
+      else w.emptySince = Date.now();
     },
     // Gerçek kullanıcı cihaza bağlanmadan önce: 3 28 0, sonra slot bırakılır
     async release(sessionId) {
       const hit = bySession.get(sessionId);
       if (!hit) { await removeSlot(sessionId).catch(() => {}); return; }
       const { entry } = hit;
+      entry.phase = "releasing";
       if (entry.logOn) {
         await sendFrame(sessionId, "frame 3 28 0").catch(() => {});
         await sleep(SLOT_CLEAR_MSG_INTERVAL + 100);
