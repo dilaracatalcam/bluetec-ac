@@ -233,13 +233,13 @@ const SECTIONS = [
   { group: "Cihaz", key: "device-select", title: "Cihaz Seç", desc: "Bağlanmak istediğiniz cihazı seçin", label: "Cihaz Seç", icon: <HiOutlineCpuChip /> },
   { group: "Cihaz", key: "ocpp-wifi", title: "OCPP & WiFi Ayarları", desc: "OCPP endpoint ve kablosuz ağ konfigürasyonu",    label: "OCPP & WiFi",       icon: <HiOutlineGlobeAlt /> },
   { group: "Cihaz", key: "ui", title: "Bağlantı & UI Ayarları", desc: "İstasyon görünümü ve haberleşme tercihleri",           label: "Bağlantı & UI",     icon: <TbPlugConnected /> },
-  { group: "Cihaz", key: "msp-config", title: "MSP Konfigürasyon", desc: "Cihaz modu, ölçüm ayarları ve reset",   label: "MSP Konfigürasyon", icon: <HiOutlineCog6Tooth /> },
-  { group: "Cihaz", key: "esp-ctrl", title: "ESP Kontrol", desc: "Anlık cihaz kontrolü ve ağ bağlantı durumu",     label: "ESP Kontrol",       icon: <HiOutlineCpuChip /> },
+  { group: "Cihaz", key: "msp-config", title: "MSP Konfigürasyon", desc: "Metering & Supply Processor: ölçüm ve güç besleme portalı",   label: "MSP Konfigürasyon", icon: <HiOutlineCog6Tooth /> },
+  { group: "Cihaz", key: "esp-ctrl", title: "ESP Kontrol", desc: "Embedded Screen Processor: ekran ve arayüz portalı",     label: "ESP Kontrol",       icon: <HiOutlineCpuChip /> },
   { group: "Cihaz", key: "ocpp-creds", title: "OCPP Credentials", desc: "Şarj noktası kimlik ve seri bilgileri",   label: "OCPP Credentials",  icon: <HiOutlineIdentification /> },
   { group: "Cihaz", key: "device-setup", title: "Cihaz Kurulum", desc: "Şirket profili seçin, parametreleri düzenleyin ve toplu gönderin", label: "Cihaz Kurulum",    icon: <HiOutlineWrenchScrewdriver />, adminOnly: true },
 
   { group: "İzleme", key: "telemetry", title: "Canlı Telemetri", desc: "Anlık şarj verileri ve cihaz durumu",    label: "Canlı Telemetri",   icon: <TbActivity />, badge: "LIVE" },
-  { group: "İzleme", key: "msp-tele", title: "MSP Telemetri", desc: "Faz voltajları, akımlar ve MSP çıkış verileri",     label: "MSP Telemetri",     icon: <HiOutlineSignal /> },
+  { group: "İzleme", key: "msp-tele", title: "MSP Telemetri", desc: "Metering & Supply Processor: ölçüm ve güç besleme portalı",     label: "MSP Telemetri",     icon: <HiOutlineSignal /> },
   { group: "İzleme", key: "logs", title: "Cihaz Logları", desc: "Verbose ve debug log akışını açın, canlı izleyin",         label: "Loglar",            icon: <HiOutlineCommandLine /> },
   { group: "İzleme", key: "connections", title: "Aktif Bağlantılar", desc: "Şu anda hangi kullanıcı hangi şarj cihazına bağlı",  label: "Aktif Bağlantılar", icon: <HiOutlineSignal />, adminOnly: true },
 
@@ -1341,7 +1341,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
     return (
       <>
         <SectionHeader icon={<HiOutlineCog6Tooth />} title="MSP Konfigürasyon"
-          subtitle={isAdmin ? "Cihaz modu, ölçüm ayarları ve reset" : "Cihaz reset kontrolü"} />
+          subtitle="Metering & Supply Processor: ölçüm ve güç besleme portalı" />
 
         {oneShotItems.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 mb-4">
@@ -1428,7 +1428,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
 
     return (
     <>
-      <SectionHeader icon={<HiOutlineCpuChip />} title="ESP Kontrol" subtitle="Anlık cihaz kontrolü ve ağ bağlantı durumu" />
+      <SectionHeader icon={<HiOutlineCpuChip />} title="ESP Kontrol" subtitle="Embedded Screen Processor: ekran ve arayüz portalı" />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
         {visibleEspCtrl.map((p) => {
           const curVal = String(readValues[p.id] ?? "0");
@@ -1689,7 +1689,7 @@ export default function Home({ token, onNavigate, onLogout, isAdmin = false }) {
 
   const renderMspTelemetry = () => (
     <>
-      <SectionHeader icon={<HiOutlineSignal />} title="MSP Telemetri" subtitle="Faz voltajları, akımlar ve MSP output verileri" />
+      <SectionHeader icon={<HiOutlineSignal />} title="MSP Telemetri" subtitle="Metering & Supply Processor: ölçüm ve güç besleme portalı" />
       <div className="flex items-center gap-2 mb-4">
         <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
         <span className="text-[11px] tracking-widest uppercase font-bold text-amber-400 font-mono">Live Stream</span>
