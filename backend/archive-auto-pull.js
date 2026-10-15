@@ -10,6 +10,13 @@
  *      tamamlandı" olana kadar izlenir, sonra bağlantı bırakılır.
  * Başarısız / ertelenen cihaz RETRY_MS sonra yeniden denenir.
  *
+ * Sürüm kontrolü: cihaz sonradan güncellenip MIN_VERSION'a ulaşabilir.
+ * Veritabanındaki sürüm her taramada yeniden okunduğu için OTA ya da ESP
+ * okumasıyla güncellenen cihaz kendiliğinden listeye girer. Panel dışından
+ * güncellenmiş olabilecek cihazlar için, sürümü uygun görünmeyen her cihazın
+ * yazılım sürümü (id 33) VERSION_CHECK_MS'de bir ESP'den okunup veritabanına
+ * yazılır; uygun çıkarsa aynı taramada çekilir.
+ *
  * Elle yapılan çekimler de kaydedilir: observe() responses.json'daki yeni
  * "tamamlandı" satırını görünce o oturumun cihazına "manual" çekim yazar.
  * Gerçek bir kullanıcı çekim sürerken cihaza bağlanırsa server.js release()
@@ -23,6 +30,8 @@ const INTERVAL_MS = 6 * 60 * 60 * 1000;   // başarılı çekimler arası
 const RETRY_MS = 30 * 60 * 1000;          // şarjda / çevrimdışı / meşgul → yeniden deneme
 const TICK_MS = 5 * 60 * 1000;            // vadesi gelen cihaz taraması
 const FIRST_TICK_MS = 2 * 60 * 1000;      // sunucu açıldıktan sonra ilk tarama
+const VERSION_CHECK_MS = 24 * 60 * 60 * 1000; // uygun olmayan cihazın sürümü bu sıklıkla okunur
+const VERSION_CHECKS_PER_TICK = 6;             // bir taramada en fazla bu kadar cihaz
 const ACTIVATE_WAIT_SEC = 20;
 const STATUS_READ_POLLS = 4;
 const POLL_MS = 1500;
@@ -73,6 +82,7 @@ function initArchiveAutoPull(deps) {
   const {
     readTarget, writeJsonRaw, withLock, TARGET_PATH, deactivateThenActivateForSlot, removeSlot, touchSlot,
     readResponses, getDevices, getArchivePull, recordArchivePull, getDeviceLiveState,
+    markVersionCheck, updateDeviceVersion,
     SLOT_CLEAR_MSG_INTERVAL = 1500, log = console, timing = {},
   } = deps;
   const T = {
@@ -199,6 +209,57 @@ function initArchiveAutoPull(deps) {
     }
   }
 
+  // Cihaza kısa bağlanıp yazılım sürümünü (id 33) okur ve veritabanına yazar
+  async function checkVersion(device) {
+    const mac = device.mac;
+    const sessionId = `${SESSION_PREFIX}${compactMac(mac)}`;
+    if (await occupantOf(mac, sessionId)) return "busy"; // sonraki taramada denenir
+    const job = { mac, sessionId, released: false };
+    current = job;
+    try {
+      await deactivateThenActivateForSlot(sessionId, mac);
+      touchSlot(sessionId);
+      let active = false;
+      for (let i = 0; i < T.ACTIVATE_WAIT_SEC && !job.released && !stopped; i++) {
+        await sleep(1000);
+        if (espActive((await readResponses()).responses[sessionId], mac)) { active = true; break; }
+      }
+      if (job.released || stopped) return "interrupted";
+      markVersionCheck(mac);
+      if (!active) return "offline";
+      await sendFrame(sessionId, "frame 2 33 0");
+      for (let i = 0; i < STATUS_READ_POLLS && !job.released; i++) {
+        await sleep(T.POLL_MS);
+        const m = messagesOf((await readResponses()).responses[sessionId])
+          .find((x) => Number(x.cmd) === 2 && Number(x.msg) === 33 && x.data != null && String(x.data).trim() && !/^SET\b/i.test(String(x.data)));
+        if (m) {
+          const version = String(m.data).trim();
+          if (version !== String(device.sw_version || "").trim()) {
+            updateDeviceVersion(mac, { sw_version: version });
+            log.log?.(`[ARCHIVE-AUTO] ${mac} sürüm güncellendi: "${device.sw_version || ""}" → "${version}"`);
+          }
+          return isEligibleVersion(version) ? "eligible" : "checked";
+        }
+      }
+      return "no-answer";
+    } catch (e) {
+      log.error?.(`[ARCHIVE-AUTO] ${mac} sürüm okunamadı:`, e.message);
+      return "failed";
+    } finally {
+      if (current === job) current = null;
+      if (!job.released) await removeSlot(sessionId).catch(() => {});
+    }
+  }
+
+  // Sürümü uygun görünmeyen ve sürümü VERSION_CHECK_MS'den beri okunmamış cihazlar
+  function versionCheckDue(now = Date.now()) {
+    return getDevices({}).filter((d) => {
+      if (!d.mac || isEligibleVersion(d.sw_version)) return false;
+      const at = getArchivePull(d.mac)?.last_version_check_at;
+      return !at || now - Date.parse(at) >= VERSION_CHECK_MS;
+    }).slice(0, VERSION_CHECKS_PER_TICK);
+  }
+
   // Vadesi gelen cihazlar: sürümü uygun, son başarılı çekim INTERVAL_MS'den eski,
   // son deneme RETRY_MS'den eski
   function dueDevices(now = Date.now()) {
@@ -222,6 +283,18 @@ function initArchiveAutoPull(deps) {
         if (stopped) break;
         const result = await pullOne(device);
         log.log?.(`[ARCHIVE-AUTO] ${device.mac} (${device.sw_version}) → ${result}`);
+      }
+      // Sonradan güncellenmiş olabilecek cihazlar: sürümü oku, uygunsa hemen çek
+      for (const device of versionCheckDue()) {
+        if (stopped) break;
+        const result = await checkVersion(device);
+        if (result === "eligible") {
+          const fresh = dueDevices().find((d) => compactMac(d.mac) === compactMac(device.mac));
+          if (fresh) {
+            const pulled = await pullOne(fresh);
+            log.log?.(`[ARCHIVE-AUTO] ${fresh.mac} (${fresh.sw_version}) → ${pulled}`);
+          }
+        }
       }
     } finally {
       running = false;

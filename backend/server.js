@@ -1831,6 +1831,8 @@ archiveAutoPull = initArchiveAutoPull({
     getArchivePull: require('./db').getArchivePull,
     recordArchivePull: require('./db').recordArchivePull,
     getDeviceLiveState: require('./db').getDeviceLiveState,
+    markVersionCheck: require('./db').markVersionCheck,
+    updateDeviceVersion: require('./db').updateDeviceVersion,
 });
 // systemd yeniden başlatırken izlenen cihazlarda log modu açık kalmasın
 for (const signal of ['SIGTERM', 'SIGINT']) {

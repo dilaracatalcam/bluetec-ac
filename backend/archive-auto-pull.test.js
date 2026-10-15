@@ -38,6 +38,8 @@ function makeBridge({ devices, device }) {
             pulls.set(mac, { ...prev, last_attempt_at: at, last_result: result, ...(result === 'ok' ? { last_success_at: at, last_source: source } : {}) });
         },
         getDeviceLiveState: () => null,
+        markVersionCheck: (mac) => { pulls.set(mac, { ...(pulls.get(mac) || {}), last_version_check_at: new Date().toISOString() }); },
+        updateDeviceVersion: (mac, { sw_version }) => { const d = devices.find((x) => x.mac === mac); if (d) d.sw_version = sw_version; },
     };
     return { deps, target, responses, frames, pulls };
 }
@@ -75,15 +77,37 @@ describe('archive-auto-pull', () => {
         const b = makeBridge({ devices: [dev, { mac: 'AA:00:00:00:00:02', sw_version: 'v@4.1.6' }], device });
         const pull = initArchiveAutoPull(b.deps);
         await pull.tick();
-        expect(b.frames.map(([, f]) => f)).toEqual(['frame 2 25 0', 'frame 3 30 1']);
+        expect(b.frames.filter(([s]) => s.endsWith('01')).map(([, f]) => f)).toEqual(['frame 2 25 0', 'frame 3 30 1']);
         expect(b.pulls.get(dev.mac)).toMatchObject({ last_result: 'ok', last_source: 'auto' });
-        expect(b.pulls.has('AA:00:00:00:00:02')).toBe(false); // sürümü düşük
+        // sürümü düşük cihaz çekilmez, yalnızca sürümü okunur
+        expect(b.frames.filter(([s]) => s.endsWith('02')).map(([, f]) => f)).toEqual(['frame 2 33 0']);
+        expect(b.pulls.get('AA:00:00:00:00:02').last_result).toBeUndefined();
         expect(b.target.requests).toHaveLength(0);
         expect(pull.status(dev.mac)).toMatchObject({ autoEligible: true, synced: true });
 
-        // 6 saat dolmadan tekrar çekilmez
+        // 6 saat dolmadan tekrar çekilmez; sürüm de 24 saat dolmadan tekrar okunmaz
         await pull.tick();
         expect(b.frames.filter(([, f]) => f === 'frame 3 30 1')).toHaveLength(1);
+        expect(b.frames.filter(([, f]) => f === 'frame 2 33 0')).toHaveLength(1);
+        pull.stop();
+    });
+
+    it('sonradan 4.1.7 üzerine güncellenen cihazın sürümünü yazar ve aynı taramada çeker', async () => {
+        const dev = { mac: 'AA:00:00:00:00:06', sw_version: 'v@4.1.6' };
+        const device = {
+            online: true,
+            onFrame(sid, frame, responses) {
+                if (frame === 'frame 2 33 0') responses[sid].message_response = msg(2, 33, 'v@4.1.8');
+                if (frame === 'frame 2 25 0') responses[sid].message_response = msg(2, 25, 'P1_IDLE');
+                if (frame === 'frame 3 30 1') setTimeout(() => { responses[sid].message_response = msg(3, 30, 'sid=2 % 100.0 | indirme ve çözümleme tamamlandı'); }, 40);
+            },
+        };
+        const b = makeBridge({ devices: [dev], device });
+        const pull = initArchiveAutoPull(b.deps);
+        await pull.tick();
+        expect(dev.sw_version).toBe('v@4.1.8');
+        expect(b.frames.map(([, f]) => f)).toEqual(['frame 2 33 0', 'frame 2 25 0', 'frame 3 30 1']);
+        expect(b.pulls.get(dev.mac)).toMatchObject({ last_result: 'ok', last_source: 'auto' });
         pull.stop();
     });
 

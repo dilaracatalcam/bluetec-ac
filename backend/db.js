@@ -635,6 +635,19 @@ db.exec(`
   )
 `);
 
+{
+  // Sürümü uygun olmayan cihazlarda günde bir kez ESP'den sürüm okunur (bkz. archive-auto-pull.js)
+  const cols = db.prepare("PRAGMA table_info(archive_pulls)").all().map((c) => c.name);
+  if (!cols.includes("last_version_check_at")) db.exec("ALTER TABLE archive_pulls ADD COLUMN last_version_check_at TEXT");
+}
+
+function markVersionCheck(mac, at = new Date().toISOString()) {
+  db.prepare(`
+    INSERT INTO archive_pulls (mac, last_version_check_at) VALUES (@mac, @at)
+    ON CONFLICT(mac) DO UPDATE SET last_version_check_at = @at
+  `).run({ mac, at });
+}
+
 function getArchivePull(mac) {
   return db.prepare("SELECT * FROM archive_pulls WHERE mac = ?").get(mac) || null;
 }
@@ -654,7 +667,7 @@ function recordArchivePull({ mac, result, source, detail = null, at = new Date()
 }
 
 module.exports = {
-  getDeviceLiveState, getArchivePull, recordArchivePull,
+  getDeviceLiveState, getArchivePull, recordArchivePull, markVersionCheck,
   getAllDeviceLiveStatus, listRecentJobs,
   getCompanies, getLocations, getDevices, getDeviceByCode, replaceAllDevices, updateDeviceVersion, updateDeviceInventoryByMac, updateDeviceLocation,
   getCustomFields, addCustomField, deleteCustomField,

@@ -565,7 +565,7 @@ function PullInfo({ status }) {
       <div className="text-[var(--text-muted)]">
         {autoEligible
           ? `Otomatik çekim açık: ${intervalHours} saatte bir, cihaz şarj vermiyorken Günlük log çekilir.`
-          : `Otomatik çekim kapalı: yazılım ${minVersion} ve üzeri olan cihazlarda çalışır.`}
+          : `Otomatik çekim kapalı: yazılım ${minVersion} ve üzeri olan cihazlarda çalışır. Sürüm günde bir kontrol edilir; cihaz güncellenince kendiliğinden açılır.`}
       </div>
       {synced ? (
         <div className="text-emerald-600 dark:text-emerald-400 font-semibold">
